@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  Unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-go-for-project
+      - name: test-unit
+        shell: bash
+        run: make unit-test
+
+  Lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-go-for-project
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.6
+          args: >
+            --timeout=10m
+            -E gofmt
+            -E gofumpt
+            -E gci
