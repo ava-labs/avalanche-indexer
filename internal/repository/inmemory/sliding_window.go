@@ -12,10 +12,10 @@ var (
 	ErrOutOfWindow      = errors.New("block height outside current window")
 )
 
-var _ types.SlidingWindowRepository = (*InMemorySlidingWindowRepository)(nil)
+var _ types.SlidingWindowRepository = (*SlidingWindowRepository)(nil)
 
-// InMemorySlidingWindowRepository is a thread-safe in-memory implementation of SlidingWindowRepository.
-type InMemorySlidingWindowRepository struct {
+// SlidingWindowRepository is a thread-safe in-memory implementation of SlidingWindowRepository.
+type SlidingWindowRepository struct {
 	mu        sync.Mutex
 	lub       uint64
 	lib       uint64
@@ -23,11 +23,11 @@ type InMemorySlidingWindowRepository struct {
 }
 
 // NewInMemorySlidingWindowRepository creates a new in-memory repository with the given initial watermarks.
-func NewInMemorySlidingWindowRepository(initialLUB, initialLIB uint64) *InMemorySlidingWindowRepository {
+func NewInMemorySlidingWindowRepository(initialLUB, initialLIB uint64) *SlidingWindowRepository {
 	if initialLIB < initialLUB {
 		initialLIB = initialLUB
 	}
-	return &InMemorySlidingWindowRepository{
+	return &SlidingWindowRepository{
 		lub: initialLUB,
 		lib: initialLIB,
 		// Using a sparse set is memory-friendly for out-of-order processing in wide windows.
@@ -35,19 +35,19 @@ func NewInMemorySlidingWindowRepository(initialLUB, initialLIB uint64) *InMemory
 	}
 }
 
-func (r *InMemorySlidingWindowRepository) Window() (uint64, uint64) {
+func (r *SlidingWindowRepository) Window() (uint64, uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub, r.lib
 }
 
-func (r *InMemorySlidingWindowRepository) GetLUB() uint64 {
+func (r *SlidingWindowRepository) GetLUB() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub
 }
 
-func (r *InMemorySlidingWindowRepository) GetLIB() uint64 {
+func (r *SlidingWindowRepository) GetLIB() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lib
@@ -55,7 +55,7 @@ func (r *InMemorySlidingWindowRepository) GetLIB() uint64 {
 
 // SetLIB sets the Largest Ingested Block (chain tip watermark).
 // New LIB must be greater than or equal to the current LUB.
-func (r *InMemorySlidingWindowRepository) SetLIB(newLIB uint64) error {
+func (r *SlidingWindowRepository) SetLIB(newLIB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if newLIB < r.lub {
@@ -68,7 +68,7 @@ func (r *InMemorySlidingWindowRepository) SetLIB(newLIB uint64) error {
 // ResetLUB sets the Lowest Unprocessed Block explicitly (used for re-ingestion).
 // This may move the LUB forward or backward. Additionally, it drops all processed
 // marks strictly below the new LUB.
-func (r *InMemorySlidingWindowRepository) ResetLUB(newLUB uint64) error {
+func (r *SlidingWindowRepository) ResetLUB(newLUB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Allow moving LUB backward or forward. When moving forward, ensure it does not exceed LIB.
@@ -86,13 +86,13 @@ func (r *InMemorySlidingWindowRepository) ResetLUB(newLUB uint64) error {
 	return nil
 }
 
-func (r *InMemorySlidingWindowRepository) HasWork() bool {
+func (r *SlidingWindowRepository) HasWork() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub <= r.lib
 }
 
-func (r *InMemorySlidingWindowRepository) MarkProcessed(h uint64) error {
+func (r *SlidingWindowRepository) MarkProcessed(h uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Heights strictly below LUB are implicitly processed/committed already.
@@ -108,7 +108,7 @@ func (r *InMemorySlidingWindowRepository) MarkProcessed(h uint64) error {
 
 // IsProcessed returns true if a block is recorded as processed.
 // Note: values below the current LUB are considered committed and implicitly processed.
-func (r *InMemorySlidingWindowRepository) IsProcessed(h uint64) bool {
+func (r *SlidingWindowRepository) IsProcessed(h uint64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if h < r.lub {
@@ -120,7 +120,7 @@ func (r *InMemorySlidingWindowRepository) IsProcessed(h uint64) bool {
 
 // AdvanceLUB slides LUB forward while contiguous values starting from current LUB are processed.
 // Returns the new LUB and whether it changed.
-func (r *InMemorySlidingWindowRepository) AdvanceLUB() (uint64, bool) {
+func (r *SlidingWindowRepository) AdvanceLUB() (uint64, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	original := r.lub

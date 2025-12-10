@@ -35,11 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-go-for-project
-      - uses: golangci/golangci-lint-action@v6
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.6
-          args: >
-            --timeout=10m
-            -E gofmt
-            -E gofumpt
-            -E gci
+          args: --timeout=10m
