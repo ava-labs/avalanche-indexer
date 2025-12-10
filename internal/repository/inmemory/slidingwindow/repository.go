@@ -1,4 +1,4 @@
-package inmemory
+package slidingwindow
 
 import (
 	"errors"
@@ -12,10 +12,10 @@ var (
 	ErrOutOfWindow      = errors.New("block height outside current window")
 )
 
-var _ types.SlidingWindowRepository = (*SlidingWindowRepository)(nil)
+var _ types.SlidingWindowRepository = (*Repository)(nil)
 
-// SlidingWindowRepository is a thread-safe in-memory implementation of SlidingWindowRepository.
-type SlidingWindowRepository struct {
+// Repository is a thread-safe in-memory implementation of types.SlidingWindowRepository.
+type Repository struct {
 	mu        sync.Mutex
 	lub       uint64
 	lib       uint64
@@ -23,11 +23,11 @@ type SlidingWindowRepository struct {
 }
 
 // NewInMemorySlidingWindowRepository creates a new in-memory repository with the given initial watermarks.
-func NewInMemorySlidingWindowRepository(initialLUB, initialLIB uint64) *SlidingWindowRepository {
+func NewInMemorySlidingWindowRepository(initialLUB, initialLIB uint64) types.SlidingWindowRepository {
 	if initialLIB < initialLUB {
 		initialLIB = initialLUB
 	}
-	return &SlidingWindowRepository{
+	return &Repository{
 		lub: initialLUB,
 		lib: initialLIB,
 		// Using a sparse set is memory-friendly for out-of-order processing in wide windows.
@@ -35,19 +35,19 @@ func NewInMemorySlidingWindowRepository(initialLUB, initialLIB uint64) *SlidingW
 	}
 }
 
-func (r *SlidingWindowRepository) Window() (uint64, uint64) {
+func (r *Repository) Window() (uint64, uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub, r.lib
 }
 
-func (r *SlidingWindowRepository) GetLUB() uint64 {
+func (r *Repository) GetLUB() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub
 }
 
-func (r *SlidingWindowRepository) GetLIB() uint64 {
+func (r *Repository) GetLIB() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lib
@@ -55,7 +55,7 @@ func (r *SlidingWindowRepository) GetLIB() uint64 {
 
 // SetLIB sets the Largest Ingested Block (chain tip watermark).
 // New LIB must be greater than or equal to the current LUB.
-func (r *SlidingWindowRepository) SetLIB(newLIB uint64) error {
+func (r *Repository) SetLIB(newLIB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if newLIB < r.lub {
@@ -68,7 +68,7 @@ func (r *SlidingWindowRepository) SetLIB(newLIB uint64) error {
 // ResetLUB sets the Lowest Unprocessed Block explicitly (used for re-ingestion).
 // This may move the LUB forward or backward. Additionally, it drops all processed
 // marks strictly below the new LUB.
-func (r *SlidingWindowRepository) ResetLUB(newLUB uint64) error {
+func (r *Repository) ResetLUB(newLUB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Allow moving LUB backward or forward. When moving forward, ensure it does not exceed LIB.
@@ -86,13 +86,13 @@ func (r *SlidingWindowRepository) ResetLUB(newLUB uint64) error {
 	return nil
 }
 
-func (r *SlidingWindowRepository) HasWork() bool {
+func (r *Repository) HasWork() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub <= r.lib
 }
 
-func (r *SlidingWindowRepository) MarkProcessed(h uint64) error {
+func (r *Repository) MarkProcessed(h uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Heights strictly below LUB are implicitly processed/committed already.
@@ -108,7 +108,7 @@ func (r *SlidingWindowRepository) MarkProcessed(h uint64) error {
 
 // IsProcessed returns true if a block is recorded as processed.
 // Note: values below the current LUB are considered committed and implicitly processed.
-func (r *SlidingWindowRepository) IsProcessed(h uint64) bool {
+func (r *Repository) IsProcessed(h uint64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if h < r.lub {
@@ -120,7 +120,7 @@ func (r *SlidingWindowRepository) IsProcessed(h uint64) bool {
 
 // AdvanceLUB slides LUB forward while contiguous values starting from current LUB are processed.
 // Returns the new LUB and whether it changed.
-func (r *SlidingWindowRepository) AdvanceLUB() (uint64, bool) {
+func (r *Repository) AdvanceLUB() (uint64, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	original := r.lub
