@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	ErrInvalidWatermark = errors.New("invalid watermark update: new watermark violates invariants")
-	ErrOutOfWindow      = errors.New("block height outside current window")
+	ErrInvalidInitialWatermarks = errors.New("invalid initial watermarks: HIB < LUB")
+	ErrInvalidWatermark         = errors.New("invalid watermark update: new watermark violates invariants")
+	ErrOutOfWindow              = errors.New("block height outside current window")
 )
 
 var _ types.SlidingWindowRepository = (*Repository)(nil)
@@ -18,27 +19,27 @@ var _ types.SlidingWindowRepository = (*Repository)(nil)
 type Repository struct {
 	mu        sync.Mutex
 	lub       uint64
-	lib       uint64
+	hib       uint64
 	processed map[uint64]struct{}
 }
 
-// NewInMemorySlidingWindowRepository creates a new in-memory repository with the given initial watermarks.
-func NewInMemorySlidingWindowRepository(initialLUB, initialLIB uint64) types.SlidingWindowRepository {
-	if initialLIB < initialLUB {
-		initialLIB = initialLUB
+// New creates a new in-memory repository with the given initial watermarks.
+func New(initialLUB, initialHIB uint64) (types.SlidingWindowRepository, error) {
+	if initialHIB < initialLUB {
+		return nil, ErrInvalidInitialWatermarks
 	}
 	return &Repository{
 		lub: initialLUB,
-		lib: initialLIB,
+		hib: initialHIB,
 		// Using a sparse set is memory-friendly for out-of-order processing in wide windows.
 		processed: make(map[uint64]struct{}, 1024),
-	}
+	}, nil
 }
 
 func (r *Repository) Window() (uint64, uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.lub, r.lib
+	return r.lub, r.hib
 }
 
 func (r *Repository) GetLUB() uint64 {
@@ -47,21 +48,21 @@ func (r *Repository) GetLUB() uint64 {
 	return r.lub
 }
 
-func (r *Repository) GetLIB() uint64 {
+func (r *Repository) GetHIB() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.lib
+	return r.hib
 }
 
-// SetLIB sets the Largest Ingested Block (chain tip watermark).
-// New LIB must be greater than or equal to the current LUB.
-func (r *Repository) SetLIB(newLIB uint64) error {
+// SetHIB sets the Highest Ingested Block (chain tip watermark).
+// New HIB must be greater than or equal to the current LUB.
+func (r *Repository) SetHIB(newHIB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if newLIB < r.lub {
+	if newHIB < r.lub {
 		return ErrInvalidWatermark
 	}
-	r.lib = newLIB
+	r.hib = newHIB
 	return nil
 }
 
@@ -72,7 +73,7 @@ func (r *Repository) ResetLUB(newLUB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Allow moving LUB backward or forward. When moving forward, ensure it does not exceed LIB.
-	if newLUB > r.lib {
+	if newLUB > r.hib {
 		return ErrInvalidWatermark
 	}
 	r.lub = newLUB
@@ -89,7 +90,7 @@ func (r *Repository) ResetLUB(newLUB uint64) error {
 func (r *Repository) HasWork() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.lub <= r.lib
+	return r.lub <= r.hib
 }
 
 func (r *Repository) MarkProcessed(h uint64) error {
@@ -99,7 +100,7 @@ func (r *Repository) MarkProcessed(h uint64) error {
 	if h < r.lub {
 		return nil
 	}
-	if h > r.lib {
+	if h > r.hib {
 		return ErrOutOfWindow
 	}
 	r.processed[h] = struct{}{}
@@ -107,7 +108,7 @@ func (r *Repository) MarkProcessed(h uint64) error {
 }
 
 // IsProcessed returns true if a block is recorded as processed.
-// Note: values below the current LUB are considered committed and implicitly processed.
+// Note: block heights below the current LUB are considered committed and implicitly processed.
 func (r *Repository) IsProcessed(h uint64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -118,13 +119,13 @@ func (r *Repository) IsProcessed(h uint64) bool {
 	return ok
 }
 
-// AdvanceLUB slides LUB forward while contiguous values starting from current LUB are processed.
+// AdvanceLUB slides LUB forward while contiguous block heights starting from current LUB are processed.
 // Returns the new LUB and whether it changed.
 func (r *Repository) AdvanceLUB() (uint64, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	original := r.lub
-	for r.lub <= r.lib {
+	for r.lub <= r.hib {
 		if _, ok := r.processed[r.lub]; ok {
 			delete(r.processed, r.lub)
 			r.lub++

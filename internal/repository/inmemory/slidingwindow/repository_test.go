@@ -9,30 +9,42 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 	tests := []struct {
 		name       string
 		initialLUB uint64
-		initialLIB uint64
+		initialHIB uint64
 		wantLUB    uint64
-		wantLIB    uint64
+		wantHIB    uint64
+		wantErr    bool
 	}{
 		{
-			name:       "LIB>=LUB keeps values",
-			initialLUB: 5, initialLIB: 10,
-			wantLUB: 5, wantLIB: 10,
+			name:       "HIB>=LUB keeps values",
+			initialLUB: 5, initialHIB: 10,
+			wantLUB: 5, wantHIB: 10,
+			wantErr: false,
 		},
 		{
-			name:       "LIB<LUB coerces LIB to LUB",
-			initialLUB: 5, initialLIB: 3,
-			wantLUB: 5, wantLIB: 5,
+			name:       "HIB<LUB coerces HIB to LUB",
+			initialLUB: 5, initialHIB: 3,
+			wantLUB: 5, wantHIB: 5,
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r := NewInMemorySlidingWindowRepository(tt.initialLUB, tt.initialLIB)
+			r, err := New(tt.initialLUB, tt.initialHIB)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("New(%d, %d) expected error", tt.initialLUB, tt.initialHIB)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+			}
 			if got := r.GetLUB(); got != tt.wantLUB {
 				t.Fatalf("GetLUB()=%d, want %d", got, tt.wantLUB)
 			}
-			if got := r.GetLIB(); got != tt.wantLIB {
-				t.Fatalf("GetLIB()=%d, want %d", got, tt.wantLIB)
+			if got := r.GetHIB(); got != tt.wantHIB {
+				t.Fatalf("GetHIB()=%d, want %d", got, tt.wantHIB)
 			}
 		})
 	}
@@ -40,54 +52,60 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 
 func TestWindowAndGetters(t *testing.T) {
 	t.Parallel()
-	r := NewInMemorySlidingWindowRepository(7, 12)
-	lub, lib := r.Window()
-	if lub != 7 || lib != 12 {
-		t.Fatalf("Window()=(%d,%d), want (7,12)", lub, lib)
+	r, err := New(7, 12)
+	if err != nil {
+		t.Fatalf("New(7, 12) unexpected error: %v", err)
+	}
+	lub, hib := r.Window()
+	if lub != 7 || hib != 12 {
+		t.Fatalf("Window()=(%d,%d), want (7,12)", lub, hib)
 	}
 	if r.GetLUB() != 7 {
 		t.Fatalf("GetLUB()=%d, want 7", r.GetLUB())
 	}
-	if r.GetLIB() != 12 {
-		t.Fatalf("GetLIB()=%d, want 12", r.GetLIB())
+	if r.GetHIB() != 12 {
+		t.Fatalf("GetHIB()=%d, want 12", r.GetHIB())
 	}
 }
 
-func TestSetLIB(t *testing.T) {
+func TestSetHIB(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
 		initialLUB uint64
-		initialLIB uint64
-		newLIB     uint64
+		initialHIB uint64
+		newHIB     uint64
 		wantErr    bool
-		wantLIB    uint64
+		wantHIB    uint64
 	}{
 		{
 			name:       "valid increase",
-			initialLUB: 5, initialLIB: 5, newLIB: 8,
-			wantErr: false, wantLIB: 8,
+			initialLUB: 5, initialHIB: 5, newHIB: 8,
+			wantErr: false, wantHIB: 8,
 		},
 		{
 			name:       "invalid below LUB",
-			initialLUB: 5, initialLIB: 7, newLIB: 3,
-			wantErr: true, wantLIB: 7,
+			initialLUB: 5, initialHIB: 7, newHIB: 3,
+			wantErr: true, wantHIB: 7,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r := NewInMemorySlidingWindowRepository(tt.initialLUB, tt.initialLIB)
-			err := r.SetLIB(tt.newLIB)
+			r, err := New(tt.initialLUB, tt.initialHIB)
+			if err != nil {
+				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+			}
+			err = r.SetHIB(tt.newHIB)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("SetLIB(%d) expected error", tt.newLIB)
+					t.Fatalf("SetHIB(%d) expected error", tt.newHIB)
 				}
 			} else if err != nil {
-				t.Fatalf("SetLIB(%d) unexpected error: %v", tt.newLIB, err)
+				t.Fatalf("SetHIB(%d) unexpected error: %v", tt.newHIB, err)
 			}
-			if got := r.GetLIB(); got != tt.wantLIB {
-				t.Fatalf("GetLIB()=%d, want %d", got, tt.wantLIB)
+			if got := r.GetHIB(); got != tt.wantHIB {
+				t.Fatalf("GetHIB()=%d, want %d", got, tt.wantHIB)
 			}
 		})
 	}
@@ -98,40 +116,43 @@ func TestResetLUB(t *testing.T) {
 	tests := []struct {
 		name       string
 		initialLUB uint64
-		initialLIB uint64
+		initialHIB uint64
 		newLUB     uint64
 		mark       []uint64
 		wantErr    bool
 		wantLUB    uint64
 	}{
 		{
-			name:       "move forward within LIB",
-			initialLUB: 5, initialLIB: 10, newLUB: 7,
+			name:       "move forward within HIB",
+			initialLUB: 5, initialHIB: 10, newLUB: 7,
 			mark:    []uint64{5, 6, 7, 8},
 			wantErr: false, wantLUB: 7,
 		},
 		{
 			name:       "move backward allowed",
-			initialLUB: 5, initialLIB: 10, newLUB: 3,
+			initialLUB: 5, initialHIB: 10, newLUB: 3,
 			mark:    []uint64{5, 6},
 			wantErr: false, wantLUB: 3,
 		},
 		{
-			name:       "invalid above LIB",
-			initialLUB: 5, initialLIB: 10, newLUB: 11,
+			name:       "invalid above HIB",
+			initialLUB: 5, initialHIB: 10, newLUB: 11,
 			wantErr: true, wantLUB: 5,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r := NewInMemorySlidingWindowRepository(tt.initialLUB, tt.initialLIB)
+			r, err := New(tt.initialLUB, tt.initialHIB)
+			if err != nil {
+				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+			}
 			for _, h := range tt.mark {
 				if err := r.MarkProcessed(h); err != nil {
 					t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
 				}
 			}
-			err := r.ResetLUB(tt.newLUB)
+			err = r.ResetLUB(tt.newLUB)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("ResetLUB(%d) expected error", tt.newLUB)
@@ -162,31 +183,34 @@ func TestMarkProcessed(t *testing.T) {
 	tests := []struct {
 		name       string
 		initialLUB uint64
-		initialLIB uint64
+		initialHIB uint64
 		h          uint64
 		wantErr    bool
 	}{
 		{
 			name:       "below LUB no-op",
-			initialLUB: 5, initialLIB: 10, h: 4,
+			initialLUB: 5, initialHIB: 10, h: 4,
 			wantErr: false,
 		},
 		{
 			name:       "within window ok",
-			initialLUB: 5, initialLIB: 10, h: 7,
+			initialLUB: 5, initialHIB: 10, h: 7,
 			wantErr: false,
 		},
 		{
-			name:       "above LIB error",
-			initialLUB: 5, initialLIB: 10, h: 11,
+			name:       "above HIB error",
+			initialLUB: 5, initialHIB: 10, h: 11,
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r := NewInMemorySlidingWindowRepository(tt.initialLUB, tt.initialLIB)
-			err := r.MarkProcessed(tt.h)
+			r, err := New(tt.initialLUB, tt.initialHIB)
+			if err != nil {
+				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+			}
+			err = r.MarkProcessed(tt.h)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("MarkProcessed(%d) expected error", tt.h)
@@ -196,7 +220,7 @@ func TestMarkProcessed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("MarkProcessed(%d) unexpected error: %v", tt.h, err)
 			}
-			if tt.h >= tt.initialLUB && tt.h <= tt.initialLIB {
+			if tt.h >= tt.initialLUB && tt.h <= tt.initialHIB {
 				if !r.IsProcessed(tt.h) {
 					t.Fatalf("IsProcessed(%d)=false, want true after mark", tt.h)
 				}
@@ -215,19 +239,19 @@ func TestAdvanceLUB(t *testing.T) {
 	tests := []struct {
 		name       string
 		initialLUB uint64
-		initialLIB uint64
+		initialHIB uint64
 		steps      []step
 	}{
 		{
 			name:       "no contiguous processed at LUB",
-			initialLUB: 5, initialLIB: 10,
+			initialLUB: 5, initialHIB: 10,
 			steps: []step{
 				{marks: nil, wantLUB: 5, changed: false},
 			},
 		},
 		{
 			name:       "advance through contiguous processed",
-			initialLUB: 5, initialLIB: 10,
+			initialLUB: 5, initialHIB: 10,
 			steps: []step{
 				{marks: []uint64{5, 6, 7}, wantLUB: 8, changed: true},
 				{marks: []uint64{8}, wantLUB: 9, changed: true},
@@ -236,15 +260,15 @@ func TestAdvanceLUB(t *testing.T) {
 		},
 		{
 			name:       "gap stops advancement",
-			initialLUB: 5, initialLIB: 10,
+			initialLUB: 5, initialHIB: 10,
 			steps: []step{
 				{marks: []uint64{5, 7}, wantLUB: 6, changed: true},
 				{marks: []uint64{6}, wantLUB: 8, changed: true},
 			},
 		},
 		{
-			name:       "advance beyond LIB yields no work",
-			initialLUB: 5, initialLIB: 5,
+			name:       "advance beyond HIB yields no work",
+			initialLUB: 5, initialHIB: 5,
 			steps: []step{
 				{marks: []uint64{5}, wantLUB: 6, changed: true},
 			},
@@ -253,7 +277,10 @@ func TestAdvanceLUB(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r := NewInMemorySlidingWindowRepository(tt.initialLUB, tt.initialLIB)
+			r, err := New(tt.initialLUB, tt.initialHIB)
+			if err != nil {
+				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+			}
 			for _, s := range tt.steps {
 				for _, h := range s.marks {
 					if err := r.MarkProcessed(h); err != nil {
@@ -271,9 +298,12 @@ func TestAdvanceLUB(t *testing.T) {
 
 func TestHasWork(t *testing.T) {
 	t.Parallel()
-	r := NewInMemorySlidingWindowRepository(5, 5)
+	r, err := New(5, 5)
+	if err != nil {
+		t.Fatalf("New(5, 5) unexpected error: %v", err)
+	}
 	if !r.HasWork() {
-		t.Fatalf("HasWork()=false, want true when LUB==LIB")
+		t.Fatalf("HasWork()=false, want true when LUB==HIB")
 	}
 	if err := r.MarkProcessed(5); err != nil {
 		t.Fatalf("MarkProcessed unexpected error: %v", err)
@@ -282,6 +312,6 @@ func TestHasWork(t *testing.T) {
 		t.Fatalf("AdvanceLUB expected to change when marking LUB")
 	}
 	if r.HasWork() {
-		t.Fatalf("HasWork()=true, want false when LUB>LIB")
+		t.Fatalf("HasWork()=true, want false when LUB>HIB")
 	}
 }
