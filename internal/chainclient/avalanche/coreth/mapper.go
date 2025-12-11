@@ -6,10 +6,10 @@ import (
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 )
 
-func mapCorethBlockToInternalBlock(
+func mapToInternalBlock(
 	block *libevmtypes.Block,
 ) *types.EVMBlock {
-	txs := mapCorethTxsToInternal(block.Transactions())
+	txs := mapToInternalTxs(block.Transactions())
 
 	extra := customtypes.GetHeaderExtra(block.Header())
 	blockGasCost := extra.BlockGasCost
@@ -37,7 +37,7 @@ func mapCorethBlockToInternalBlock(
 	}
 }
 
-func mapCorethTxsToInternal(
+func mapToInternalTxs(
 	txs []*libevmtypes.Transaction,
 ) []*types.EVMTransaction {
 	evmTxs := make([]*types.EVMTransaction, 0, len(txs))

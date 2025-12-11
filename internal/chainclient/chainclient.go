@@ -7,5 +7,5 @@ import (
 )
 
 type ChainClient interface {
-	GetBlockByNumber(ctx context.Context, height uint64) (types.Block, error)
+	BlockByNumber(ctx context.Context, height uint64) (types.Block, error)
 }

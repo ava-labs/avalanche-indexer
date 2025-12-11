@@ -20,7 +20,7 @@ type Client struct {
 
 var _ chainclient.ChainClient = (*Client)(nil)
 
-func NewClient(ctx context.Context, url string) (*Client, error) {
+func New(ctx context.Context, url string) (*Client, error) {
 	customtypes.Register()
 
 	c, err := rpc.DialContext(ctx, url)
@@ -33,13 +33,13 @@ func NewClient(ctx context.Context, url string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) GetBlockByNumber(ctx context.Context, number uint64) (types.Block, error) {
+func (c *Client) BlockByNumber(ctx context.Context, number uint64) (types.Block, error) {
 	n := new(big.Int).SetUint64(number)
 	block, err := c.eth.BlockByNumber(ctx, n)
 	if err != nil {
 		return nil, fmt.Errorf("get block by number: %w", err)
 	}
-	return mapCorethBlockToInternalBlock(block), nil
+	return mapToInternalBlock(block), nil
 }
 
 // Close closes the underlying RPC client.
