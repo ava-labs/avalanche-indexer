@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/ava-labs/avalanche-indexer/internal/metrics"
 	"github.com/ava-labs/avalanche-indexer/internal/types"
 )
 
@@ -21,19 +22,42 @@ type Repository struct {
 	lub       uint64
 	hib       uint64
 	processed map[uint64]struct{}
+	metrics   *metrics.Metrics // nil if metrics disabled
+}
+
+// Option configures the Repository.
+type Option func(*Repository)
+
+// WithMetrics enables metrics collection for the repository.
+func WithMetrics(m *metrics.Metrics) Option {
+	return func(r *Repository) {
+		r.metrics = m
+	}
 }
 
 // New creates a new in-memory repository with the given initial watermarks.
-func New(initialLUB, initialHIB uint64) (types.SlidingWindowRepository, error) {
+func New(initialLUB, initialHIB uint64, opts ...Option) (types.SlidingWindowRepository, error) {
 	if initialHIB < initialLUB {
 		return nil, ErrInvalidInitialWatermarks
 	}
-	return &Repository{
+
+	r := &Repository{
 		lub: initialLUB,
 		hib: initialHIB,
 		// Using a sparse set is memory-friendly for out-of-order processing in wide windows.
 		processed: make(map[uint64]struct{}, 1024),
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(r)
+	}
+
+	// Initialize metrics with current state
+	if r.metrics != nil {
+		r.metrics.UpdateWindowMetrics(r.lub, r.hib, len(r.processed))
+	}
+
+	return r, nil
 }
 
 func (r *Repository) Window() (uint64, uint64) {
@@ -60,9 +84,16 @@ func (r *Repository) SetHIB(newHIB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if newHIB < r.lub {
+		if r.metrics != nil {
+			r.metrics.Errors.WithLabelValues(metrics.ErrTypeInvalidWatermark).Inc()
+		}
 		return ErrInvalidWatermark
 	}
 	r.hib = newHIB
+
+	if r.metrics != nil {
+		r.metrics.UpdateWindowMetrics(r.lub, r.hib, len(r.processed))
+	}
 	return nil
 }
 
@@ -101,9 +132,17 @@ func (r *Repository) MarkProcessed(h uint64) error {
 		return nil
 	}
 	if h > r.hib {
+		if r.metrics != nil {
+			r.metrics.Errors.WithLabelValues(metrics.ErrTypeOutOfWindow).Inc()
+		}
 		return ErrOutOfWindow
 	}
 	r.processed[h] = struct{}{}
+
+	if r.metrics != nil {
+		r.metrics.BlocksMarked.Inc()
+		r.metrics.ProcessedSetSize.Set(float64(len(r.processed)))
+	}
 	return nil
 }
 
@@ -125,13 +164,24 @@ func (r *Repository) AdvanceLUB() (uint64, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	original := r.lub
+	blocksCommitted := 0
+
 	for r.lub <= r.hib {
 		if _, ok := r.processed[r.lub]; ok {
 			delete(r.processed, r.lub)
 			r.lub++
+			blocksCommitted++
 			continue
 		}
 		break
 	}
-	return r.lub, r.lub != original
+
+	changed := r.lub != original
+	if changed && r.metrics != nil {
+		r.metrics.LUBAdvances.Inc()
+		r.metrics.BlocksProcessed.Add(float64(blocksCommitted))
+		r.metrics.UpdateWindowMetrics(r.lub, r.hib, len(r.processed))
+	}
+
+	return r.lub, changed
 }
