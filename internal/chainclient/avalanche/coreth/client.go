@@ -14,44 +14,34 @@ import (
 	"github.com/ava-labs/coreth/rpc"
 )
 
+var _ chainclient.ChainClient = (*Client)(nil)
+
+type Config struct {
+	URL     string
+	Metrics *metrics.Metrics // optional
+}
+
 // Client wraps the underlying RPC and eth clients.
 type Client struct {
 	rpc     *rpc.Client
 	eth     *customethclient.Client
-	metrics *metrics.Metrics // nil if metrics disabled
-}
-
-var _ chainclient.ChainClient = (*Client)(nil)
-
-// Option configures the Client.
-type Option func(*Client)
-
-// WithMetrics enables metrics collection for the client.
-func WithMetrics(m *metrics.Metrics) Option {
-	return func(c *Client) {
-		c.metrics = m
-	}
+	metrics *metrics.Metrics
 }
 
 // New creates a new Coreth client.
-func New(ctx context.Context, url string, opts ...Option) (*Client, error) {
+func New(ctx context.Context, cfg Config) (*Client, error) {
 	customtypes.Register()
 
-	c, err := rpc.DialContext(ctx, url)
+	c, err := rpc.DialContext(ctx, cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("dial coreth rpc: %w", err)
 	}
 
-	client := &Client{
-		rpc: c,
-		eth: customethclient.New(c),
-	}
-
-	for _, opt := range opts {
-		opt(client)
-	}
-
-	return client, nil
+	return &Client{
+		rpc:     c,
+		eth:     customethclient.New(c),
+		metrics: cfg.Metrics,
+	}, nil
 }
 
 func (c *Client) BlockByNumber(ctx context.Context, number uint64) (types.Block, error) {
@@ -59,14 +49,13 @@ func (c *Client) BlockByNumber(ctx context.Context, number uint64) (types.Block,
 	start := time.Now()
 
 	if c.metrics != nil {
-		c.metrics.RPCInFlight.Inc()
-		defer c.metrics.RPCInFlight.Dec()
+		c.metrics.IncRPCInFlight()
+		defer c.metrics.DecRPCInFlight()
 	}
 
 	n := new(big.Int).SetUint64(number)
 	block, err := c.eth.BlockByNumber(ctx, n)
 
-	// Record metrics if enabled
 	if c.metrics != nil {
 		c.metrics.RecordRPCCall(method, err, time.Since(start).Seconds())
 	}

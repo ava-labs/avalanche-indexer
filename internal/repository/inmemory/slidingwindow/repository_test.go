@@ -30,15 +30,15 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			r, err := New(Config{InitialLUB: tt.initialLUB, InitialHIB: tt.initialHIB})
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("New(%d, %d) expected error", tt.initialLUB, tt.initialHIB)
+					t.Fatalf("New() expected error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("New() unexpected error: %v", err)
 			}
 			if got := r.GetLUB(); got != tt.wantLUB {
 				t.Fatalf("GetLUB()=%d, want %d", got, tt.wantLUB)
@@ -52,9 +52,9 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 
 func TestWindowAndGetters(t *testing.T) {
 	t.Parallel()
-	r, err := New(7, 12)
+	r, err := New(Config{InitialLUB: 7, InitialHIB: 12})
 	if err != nil {
-		t.Fatalf("New(7, 12) unexpected error: %v", err)
+		t.Fatalf("New() unexpected error: %v", err)
 	}
 	lub, hib := r.Window()
 	if lub != 7 || hib != 12 {
@@ -92,9 +92,9 @@ func TestSetHIB(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			r, err := New(Config{InitialLUB: tt.initialLUB, InitialHIB: tt.initialHIB})
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("New() unexpected error: %v", err)
 			}
 			err = r.SetHIB(tt.newHIB)
 			if tt.wantErr {
@@ -143,9 +143,9 @@ func TestResetLUB(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			r, err := New(Config{InitialLUB: tt.initialLUB, InitialHIB: tt.initialHIB})
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("New() unexpected error: %v", err)
 			}
 			for _, h := range tt.mark {
 				if err := r.MarkProcessed(h); err != nil {
@@ -168,7 +168,6 @@ func TestResetLUB(t *testing.T) {
 			if got := r.GetLUB(); got != tt.wantLUB {
 				t.Fatalf("GetLUB()=%d, want %d", got, tt.wantLUB)
 			}
-			// Spot-check semantics after moving forward: values below LUB are implicitly processed.
 			if tt.newLUB > tt.initialLUB && tt.newLUB > 0 {
 				if !r.IsProcessed(tt.newLUB - 1) {
 					t.Fatalf("IsProcessed(%d) expected true for < LUB", tt.newLUB-1)
@@ -206,9 +205,9 @@ func TestMarkProcessed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			r, err := New(Config{InitialLUB: tt.initialLUB, InitialHIB: tt.initialHIB})
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("New() unexpected error: %v", err)
 			}
 			err = r.MarkProcessed(tt.h)
 			if tt.wantErr {
@@ -277,9 +276,9 @@ func TestAdvanceLUB(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			r, err := New(Config{InitialLUB: tt.initialLUB, InitialHIB: tt.initialHIB})
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("New() unexpected error: %v", err)
 			}
 			for _, s := range tt.steps {
 				for _, h := range s.marks {
@@ -298,9 +297,9 @@ func TestAdvanceLUB(t *testing.T) {
 
 func TestHasWork(t *testing.T) {
 	t.Parallel()
-	r, err := New(5, 5)
+	r, err := New(Config{InitialLUB: 5, InitialHIB: 5})
 	if err != nil {
-		t.Fatalf("New(5, 5) unexpected error: %v", err)
+		t.Fatalf("New() unexpected error: %v", err)
 	}
 	if !r.HasWork() {
 		t.Fatalf("HasWork()=false, want true when LUB==HIB")

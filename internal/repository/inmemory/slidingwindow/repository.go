@@ -16,43 +16,34 @@ var (
 
 var _ types.SlidingWindowRepository = (*Repository)(nil)
 
+type Config struct {
+	InitialLUB uint64
+	InitialHIB uint64
+	Metrics    *metrics.Metrics // optional
+}
+
 // Repository is a thread-safe in-memory implementation of types.SlidingWindowRepository.
 type Repository struct {
 	mu        sync.Mutex
 	lub       uint64
 	hib       uint64
 	processed map[uint64]struct{}
-	metrics   *metrics.Metrics // nil if metrics disabled
+	metrics   *metrics.Metrics
 }
 
-// Option configures the Repository.
-type Option func(*Repository)
-
-// WithMetrics enables metrics collection for the repository.
-func WithMetrics(m *metrics.Metrics) Option {
-	return func(r *Repository) {
-		r.metrics = m
-	}
-}
-
-// New creates a new in-memory repository with the given initial watermarks.
-func New(initialLUB, initialHIB uint64, opts ...Option) (types.SlidingWindowRepository, error) {
-	if initialHIB < initialLUB {
+// New creates a new in-memory repository with the given config.
+func New(cfg Config) (*Repository, error) {
+	if cfg.InitialHIB < cfg.InitialLUB {
 		return nil, ErrInvalidInitialWatermarks
 	}
 
 	r := &Repository{
-		lub: initialLUB,
-		hib: initialHIB,
-		// Using a sparse set is memory-friendly for out-of-order processing in wide windows.
+		lub:       cfg.InitialLUB,
+		hib:       cfg.InitialHIB,
 		processed: make(map[uint64]struct{}, 1024),
+		metrics:   cfg.Metrics,
 	}
 
-	for _, opt := range opts {
-		opt(r)
-	}
-
-	// Initialize metrics with current state
 	if r.metrics != nil {
 		r.metrics.UpdateWindowMetrics(r.lub, r.hib, len(r.processed))
 	}
@@ -85,7 +76,7 @@ func (r *Repository) SetHIB(newHIB uint64) error {
 	defer r.mu.Unlock()
 	if newHIB < r.lub {
 		if r.metrics != nil {
-			r.metrics.Errors.WithLabelValues(metrics.ErrTypeInvalidWatermark).Inc()
+			r.metrics.IncError(metrics.ErrTypeInvalidWatermark)
 		}
 		return ErrInvalidWatermark
 	}
@@ -133,15 +124,14 @@ func (r *Repository) MarkProcessed(h uint64) error {
 	}
 	if h > r.hib {
 		if r.metrics != nil {
-			r.metrics.Errors.WithLabelValues(metrics.ErrTypeOutOfWindow).Inc()
+			r.metrics.IncError(metrics.ErrTypeOutOfWindow)
 		}
 		return ErrOutOfWindow
 	}
 	r.processed[h] = struct{}{}
 
 	if r.metrics != nil {
-		r.metrics.BlocksMarked.Inc()
-		r.metrics.ProcessedSetSize.Set(float64(len(r.processed)))
+		r.metrics.MarkBlockProcessed(len(r.processed))
 	}
 	return nil
 }
@@ -178,9 +168,7 @@ func (r *Repository) AdvanceLUB() (uint64, bool) {
 
 	changed := r.lub != original
 	if changed && r.metrics != nil {
-		r.metrics.LUBAdvances.Inc()
-		r.metrics.BlocksProcessed.Add(float64(blocksCommitted))
-		r.metrics.UpdateWindowMetrics(r.lub, r.hib, len(r.processed))
+		r.metrics.CommitBlocks(blocksCommitted, r.lub, r.hib, len(r.processed))
 	}
 
 	return r.lub, changed
