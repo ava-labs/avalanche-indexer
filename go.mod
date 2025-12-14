@@ -5,6 +5,8 @@ go 1.24.9
 require (
 	github.com/ava-labs/coreth v0.16.0
 	github.com/ava-labs/libevm v1.13.15-0.20251016142715-1bccf4f2ddb2
+	github.com/stretchr/testify v1.11.1
+	golang.org/x/sync v0.17.0
 )
 
 require (
@@ -63,7 +65,7 @@ require (
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/supranational/blst v0.3.14 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220614013038-64ee5596c38a // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
@@ -85,7 +87,6 @@ require (
 	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e // indirect
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/net v0.46.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
