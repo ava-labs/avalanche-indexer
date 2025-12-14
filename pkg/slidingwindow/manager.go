@@ -191,6 +191,10 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 
 	err := m.worker.Process(ctx, h)
 	if err != nil {
+		// Treat context cancellation as a normal shutdown: do not warn or count as failure.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			return
+		}
 		m.log.Warnw("failed processing block height", "height", h, "error", err)
 		m.handleFailure(h)
 		return
@@ -199,6 +203,10 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 	// Mark processed and attempt to advance lowest
 	err = m.state.MarkProcessed(h)
 	if err != nil {
+		// If shutting down, do not warn or count as failure.
+		if ctx.Err() != nil {
+			return
+		}
 		m.log.Warnw("failed to mark processed", "height", h, "error", err)
 		m.handleFailure(h)
 		return
