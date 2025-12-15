@@ -1,4 +1,4 @@
-package types
+package slidingwindow
 
 import (
 	"math/big"
