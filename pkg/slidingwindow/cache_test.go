@@ -33,12 +33,12 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("New(%d, %d) expected error", tt.initialLUB, tt.initialHIB)
+					t.Fatalf("NewCache(%d, %d) expected error", tt.initialLUB, tt.initialHIB)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("NewCache(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
 			if got := c.GetLUB(); got != tt.wantLUB {
 				t.Fatalf("GetLUB()=%d, want %d", got, tt.wantLUB)
@@ -54,7 +54,7 @@ func TestWindowAndGetters(t *testing.T) {
 	t.Parallel()
 	c, err := NewCache(7, 12)
 	if err != nil {
-		t.Fatalf("New(7, 12) unexpected error: %v", err)
+		t.Fatalf("NewCache(7, 12) unexpected error: %v", err)
 	}
 	lub, hib := c.Window()
 	if lub != 7 || hib != 12 {
@@ -94,7 +94,7 @@ func TestSetHIB(t *testing.T) {
 			t.Parallel()
 			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("NewCache(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
 			err = c.SetHIB(tt.newHIB)
 			if tt.wantErr {
@@ -145,7 +145,7 @@ func TestResetLUB(t *testing.T) {
 			t.Parallel()
 			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("NewCache(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
 			for _, h := range tt.mark {
 				if err := c.MarkProcessed(h); err != nil {
@@ -208,7 +208,7 @@ func TestMarkProcessed(t *testing.T) {
 			t.Parallel()
 			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("NewCache(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
 			err = c.MarkProcessed(tt.h)
 			if tt.wantErr {
@@ -279,7 +279,7 @@ func TestAdvanceLUB(t *testing.T) {
 			t.Parallel()
 			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
-				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
+				t.Fatalf("NewCache(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
 			for _, s := range tt.steps {
 				for _, h := range s.marks {
@@ -300,7 +300,7 @@ func TestHasWork(t *testing.T) {
 	t.Parallel()
 	c, err := NewCache(5, 5)
 	if err != nil {
-		t.Fatalf("New(5, 5) unexpected error: %v", err)
+		t.Fatalf("NewCache(5, 5) unexpected error: %v", err)
 	}
 	if !c.HasWork() {
 		t.Fatalf("HasWork()=false, want true when LUB==HIB")
