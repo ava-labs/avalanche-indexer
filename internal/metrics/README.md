@@ -72,27 +72,6 @@ histogram_quantile(0.99, rate(indexer_block_processing_duration_seconds_bucket[5
 histogram_quantile(0.95, sum by (method, le) (rate(indexer_rpc_duration_seconds_bucket[5m])))
 ```
 
-## Architecture
-
-```
-┌─────────────────┐     :9090/metrics      ┌────────────────┐
-│     Indexer     │ ─────────────────────► │   Prometheus   │
-└─────────────────┘      (scrapes)         │   (localhost:  │
-                                           │     9091)      │
-                                           └───────┬────────┘
-                                                   │
-                                                   ▼
-                                           ┌────────────────┐
-                                           │    Grafana     │
-                                           │  (localhost:   │
-                                           │     3000)      │
-                                           └────────────────┘
-```
-
-The indexer exposes metrics on port 9090. The Docker Compose stack runs:
-- **Prometheus** on port 9091 (scrapes indexer every 5s)
-- **Grafana** on port 3000 (connects to Prometheus as data source)
-
 ## Adding Grafana Dashboards
 
 1. Open Grafana at http://localhost:3000
