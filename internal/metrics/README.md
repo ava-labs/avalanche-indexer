@@ -76,8 +76,8 @@ histogram_quantile(0.95, sum by (method, le) (rate(indexer_rpc_duration_seconds_
 
 ```
 ┌─────────────────┐     :9090/metrics      ┌────────────────┐
-│     Indexer     │ ◄─────────────────────►│   Prometheus   │
-└─────────────────┘                        │   (localhost:  │
+│     Indexer     │ ─────────────────────► │   Prometheus   │
+└─────────────────┘      (scrapes)         │   (localhost:  │
                                            │     9091)      │
                                            └───────┬────────┘
                                                    │

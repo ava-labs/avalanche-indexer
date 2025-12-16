@@ -30,6 +30,8 @@ type Metrics struct {
 	blockProcessingDuration prometheus.Histogram
 }
 
+// New creates a new Metrics instance and registers all metrics with the provided registerer.
+// Returns an error if any metric registration fails.
 func New(reg prometheus.Registerer) (*Metrics, error) {
 	m := &Metrics{
 		lub: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -142,13 +144,10 @@ func (m *Metrics) MarkBlockProcessed(processedSetSize int) {
 func (m *Metrics) CommitBlocks(count int, lub, hib uint64, processedSetSize int) {
 	m.lubAdvances.Inc()
 	m.blocksProcessed.Add(float64(count))
-	m.lub.Set(float64(lub))
-	m.hib.Set(float64(hib))
-	m.windowSize.Set(float64(hib - lub))
-	m.processedSetSize.Set(float64(processedSetSize))
+	m.UpdateWindowMetrics(lub, hib, processedSetSize)
 }
 
-// UpdateWindowMetrics updates sliding window state (used for initialization).
+// UpdateWindowMetrics updates sliding window state gauges.
 func (m *Metrics) UpdateWindowMetrics(lub, hib uint64, processedSetSize int) {
 	m.lub.Set(float64(lub))
 	m.hib.Set(float64(hib))

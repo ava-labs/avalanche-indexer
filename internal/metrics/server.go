@@ -46,6 +46,8 @@ func (s *Server) Start() <-chan error {
 	return errCh
 }
 
+// Shutdown gracefully stops the metrics server, waiting for active connections
+// to complete or until the context is cancelled.
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }

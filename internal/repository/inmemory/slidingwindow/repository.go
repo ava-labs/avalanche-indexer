@@ -94,8 +94,11 @@ func (r *Repository) SetHIB(newHIB uint64) error {
 func (r *Repository) ResetLUB(newLUB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Allow moving LUB backward or forward. When moving forward, ensure it does not exceed LIB.
+	// Allow moving LUB backward or forward. When moving forward, ensure it does not exceed HIB.
 	if newLUB > r.hib {
+		if r.metrics != nil {
+			r.metrics.IncError(metrics.ErrTypeInvalidWatermark)
+		}
 		return ErrInvalidWatermark
 	}
 	r.lub = newLUB
@@ -105,6 +108,10 @@ func (r *Repository) ResetLUB(newLUB uint64) error {
 		if h < r.lub {
 			delete(r.processed, h)
 		}
+	}
+
+	if r.metrics != nil {
+		r.metrics.UpdateWindowMetrics(r.lub, r.hib, len(r.processed))
 	}
 	return nil
 }
