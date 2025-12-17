@@ -30,7 +30,7 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("New(%d, %d) expected error", tt.initialLUB, tt.initialHIB)
@@ -40,10 +40,10 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
-			if got := r.GetLUB(); got != tt.wantLUB {
+			if got := c.GetLUB(); got != tt.wantLUB {
 				t.Fatalf("GetLUB()=%d, want %d", got, tt.wantLUB)
 			}
-			if got := r.GetHIB(); got != tt.wantHIB {
+			if got := c.GetHIB(); got != tt.wantHIB {
 				t.Fatalf("GetHIB()=%d, want %d", got, tt.wantHIB)
 			}
 		})
@@ -52,19 +52,19 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 
 func TestWindowAndGetters(t *testing.T) {
 	t.Parallel()
-	r, err := New(7, 12)
+	c, err := NewCache(7, 12)
 	if err != nil {
 		t.Fatalf("New(7, 12) unexpected error: %v", err)
 	}
-	lub, hib := r.Window()
+	lub, hib := c.Window()
 	if lub != 7 || hib != 12 {
 		t.Fatalf("Window()=(%d,%d), want (7,12)", lub, hib)
 	}
-	if r.GetLUB() != 7 {
-		t.Fatalf("GetLUB()=%d, want 7", r.GetLUB())
+	if c.GetLUB() != 7 {
+		t.Fatalf("GetLUB()=%d, want 7", c.GetLUB())
 	}
-	if r.GetHIB() != 12 {
-		t.Fatalf("GetHIB()=%d, want 12", r.GetHIB())
+	if c.GetHIB() != 12 {
+		t.Fatalf("GetHIB()=%d, want 12", c.GetHIB())
 	}
 }
 
@@ -92,11 +92,11 @@ func TestSetHIB(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
 				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
-			err = r.SetHIB(tt.newHIB)
+			err = c.SetHIB(tt.newHIB)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("SetHIB(%d) expected error", tt.newHIB)
@@ -104,7 +104,7 @@ func TestSetHIB(t *testing.T) {
 			} else if err != nil {
 				t.Fatalf("SetHIB(%d) unexpected error: %v", tt.newHIB, err)
 			}
-			if got := r.GetHIB(); got != tt.wantHIB {
+			if got := c.GetHIB(); got != tt.wantHIB {
 				t.Fatalf("GetHIB()=%d, want %d", got, tt.wantHIB)
 			}
 		})
@@ -143,34 +143,34 @@ func TestResetLUB(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
 				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
 			for _, h := range tt.mark {
-				if err := r.MarkProcessed(h); err != nil {
+				if err := c.MarkProcessed(h); err != nil {
 					t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
 				}
 			}
-			err = r.ResetLUB(tt.newLUB)
+			err = c.ResetLUB(tt.newLUB)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("ResetLUB(%d) expected error", tt.newLUB)
 				}
-				if r.GetLUB() != tt.initialLUB {
-					t.Fatalf("LUB changed on error: got %d, want %d", r.GetLUB(), tt.initialLUB)
+				if c.GetLUB() != tt.initialLUB {
+					t.Fatalf("LUB changed on error: got %d, want %d", c.GetLUB(), tt.initialLUB)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("ResetLUB(%d) unexpected error: %v", tt.newLUB, err)
 			}
-			if got := r.GetLUB(); got != tt.wantLUB {
+			if got := c.GetLUB(); got != tt.wantLUB {
 				t.Fatalf("GetLUB()=%d, want %d", got, tt.wantLUB)
 			}
 			// Spot-check semantics after moving forward: values below LUB are implicitly processed.
 			if tt.newLUB > tt.initialLUB && tt.newLUB > 0 {
-				if !r.IsProcessed(tt.newLUB - 1) {
+				if !c.IsProcessed(tt.newLUB - 1) {
 					t.Fatalf("IsProcessed(%d) expected true for < LUB", tt.newLUB-1)
 				}
 			}
@@ -206,11 +206,11 @@ func TestMarkProcessed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
 				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
-			err = r.MarkProcessed(tt.h)
+			err = c.MarkProcessed(tt.h)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("MarkProcessed(%d) expected error", tt.h)
@@ -221,7 +221,7 @@ func TestMarkProcessed(t *testing.T) {
 				t.Fatalf("MarkProcessed(%d) unexpected error: %v", tt.h, err)
 			}
 			if tt.h >= tt.initialLUB && tt.h <= tt.initialHIB {
-				if !r.IsProcessed(tt.h) {
+				if !c.IsProcessed(tt.h) {
 					t.Fatalf("IsProcessed(%d)=false, want true after mark", tt.h)
 				}
 			}
@@ -277,17 +277,17 @@ func TestAdvanceLUB(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := New(tt.initialLUB, tt.initialHIB)
+			c, err := NewCache(tt.initialLUB, tt.initialHIB)
 			if err != nil {
 				t.Fatalf("New(%d, %d) unexpected error: %v", tt.initialLUB, tt.initialHIB, err)
 			}
 			for _, s := range tt.steps {
 				for _, h := range s.marks {
-					if err := r.MarkProcessed(h); err != nil {
+					if err := c.MarkProcessed(h); err != nil {
 						t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
 					}
 				}
-				gotLUB, changed := r.AdvanceLUB()
+				gotLUB, changed := c.AdvanceLUB()
 				if gotLUB != s.wantLUB || changed != s.changed {
 					t.Fatalf("AdvanceLUB()=(%d,%t), want (%d,%t)", gotLUB, changed, s.wantLUB, s.changed)
 				}
@@ -298,20 +298,20 @@ func TestAdvanceLUB(t *testing.T) {
 
 func TestHasWork(t *testing.T) {
 	t.Parallel()
-	r, err := New(5, 5)
+	c, err := NewCache(5, 5)
 	if err != nil {
 		t.Fatalf("New(5, 5) unexpected error: %v", err)
 	}
-	if !r.HasWork() {
+	if !c.HasWork() {
 		t.Fatalf("HasWork()=false, want true when LUB==HIB")
 	}
-	if err := r.MarkProcessed(5); err != nil {
+	if err := c.MarkProcessed(5); err != nil {
 		t.Fatalf("MarkProcessed unexpected error: %v", err)
 	}
-	if _, changed := r.AdvanceLUB(); !changed {
+	if _, changed := c.AdvanceLUB(); !changed {
 		t.Fatalf("AdvanceLUB expected to change when marking LUB")
 	}
-	if r.HasWork() {
+	if c.HasWork() {
 		t.Fatalf("HasWork()=true, want false when LUB>HIB")
 	}
 }

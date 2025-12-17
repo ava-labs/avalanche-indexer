@@ -3,32 +3,33 @@ package slidingwindow
 import (
 	"errors"
 	"sync"
-
-	"github.com/ava-labs/avalanche-indexer/internal/types"
 )
 
 var (
 	ErrInvalidInitialWatermarks = errors.New("invalid initial watermarks: HIB < LUB")
-	ErrInvalidWatermark         = errors.New("invalid watermark update: new watermark violates invariants")
-	ErrOutOfWindow              = errors.New("block height outside current window")
+	ErrInvalidWatermark         = errors.New(
+		"invalid watermark update: new watermark violates invariants",
+	)
+	ErrOutOfWindow = errors.New("block height outside current window")
 )
 
-var _ types.SlidingWindowRepository = (*Repository)(nil)
-
-// Repository is a thread-safe in-memory implementation of types.SlidingWindowRepository.
-type Repository struct {
+// Cache is a thread-safe in-memory store for the sliding window state (watermarks and processed blocks).
+// LUB is the Lowest Unprocessed Block (the lowest block height that has not been processed).
+// HIB is the Highest Ingested Block (the highest block height that has been ingested).
+// Processed is a set of block heights that have been processed.
+type Cache struct {
 	mu        sync.Mutex
 	lub       uint64
 	hib       uint64
 	processed map[uint64]struct{}
 }
 
-// New creates a new in-memory repository with the given initial watermarks.
-func New(initialLUB, initialHIB uint64) (types.SlidingWindowRepository, error) {
+// NewCache creates a new in-memory Cache with the given initial watermarks.
+func NewCache(initialLUB, initialHIB uint64) (*Cache, error) {
 	if initialHIB < initialLUB {
 		return nil, ErrInvalidInitialWatermarks
 	}
-	return &Repository{
+	return &Cache{
 		lub: initialLUB,
 		hib: initialHIB,
 		// Using a sparse set is memory-friendly for out-of-order processing in wide windows.
@@ -36,27 +37,30 @@ func New(initialLUB, initialHIB uint64) (types.SlidingWindowRepository, error) {
 	}, nil
 }
 
-func (r *Repository) Window() (uint64, uint64) {
+// Window returns the current window boundaries (LUB and HIB).
+func (r *Cache) Window() (uint64, uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub, r.hib
 }
 
-func (r *Repository) GetLUB() uint64 {
+// GetLUB returns Lowest Unprocessed Block (LUB).
+func (r *Cache) GetLUB() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub
 }
 
-func (r *Repository) GetHIB() uint64 {
+// GetHIB returns Highest Ingested Block (HIB).
+func (r *Cache) GetHIB() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.hib
 }
 
-// SetHIB sets the Highest Ingested Block (chain tip watermark).
+// SetHIB sets Highest Ingested Block (chain tip watermark).
 // New HIB must be greater than or equal to the current LUB.
-func (r *Repository) SetHIB(newHIB uint64) error {
+func (r *Cache) SetHIB(newHIB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if newHIB < r.lub {
@@ -66,10 +70,10 @@ func (r *Repository) SetHIB(newHIB uint64) error {
 	return nil
 }
 
-// ResetLUB sets the Lowest Unprocessed Block explicitly (used for re-ingestion).
+// ResetLUB sets Lowest Unprocessed Block explicitly (used for re-ingestion).
 // This may move the LUB forward or backward. Additionally, it drops all processed
 // marks strictly below the new LUB.
-func (r *Repository) ResetLUB(newLUB uint64) error {
+func (r *Cache) ResetLUB(newLUB uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Allow moving LUB backward or forward. When moving forward, ensure it does not exceed LIB.
@@ -87,13 +91,15 @@ func (r *Repository) ResetLUB(newLUB uint64) error {
 	return nil
 }
 
-func (r *Repository) HasWork() bool {
+// HasWork returns true if there is work to be done (LUB <= HIB).
+func (r *Cache) HasWork() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lub <= r.hib
 }
 
-func (r *Repository) MarkProcessed(h uint64) error {
+// MarkProcessed marks a block as processed.
+func (r *Cache) MarkProcessed(h uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Heights strictly below LUB are implicitly processed/committed already.
@@ -109,7 +115,7 @@ func (r *Repository) MarkProcessed(h uint64) error {
 
 // IsProcessed returns true if a block is recorded as processed.
 // Note: block heights below the current LUB are considered committed and implicitly processed.
-func (r *Repository) IsProcessed(h uint64) bool {
+func (r *Cache) IsProcessed(h uint64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if h < r.lub {
@@ -120,8 +126,8 @@ func (r *Repository) IsProcessed(h uint64) bool {
 }
 
 // AdvanceLUB slides LUB forward while contiguous block heights starting from current LUB are processed.
-// Returns the new LUB and whether it changed.
-func (r *Repository) AdvanceLUB() (uint64, bool) {
+// Returns the new LUB and whether it changed. Idepempotent.
+func (r *Cache) AdvanceLUB() (uint64, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	original := r.lub
