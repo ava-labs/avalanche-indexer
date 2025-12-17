@@ -136,10 +136,6 @@ func (r *Repository) MarkProcessed(h uint64) error {
 		return ErrOutOfWindow
 	}
 	r.processed[h] = struct{}{}
-
-	if r.metrics != nil {
-		r.metrics.MarkBlockProcessed(len(r.processed))
-	}
 	return nil
 }
 

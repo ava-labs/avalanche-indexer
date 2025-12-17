@@ -26,7 +26,6 @@ All metrics use the `indexer` namespace.
 |--------|------|-------------|
 | `indexer_lub` | Gauge | Lowest Unprocessed Block height |
 | `indexer_hib` | Gauge | Highest Ingested Block height |
-| `indexer_window_size` | Gauge | Current window size (HIB - LUB), represents backlog |
 | `indexer_processed_set_size` | Gauge | Number of blocks in the in-memory processed set |
 
 ### Processing Counters
@@ -34,9 +33,8 @@ All metrics use the `indexer` namespace.
 | Metric | Type | Description |
 |--------|------|-------------|
 | `indexer_blocks_processed_total` | Counter | Total blocks processed and committed |
-| `indexer_blocks_marked_total` | Counter | Total blocks marked as processed |
 | `indexer_lub_advances_total` | Counter | Times LUB was advanced |
-| `indexer_errors_total` | Counter | Total errors by type (`rpc`, `out_of_window`, `invalid_watermark`) |
+| `indexer_errors_total` | Counter | Total errors by type (`out_of_window`, `invalid_watermark`) |
 
 ### RPC Metrics
 
@@ -56,7 +54,7 @@ All metrics use the `indexer` namespace.
 
 ```promql
 # Current backlog (blocks behind)
-indexer_window_size
+indexer_hib - indexer_lub
 
 # Processing rate (blocks/sec over 5m)
 rate(indexer_blocks_processed_total[5m])

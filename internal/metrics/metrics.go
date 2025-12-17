@@ -12,12 +12,10 @@ type Metrics struct {
 	// Sliding window state
 	lub              prometheus.Gauge
 	hib              prometheus.Gauge
-	windowSize       prometheus.Gauge
 	processedSetSize prometheus.Gauge
 
 	// Processing counters
 	blocksProcessed prometheus.Counter
-	blocksMarked    prometheus.Counter
 	lubAdvances     prometheus.Counter
 	errors          *prometheus.CounterVec
 
@@ -44,11 +42,6 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 			Name:      "hib",
 			Help:      "Highest Ingested Block height",
 		}),
-		windowSize: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: Namespace,
-			Name:      "window_size",
-			Help:      "Current window size (HIB - LUB), represents backlog",
-		}),
 		processedSetSize: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
 			Name:      "processed_set_size",
@@ -58,11 +51,6 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 			Namespace: Namespace,
 			Name:      "blocks_processed_total",
 			Help:      "Total number of blocks processed and committed",
-		}),
-		blocksMarked: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: Namespace,
-			Name:      "blocks_marked_total",
-			Help:      "Total number of blocks marked as processed",
 		}),
 		lubAdvances: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: Namespace,
@@ -104,10 +92,8 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 	err := errors.Join(
 		reg.Register(m.lub),
 		reg.Register(m.hib),
-		reg.Register(m.windowSize),
 		reg.Register(m.processedSetSize),
 		reg.Register(m.blocksProcessed),
-		reg.Register(m.blocksMarked),
 		reg.Register(m.lubAdvances),
 		reg.Register(m.errors),
 		reg.Register(m.rpcCalls),
@@ -122,9 +108,8 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 	return m, nil
 }
 
-// Error type constants.
+// Error type constants for non-RPC errors (RPC errors are tracked via rpcCalls{status="error"}).
 const (
-	ErrTypeRPC              = "rpc"
 	ErrTypeOutOfWindow      = "out_of_window"
 	ErrTypeInvalidWatermark = "invalid_watermark"
 )
@@ -132,12 +117,6 @@ const (
 // IncError increments the error counter for the given error type.
 func (m *Metrics) IncError(errType string) {
 	m.errors.WithLabelValues(errType).Inc()
-}
-
-// MarkBlockProcessed records a block being marked as processed.
-func (m *Metrics) MarkBlockProcessed(processedSetSize int) {
-	m.blocksMarked.Inc()
-	m.processedSetSize.Set(float64(processedSetSize))
 }
 
 // CommitBlocks records blocks being committed when LUB advances.
@@ -151,7 +130,6 @@ func (m *Metrics) CommitBlocks(count int, lub, hib uint64, processedSetSize int)
 func (m *Metrics) UpdateWindowMetrics(lub, hib uint64, processedSetSize int) {
 	m.lub.Set(float64(lub))
 	m.hib.Set(float64(hib))
-	m.windowSize.Set(float64(hib - lub))
 	m.processedSetSize.Set(float64(processedSetSize))
 }
 
@@ -170,7 +148,6 @@ func (m *Metrics) RecordRPCCall(method string, err error, durationSeconds float6
 	status := "success"
 	if err != nil {
 		status = "error"
-		m.errors.WithLabelValues(ErrTypeRPC).Inc()
 	}
 	m.rpcCalls.WithLabelValues(method, status).Inc()
 	m.rpcDuration.WithLabelValues(method).Observe(durationSeconds)
