@@ -38,8 +38,9 @@ func New(cfg Config) (*Repository, error) {
 	}
 
 	r := &Repository{
-		lub:       cfg.InitialLUB,
-		hib:       cfg.InitialHIB,
+		lub: cfg.InitialLUB,
+		hib: cfg.InitialHIB,
+		// Using a sparse set is memory-friendly for out-of-order processing in wide windows.
 		processed: make(map[uint64]struct{}, 1024),
 		metrics:   cfg.Metrics,
 	}
