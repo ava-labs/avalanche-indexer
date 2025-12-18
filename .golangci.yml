@@ -1,0 +1,120 @@
+# Copied from https://github.com/ava-labs/avalanchego/blob/master/.golangci.yml
+# https://golangci-lint.run/usage/configuration/
+run:
+  timeout: 10m
+
+issues:
+  # Maximum count of issues with the same text. Set to 0 to disable. Default is 3.
+  max-same-issues: 0
+  # skip auto-generated files.
+  exclude-files:
+    - ".*\\.pb\\.go$"
+    - ".*mock.*"
+
+linters:
+  disable-all: true
+  enable:
+    - asciicheck
+    # TODO: 6/2/23 reenable depguard when issues smooth over
+    # https://github.com/OpenPeeDeeP/depguard/issues/49
+    # - depguard
+    - errcheck
+    - errorlint
+    - goconst
+    - gocritic
+    - gofmt
+    - gofumpt
+    - goimports
+    - revive
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - nolintlint
+    - prealloc
+    - stylecheck
+    - unconvert
+    - unparam
+    - unused
+    - unconvert
+    - whitespace
+    - staticcheck
+    # - bodyclose
+    # - structcheck
+    # - lll
+    # - gomnd
+    # - goprintffuncname
+    # - interfacer
+    # - typecheck
+    # - goerr113
+    # - noctx
+
+linters-settings:
+  errorlint:
+    # Check for plain type assertions and type switches.
+    asserts: false
+    # Check for plain error comparisons.
+    comparison: false
+  revive:
+    rules:
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#bool-literal-in-expr
+      - name: bool-literal-in-expr
+        disabled: false
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#early-return
+      - name: early-return
+        disabled: false
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#empty-lines
+      - name: empty-lines
+        disabled: false
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#struct-tag
+      - name: struct-tag
+        disabled: false
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unexported-naming
+      - name: unexported-naming
+        disabled: false
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unhandled-error
+      - name: unhandled-error
+        disabled: false
+        arguments:
+          - "fmt.Fprint"
+          - "fmt.Fprintf"
+          - "fmt.Print"
+          - "fmt.Printf"
+          - "fmt.Println"
+          - "rand.Read"
+          - "sb.WriteString"
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-parameter
+      - name: unused-parameter
+        disabled: false
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-receiver
+      - name: unused-receiver
+        disabled: false
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#useless-break
+      - name: useless-break
+        disabled: false
+  staticcheck:
+    # https://staticcheck.io/docs/options#checks
+    checks:
+      - "all"
+      - "-SA6002" # argument should be pointer-like to avoid allocation, for sync.Pool
+      - "-SA1019" # deprecated packages e.g., golang.org/x/crypto/ripemd160
+  # https://golangci-lint.run/usage/linters#gosec
+  gosec:
+    excludes:
+      - G107 # https://securego.io/docs/rules/g107.html
+      - G101 # https://securego.io/docs/rules/g101.html - for secret names in local test files
+      - G115 # integer overflow conversion int -> uint32 (we need to do this for avalanchego)
+  depguard:
+    rules:
+        default-rule:
+          list-mode: "original"  # Matching priority: original, strict, lax
+          deny:
+            - pkg: "io/ioutil"
+              desc: "io/ioutil is deprecated. Use package io or os instead."
+            - pkg: "github.com/stretchr/testify/assert"
+              desc: "Use github.com/stretchr/testify/require instead."
+          files:
+            - "**/*.go"  # Apply rule to all Go files
+
