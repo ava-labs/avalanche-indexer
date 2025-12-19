@@ -116,7 +116,7 @@ func (m *Manager) Run(ctx context.Context) error {
 			if !ok {
 				break
 			}
-			m.setInflight(next, true)
+			m.setInflight(next)
 			go m.process(ctx, next, true)
 		}
 
@@ -167,7 +167,7 @@ func (m *Manager) handleRealtimeHeader(ctx context.Context, header Header) {
 			m.workerSem.Release(1)
 			return
 		}
-		m.setInflight(h, true)
+		m.setInflight(h)
 		go m.process(ctx, h, false)
 	}
 }
@@ -181,7 +181,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 			m.backfillSem.Release(1)
 		}
 		m.workerSem.Release(1)
-		m.setInflight(h, false)
+		m.unsetInflight(h)
 		m.signalWorkReady()
 	}()
 
@@ -236,19 +236,17 @@ func (m *Manager) isInflight(h uint64) bool {
 }
 
 // setInflight marks a height as being processed or removes it from the inflight set.
-//
-// It is used to prevent duplicate work on the same height.
-//
-// v is true if the height is getting processed
-// and false if it got processed.
-func (m *Manager) setInflight(h uint64, v bool) {
+func (m *Manager) setInflight(h uint64) {
 	m.inflightMu.Lock()
 	defer m.inflightMu.Unlock()
-	if v {
-		m.inflight[h] = struct{}{}
-	} else {
-		delete(m.inflight, h)
-	}
+	m.inflight[h] = struct{}{}
+}
+
+// unsetInflight removes a height from the inflight set.
+func (m *Manager) unsetInflight(h uint64) {
+	m.inflightMu.Lock()
+	defer m.inflightMu.Unlock()
+	delete(m.inflight, h)
 }
 
 // findNextUnclaimedBlock finds the next height in the [LUB..HIB] window that is not processed and not inflight.

@@ -189,7 +189,7 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 			}
 
 			for _, h := range tt.fields.inflight {
-				m.setInflight(h, true)
+				m.setInflight(h)
 			}
 
 			gotH, gotOK := m.findNextUnclaimedBlock()
@@ -258,11 +258,19 @@ func TestSetInflight(t *testing.T) {
 			}
 			// Seed initial inflight map
 			for h, v := range tt.initial {
-				m.setInflight(h, v)
+				if v {
+					m.setInflight(h)
+				} else {
+					m.unsetInflight(h)
+				}
 			}
 			// Execute steps
 			for _, s := range tt.steps {
-				m.setInflight(s.height, s.value)
+				if s.value {
+					m.setInflight(s.height)
+				} else {
+					m.unsetInflight(s.height)
+				}
 				got := m.isInflight(s.height)
 				if got != s.wantInFlight {
 					t.Fatalf("after setInflight(%d,%t): isInflight=%t, want %t", s.height, s.value, got, s.wantInFlight)
@@ -310,7 +318,7 @@ func TestProcess(t *testing.T) {
 				t.Fatalf("failed to acquire backfill permit in prep")
 			}
 		}
-		m.setInflight(c.h, true)
+		m.setInflight(c.h)
 
 		ctx := context.Background()
 		m.process(ctx, c.h, c.isBackfill)
