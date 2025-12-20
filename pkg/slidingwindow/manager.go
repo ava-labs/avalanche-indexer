@@ -13,7 +13,7 @@ import (
 
 type Manager struct {
 	log    *zap.SugaredLogger
-	cache  *Cache
+	cache  *State
 	worker worker.Worker
 
 	// Limits total concurrent workers (both realtime and backfill).
@@ -44,7 +44,7 @@ var ErrMaxFailuresExceeded = errors.New("max failures exceeded for block")
 // Constraints: concurrency>0; 1<=backfillPriority<=concurrency; blocksChCapacity>0; maxFailures>0.
 func NewManager(
 	log *zap.SugaredLogger,
-	c *Cache,
+	c *State,
 	w worker.Worker,
 	concurrency, backfillPriority uint64,
 	blocksChCapacity, maxFailures int,
@@ -148,9 +148,9 @@ func (m *Manager) handleRealtimeHeader(ctx context.Context, header Header) {
 	h := header.Number().Uint64()
 
 	// Ensure HIB covers this height so backfill can pick it up if we drop.
-	hib := m.cache.GetHIB()
-	if h > hib {
-		_ = m.cache.SetHIB(h)
+	highest := m.cache.GetHighest()
+	if h > highest {
+		_ = m.cache.SetHighest(h)
 	}
 
 	// Skip if already handled
@@ -198,7 +198,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 		return
 	}
 	// Attempt to slide LUB forward; idempotent if not contiguous
-	_, _ = m.cache.AdvanceLUB()
+	_, _ = m.cache.AdvanceLowest()
 	m.resetFailureCount(h)
 }
 

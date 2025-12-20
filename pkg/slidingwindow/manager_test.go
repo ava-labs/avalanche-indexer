@@ -91,7 +91,7 @@ func TestTryAcquireBackfill(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cache, err := NewCache(0, 0)
+			cache, err := NewState(0, 0)
 			if err != nil {
 				t.Fatalf("New cache error: %v", err)
 			}
@@ -116,8 +116,8 @@ func TestTryAcquireBackfill(t *testing.T) {
 func TestFindNextUnclaimedBlock(t *testing.T) {
 	t.Parallel()
 	type fields struct {
-		lub       uint64
-		hib       uint64
+		lowest    uint64
+		highest   uint64
 		processed []uint64
 		inflight  []uint64
 	}
@@ -133,7 +133,7 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 		{
 			name: "returns first unprocessed and not inflight",
 			fields: fields{
-				lub: 5, hib: 7,
+				lowest: 5, highest: 7,
 				processed: []uint64{5},
 			},
 			want: want{height: 6, ok: true},
@@ -141,7 +141,7 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 		{
 			name: "skips inflight heights",
 			fields: fields{
-				lub: 5, hib: 7,
+				lowest: 5, highest: 7,
 				inflight: []uint64{5},
 			},
 			want: want{height: 6, ok: true},
@@ -149,7 +149,7 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 		{
 			name: "all processed returns none",
 			fields: fields{
-				lub: 5, hib: 7,
+				lowest: 5, highest: 7,
 				processed: []uint64{5, 6, 7},
 			},
 			want: want{height: 0, ok: false},
@@ -157,14 +157,14 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 		{
 			name: "single height available",
 			fields: fields{
-				lub: 10, hib: 10,
+				lowest: 10, highest: 10,
 			},
 			want: want{height: 10, ok: true},
 		},
 		{
 			name: "single height inflight returns none",
 			fields: fields{
-				lub: 10, hib: 10,
+				lowest: 10, highest: 10,
 				inflight: []uint64{10},
 			},
 			want: want{height: 0, ok: false},
@@ -173,7 +173,7 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cache, err := NewCache(tt.fields.lub, tt.fields.hib)
+			cache, err := NewState(tt.fields.lowest, tt.fields.highest)
 			if err != nil {
 				t.Fatalf("New cache error: %v", err)
 			}
@@ -248,7 +248,7 @@ func TestSetInflight(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Manager with minimal setup
-			cache, err := NewCache(0, 0)
+			cache, err := NewState(0, 0)
 			if err != nil {
 				t.Fatalf("New cache error: %v", err)
 			}
@@ -288,17 +288,17 @@ func TestProcess(t *testing.T) {
 		isBackfill         bool
 		preAcquireBackfill bool
 		workerErr          bool
-		initialLUB         uint64
-		initialHIB         uint64
+		initialLowest      uint64
+		initialHighest     uint64
 		h                  uint64
 		expectFailure      bool
-		expectLUB          *uint64
+		expectLowest       *uint64
 	}
 
 	run := func(t *testing.T, c cfg) {
 		t.Helper()
 
-		cache, err := NewCache(c.initialLUB, c.initialHIB)
+		cache, err := NewState(c.initialLowest, c.initialHighest)
 		if err != nil {
 			t.Fatalf("New cache error: %v", err)
 		}
@@ -342,9 +342,9 @@ func TestProcess(t *testing.T) {
 				m.backfillSem.Release(1)
 			}
 		}
-		if c.expectLUB != nil {
-			if got := cache.GetLUB(); got != *c.expectLUB {
-				t.Fatalf("LUB mismatch: got %d, want %d", got, *c.expectLUB)
+		if c.expectLowest != nil {
+			if got := cache.GetLowest(); got != *c.expectLowest {
+				t.Fatalf("lowest mismatch: got %d, want %d", got, *c.expectLowest)
 			}
 		}
 		select {
@@ -377,44 +377,44 @@ func TestProcess(t *testing.T) {
 			isBackfill:         true,
 			preAcquireBackfill: true,
 			workerErr:          true,
-			initialLUB:         0,
-			initialHIB:         0,
+			initialLowest:      0,
+			initialHighest:     0,
 			h:                  100,
 			expectFailure:      true,
-			expectLUB:          ptr(0),
+			expectLowest:       ptr(0),
 		},
 		{
 			name:               "realtime path: backfill not released on success path flag false",
 			isBackfill:         false,
 			preAcquireBackfill: true,
 			workerErr:          false,
-			initialLUB:         10,
-			initialHIB:         12,
+			initialLowest:      10,
+			initialHighest:     12,
 			h:                  11,
 			expectFailure:      false,
-			expectLUB:          ptr(10),
+			expectLowest:       ptr(10),
 		},
 		{
 			name:               "backfill success: mark and advance called; release both semaphores; signal at least once",
 			isBackfill:         true,
 			preAcquireBackfill: true,
 			workerErr:          false,
-			initialLUB:         100,
-			initialHIB:         100,
+			initialLowest:      100,
+			initialHighest:     100,
 			h:                  100,
 			expectFailure:      false,
-			expectLUB:          advance(100),
+			expectLowest:       advance(100),
 		},
 		{
 			name:               "mark processed error: no advance; failure signaled",
 			isBackfill:         true,
 			preAcquireBackfill: true,
 			workerErr:          false,
-			initialLUB:         0,
-			initialHIB:         0,
+			initialLowest:      0,
+			initialHighest:     0,
 			h:                  100,
 			expectFailure:      true,
-			expectLUB:          ptr(0),
+			expectLowest:       ptr(0),
 		},
 	}
 
@@ -456,7 +456,7 @@ func (h headerStub) ChainID() uint64 {
 func TestRun_BackfillAggressiveFill(t *testing.T) {
 	t.Parallel()
 	// Window has one unprocessed height 5
-	cache, err := NewCache(5, 5)
+	cache, err := NewState(5, 5)
 	if err != nil {
 		t.Fatalf("New cache error: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if cache.GetLUB() >= 6 {
+				if cache.GetLowest() >= 6 {
 					done <- struct{}{}
 					return
 				}
@@ -507,7 +507,7 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 
 func TestRun_RealtimeEventFlow(t *testing.T) {
 	t.Parallel()
-	cache, err := NewCache(0, 0)
+	cache, err := NewState(0, 0)
 	if err != nil {
 		t.Fatalf("New cache error: %v", err)
 	}
