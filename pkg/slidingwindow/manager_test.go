@@ -91,11 +91,11 @@ func TestTryAcquireBackfill(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cache, err := NewState(0, 0)
+			state, err := NewState(0, 0)
 			if err != nil {
-				t.Fatalf("New cache error: %v", err)
+				t.Fatalf("New state error: %v", err)
 			}
-			m, err := NewManager(zap.NewNop().Sugar(), cache, workerStub{}, 1, 1, 1, 1)
+			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 1, 1, 1, 1)
 			if err != nil {
 				t.Fatalf("New manager error: %v", err)
 			}
@@ -108,173 +108,6 @@ func TestTryAcquireBackfill(t *testing.T) {
 			}
 			if tt.verify != nil {
 				tt.verify(t, m)
-			}
-		})
-	}
-}
-
-func TestFindNextUnclaimedBlock(t *testing.T) {
-	t.Parallel()
-	type fields struct {
-		lowest    uint64
-		highest   uint64
-		processed []uint64
-		inflight  []uint64
-	}
-	type want struct {
-		height uint64
-		ok     bool
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   want
-	}{
-		{
-			name: "returns first unprocessed and not inflight",
-			fields: fields{
-				lowest: 5, highest: 7,
-				processed: []uint64{5},
-			},
-			want: want{height: 6, ok: true},
-		},
-		{
-			name: "skips inflight heights",
-			fields: fields{
-				lowest: 5, highest: 7,
-				inflight: []uint64{5},
-			},
-			want: want{height: 6, ok: true},
-		},
-		{
-			name: "all processed returns none",
-			fields: fields{
-				lowest: 5, highest: 7,
-				processed: []uint64{5, 6, 7},
-			},
-			want: want{height: 0, ok: false},
-		},
-		{
-			name: "single height available",
-			fields: fields{
-				lowest: 10, highest: 10,
-			},
-			want: want{height: 10, ok: true},
-		},
-		{
-			name: "single height inflight returns none",
-			fields: fields{
-				lowest: 10, highest: 10,
-				inflight: []uint64{10},
-			},
-			want: want{height: 0, ok: false},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cache, err := NewState(tt.fields.lowest, tt.fields.highest)
-			if err != nil {
-				t.Fatalf("New cache error: %v", err)
-			}
-			m, err := NewManager(zap.NewNop().Sugar(), cache, workerStub{}, 1, 1, 1, 1)
-			if err != nil {
-				t.Fatalf("New manager error: %v", err)
-			}
-
-			for _, h := range tt.fields.processed {
-				if err := m.cache.MarkProcessed(h); err != nil {
-					t.Fatalf("MarkProcessed(%d) error: %v", h, err)
-				}
-			}
-
-			for _, h := range tt.fields.inflight {
-				m.setInflight(h)
-			}
-
-			gotH, gotOK := m.findNextUnclaimedBlock()
-			if gotH != tt.want.height || gotOK != tt.want.ok {
-				t.Fatalf("findNextUnclaimedBlock()=(%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
-			}
-		})
-	}
-}
-
-func TestSetInflight(t *testing.T) {
-	t.Parallel()
-
-	type step struct {
-		height       uint64
-		value        bool
-		wantInFlight bool
-	}
-	tests := []struct {
-		name    string
-		initial map[uint64]bool
-		steps   []step
-	}{
-		{
-			name:    "add new height",
-			initial: map[uint64]bool{},
-			steps: []step{
-				{height: 10, value: true, wantInFlight: true},
-			},
-		},
-		{
-			name:    "remove existing height",
-			initial: map[uint64]bool{10: true},
-			steps: []step{
-				{height: 10, value: false, wantInFlight: false},
-			},
-		},
-		{
-			name:    "remove non-existent height is no-op",
-			initial: map[uint64]bool{},
-			steps: []step{
-				{height: 11, value: false, wantInFlight: false},
-			},
-		},
-		{
-			name:    "toggle add-remove-add",
-			initial: map[uint64]bool{},
-			steps: []step{
-				{height: 12, value: true, wantInFlight: true},
-				{height: 12, value: false, wantInFlight: false},
-				{height: 12, value: true, wantInFlight: true},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Manager with minimal setup
-			cache, err := NewState(0, 0)
-			if err != nil {
-				t.Fatalf("New cache error: %v", err)
-			}
-			m, err := NewManager(zap.NewNop().Sugar(), cache, workerStub{}, 1, 1, 1, 1)
-			if err != nil {
-				t.Fatalf("New manager error: %v", err)
-			}
-			// Seed initial inflight map
-			for h, v := range tt.initial {
-				if v {
-					m.setInflight(h)
-				} else {
-					m.unsetInflight(h)
-				}
-			}
-			// Execute steps
-			for _, s := range tt.steps {
-				if s.value {
-					m.setInflight(s.height)
-				} else {
-					m.unsetInflight(s.height)
-				}
-				got := m.isInflight(s.height)
-				if got != s.wantInFlight {
-					t.Fatalf("after setInflight(%d,%t): isInflight=%t, want %t", s.height, s.value, got, s.wantInFlight)
-				}
 			}
 		})
 	}
@@ -298,15 +131,15 @@ func TestProcess(t *testing.T) {
 	run := func(t *testing.T, c cfg) {
 		t.Helper()
 
-		cache, err := NewState(c.initialLowest, c.initialHighest)
+		state, err := NewState(c.initialLowest, c.initialHighest)
 		if err != nil {
-			t.Fatalf("New cache error: %v", err)
+			t.Fatalf("New state error: %v", err)
 		}
 		w := workerStub{}
 		if c.workerErr {
 			w.err = assertAnError()
 		}
-		m, err := NewManager(zap.NewNop().Sugar(), cache, w, 1, 1, 1, 1)
+		m, err := NewManager(zap.NewNop().Sugar(), state, w, 1, 1, 1, 1)
 		if err != nil {
 			t.Fatalf("New manager error: %v", err)
 		}
@@ -318,12 +151,12 @@ func TestProcess(t *testing.T) {
 				t.Fatalf("failed to acquire backfill permit in prep")
 			}
 		}
-		m.setInflight(c.h)
+		m.state.SetInflight(c.h)
 
 		ctx := context.Background()
 		m.process(ctx, c.h, c.isBackfill)
 
-		if got := m.isInflight(c.h); got {
+		if got := m.state.IsInflight(c.h); got {
 			t.Fatalf("isInflight(%d)=true, want false after process", c.h)
 		}
 		if !m.workerSem.TryAcquire(1) {
@@ -343,7 +176,7 @@ func TestProcess(t *testing.T) {
 			}
 		}
 		if c.expectLowest != nil {
-			if got := cache.GetLowest(); got != *c.expectLowest {
+			if got := state.GetLowest(); got != *c.expectLowest {
 				t.Fatalf("lowest mismatch: got %d, want %d", got, *c.expectLowest)
 			}
 		}
@@ -456,11 +289,11 @@ func (h headerStub) ChainID() uint64 {
 func TestRun_BackfillAggressiveFill(t *testing.T) {
 	t.Parallel()
 	// Window has one unprocessed height 5
-	cache, err := NewState(5, 5)
+	state, err := NewState(5, 5)
 	if err != nil {
-		t.Fatalf("New cache error: %v", err)
+		t.Fatalf("New state error: %v", err)
 	}
-	m, err := NewManager(zap.NewNop().Sugar(), cache, workerStub{}, 1, 1, 1, 1)
+	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 1, 1, 1, 1)
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
@@ -469,7 +302,6 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
 
-	// Signal when LUB advances past 5 (i.e., backfill processed)
 	done := make(chan struct{}, 1)
 	go func() {
 		ticker := time.NewTicker(10 * time.Millisecond)
@@ -479,7 +311,7 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if cache.GetLowest() >= 6 {
+				if state.GetLowest() >= 6 {
 					done <- struct{}{}
 					return
 				}
@@ -507,15 +339,15 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 
 func TestRun_RealtimeEventFlow(t *testing.T) {
 	t.Parallel()
-	cache, err := NewState(0, 0)
+	state, err := NewState(0, 0)
 	if err != nil {
-		t.Fatalf("New cache error: %v", err)
+		t.Fatalf("New state error: %v", err)
 	}
 	// Ensure no backfill work is available
-	if err := cache.MarkProcessed(0); err != nil {
+	if err := state.MarkProcessed(0); err != nil {
 		t.Fatalf("MarkProcessed error: %v", err)
 	}
-	m, err := NewManager(zap.NewNop().Sugar(), cache, workerStub{}, 1, 1, 1, 1)
+	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 1, 1, 1, 1)
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
@@ -538,7 +370,7 @@ func TestRun_RealtimeEventFlow(t *testing.T) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if cache.IsProcessed(h) && !m.isInflight(h) {
+				if state.IsProcessed(h) && !m.state.IsInflight(h) {
 					done <- struct{}{}
 					return
 				}

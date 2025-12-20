@@ -50,15 +50,11 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 	}
 }
 
-func TestWindowAndGetters(t *testing.T) {
+func TestGetters(t *testing.T) {
 	t.Parallel()
 	c, err := NewState(7, 12)
 	if err != nil {
 		t.Fatalf("NewState(7, 12) unexpected error: %v", err)
-	}
-	lowest, highest := c.Window()
-	if lowest != 7 || highest != 12 {
-		t.Fatalf("Window()=(%d,%d), want (7,12)", lowest, highest)
 	}
 	if c.GetLowest() != 7 {
 		t.Fatalf("GetLowest()=%d, want 7", c.GetLowest())
@@ -296,22 +292,158 @@ func TestAdvanceLowest(t *testing.T) {
 	}
 }
 
-func TestHasWork(t *testing.T) {
+func TestFindNextUnclaimedBlock(t *testing.T) {
 	t.Parallel()
-	c, err := NewState(5, 5)
-	if err != nil {
-		t.Fatalf("NewState(5, 5) unexpected error: %v", err)
+	type fields struct {
+		lowest    uint64
+		highest   uint64
+		processed []uint64
+		inflight  []uint64
 	}
-	if !c.HasWork() {
-		t.Fatalf("HasWork()=false, want true when Lowest==Highest")
+	type want struct {
+		height uint64
+		ok     bool
 	}
-	if err := c.MarkProcessed(5); err != nil {
-		t.Fatalf("MarkProcessed unexpected error: %v", err)
+	tests := []struct {
+		name   string
+		fields fields
+		want   want
+	}{
+		{
+			name: "returns first unprocessed and not inflight",
+			fields: fields{
+				lowest: 5, highest: 7,
+				processed: []uint64{5},
+			},
+			want: want{height: 6, ok: true},
+		},
+		{
+			name: "skips inflight heights",
+			fields: fields{
+				lowest: 5, highest: 7,
+				inflight: []uint64{5},
+			},
+			want: want{height: 6, ok: true},
+		},
+		{
+			name: "all processed returns none",
+			fields: fields{
+				lowest: 5, highest: 7,
+				processed: []uint64{5, 6, 7},
+			},
+			want: want{height: 0, ok: false},
+		},
+		{
+			name: "single height available",
+			fields: fields{
+				lowest: 10, highest: 10,
+			},
+			want: want{height: 10, ok: true},
+		},
+		{
+			name: "single height inflight returns none",
+			fields: fields{
+				lowest: 10, highest: 10,
+				inflight: []uint64{10},
+			},
+			want: want{height: 0, ok: false},
+		},
 	}
-	if _, changed := c.AdvanceLowest(); !changed {
-		t.Fatalf("AdvanceLowest expected to change when marking Lowest")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, err := NewState(tt.fields.lowest, tt.fields.highest)
+			if err != nil {
+				t.Fatalf("New state error: %v", err)
+			}
+			for _, h := range tt.fields.processed {
+				if err := state.MarkProcessed(h); err != nil {
+					t.Fatalf("MarkProcessed(%d) error: %v", h, err)
+				}
+			}
+			for _, h := range tt.fields.inflight {
+				state.SetInflight(h)
+			}
+
+			gotH, gotOK := state.FindNextUnclaimedBlock()
+			if gotH != tt.want.height || gotOK != tt.want.ok {
+				t.Fatalf("FindNextUnclaimedBlock()=(%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
+			}
+		})
 	}
-	if c.HasWork() {
-		t.Fatalf("HasWork()=true, want false when Lowest>Highest")
+}
+
+func TestSetInflight(t *testing.T) {
+	t.Parallel()
+
+	type step struct {
+		height       uint64
+		value        bool
+		wantInFlight bool
+	}
+	tests := []struct {
+		name    string
+		initial map[uint64]bool
+		steps   []step
+	}{
+		{
+			name:    "add new height",
+			initial: map[uint64]bool{},
+			steps: []step{
+				{height: 10, value: true, wantInFlight: true},
+			},
+		},
+		{
+			name:    "remove existing height",
+			initial: map[uint64]bool{10: true},
+			steps: []step{
+				{height: 10, value: false, wantInFlight: false},
+			},
+		},
+		{
+			name:    "remove non-existent height is no-op",
+			initial: map[uint64]bool{},
+			steps: []step{
+				{height: 11, value: false, wantInFlight: false},
+			},
+		},
+		{
+			name:    "toggle add-remove-add",
+			initial: map[uint64]bool{},
+			steps: []step{
+				{height: 12, value: true, wantInFlight: true},
+				{height: 12, value: false, wantInFlight: false},
+				{height: 12, value: true, wantInFlight: true},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, err := NewState(0, 0)
+			if err != nil {
+				t.Fatalf("New state error: %v", err)
+			}
+			// Seed initial inflight map
+			for h, v := range tt.initial {
+				if v {
+					state.SetInflight(h)
+				} else {
+					state.UnsetInflight(h)
+				}
+			}
+			// Execute steps
+			for _, s := range tt.steps {
+				if s.value {
+					state.SetInflight(s.height)
+				} else {
+					state.UnsetInflight(s.height)
+				}
+				got := state.IsInflight(s.height)
+				if got != s.wantInFlight {
+					t.Fatalf("after setInflight(%d,%t): isInflight=%t, want %t", s.height, s.value, got, s.wantInFlight)
+				}
+			}
+		})
 	}
 }
