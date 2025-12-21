@@ -3,12 +3,11 @@ package slidingwindow
 import (
 	"context"
 	"errors"
-	"math/big"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
-	"github.com/ava-labs/libevm/common"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +20,192 @@ func (w workerStub) Process(_ context.Context, _ uint64) error {
 }
 
 var _ worker.Worker = (*workerStub)(nil)
+
+func TestNewManager_Validation(t *testing.T) {
+	t.Parallel()
+	validLogger := zap.NewNop().Sugar()
+	validState, err := NewState(0, 0)
+	if err != nil {
+		t.Fatalf("New state error: %v", err)
+	}
+	validWorker := workerStub{}
+
+	type args struct {
+		log               *zap.SugaredLogger
+		state             *State
+		worker            worker.Worker
+		concurrency       uint64
+		backfillPriority  uint64
+		heightsChCapacity int
+		maxFailures       int
+	}
+	tests := []struct {
+		name        string
+		args        args
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "ok: valid arguments",
+			args: args{
+				log:               validLogger,
+				state:             validState,
+				worker:            validWorker,
+				concurrency:       2,
+				backfillPriority:  1,
+				heightsChCapacity: 8,
+				maxFailures:       3,
+			},
+			wantErr: false,
+		},
+		{
+			name: "error: nil logger",
+			args: args{
+				log:               nil,
+				state:             validState,
+				worker:            validWorker,
+				concurrency:       1,
+				backfillPriority:  1,
+				heightsChCapacity: 1,
+				maxFailures:       1,
+			},
+			wantErr:     true,
+			errContains: "invalid logger",
+		},
+		{
+			name: "error: nil state",
+			args: args{
+				log:               validLogger,
+				state:             nil,
+				worker:            validWorker,
+				concurrency:       1,
+				backfillPriority:  1,
+				heightsChCapacity: 1,
+				maxFailures:       1,
+			},
+			wantErr:     true,
+			errContains: "invalid state",
+		},
+		{
+			name: "error: nil worker",
+			args: args{
+				log:               validLogger,
+				state:             validState,
+				worker:            nil,
+				concurrency:       1,
+				backfillPriority:  1,
+				heightsChCapacity: 1,
+				maxFailures:       1,
+			},
+			wantErr:     true,
+			errContains: "invalid worker",
+		},
+		{
+			name: "error: concurrency zero",
+			args: args{
+				log:               validLogger,
+				state:             validState,
+				worker:            validWorker,
+				concurrency:       0,
+				backfillPriority:  1,
+				heightsChCapacity: 1,
+				maxFailures:       1,
+			},
+			wantErr:     true,
+			errContains: "invalid concurrency",
+		},
+		{
+			name: "error: backfill priority zero",
+			args: args{
+				log:               validLogger,
+				state:             validState,
+				worker:            validWorker,
+				concurrency:       2,
+				backfillPriority:  0,
+				heightsChCapacity: 1,
+				maxFailures:       1,
+			},
+			wantErr:     true,
+			errContains: "invalid backfill priority",
+		},
+		{
+			name: "error: backfill priority greater than concurrency",
+			args: args{
+				log:               validLogger,
+				state:             validState,
+				worker:            validWorker,
+				concurrency:       2,
+				backfillPriority:  3,
+				heightsChCapacity: 1,
+				maxFailures:       1,
+			},
+			wantErr:     true,
+			errContains: "invalid backfill priority",
+		},
+		{
+			name: "error: heights channel capacity zero",
+			args: args{
+				log:               validLogger,
+				state:             validState,
+				worker:            validWorker,
+				concurrency:       2,
+				backfillPriority:  1,
+				heightsChCapacity: 0,
+				maxFailures:       1,
+			},
+			wantErr:     true,
+			errContains: "invalid new heights channel capacity",
+		},
+		{
+			name: "error: max failures zero",
+			args: args{
+				log:               validLogger,
+				state:             validState,
+				worker:            validWorker,
+				concurrency:       2,
+				backfillPriority:  1,
+				heightsChCapacity: 1,
+				maxFailures:       0,
+			},
+			wantErr:     true,
+			errContains: "invalid max failures",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, err := NewManager(
+				tt.args.log,
+				tt.args.state,
+				tt.args.worker,
+				tt.args.concurrency,
+				tt.args.backfillPriority,
+				tt.args.heightsChCapacity,
+				tt.args.maxFailures,
+			)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Fatalf("error %q does not contain %q", err.Error(), tt.errContains)
+				}
+				if m != nil {
+					t.Fatalf("expected nil manager on error, got non-nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if m == nil {
+				t.Fatalf("expected non-nil manager on success")
+			}
+		})
+	}
+}
 
 func TestTryAcquireBackfill(t *testing.T) {
 	t.Parallel()
@@ -37,16 +222,19 @@ func TestTryAcquireBackfill(t *testing.T) {
 		{
 			name: "acquires both when capacity available",
 			prep: func(_ *Manager) {
-				// nothing to do; both semaphores have 1 permit
+				// nothing to do; backfill has 1 permit, worker has 2 permits
 			},
 			verify: func(t *testing.T, m *Manager) {
 				// After success, both semaphores should have consumed one permit.
 				if m.backfillSem.TryAcquire(1) {
 					t.Fatalf("backfillSem had spare capacity; expected consumed permit")
 				}
-				if m.workerSem.TryAcquire(1) {
-					t.Fatalf("workerSem had spare capacity; expected consumed permit")
+				// Worker semaphore should still have one remaining permit (capacity 2 total).
+				if !m.workerSem.TryAcquire(1) {
+					t.Fatalf("workerSem expected one remaining permit after acquisition")
 				}
+				// release the extra permit acquired for verification
+				m.workerSem.Release(1)
 				// Cleanup: release the permits consumed by tryAcquireBackfill to avoid cross-test interference.
 				m.backfillSem.Release(1)
 				m.workerSem.Release(1)
@@ -71,9 +259,9 @@ func TestTryAcquireBackfill(t *testing.T) {
 		{
 			name: "fails and releases backfill when worker capacity exhausted",
 			prep: func(m *Manager) {
-				// Exhaust the worker permit, leave backfill available to test release behavior.
-				if !m.workerSem.TryAcquire(1) {
-					t.Fatalf("failed to acquire worker permit in prep")
+				// Exhaust all worker permits (capacity=2), leave backfill available to test release behavior.
+				if !m.workerSem.TryAcquire(2) {
+					t.Fatalf("failed to acquire worker permits in prep")
 				}
 			},
 			verify: func(t *testing.T, m *Manager) {
@@ -81,9 +269,9 @@ func TestTryAcquireBackfill(t *testing.T) {
 				if !m.backfillSem.TryAcquire(1) {
 					t.Fatalf("backfillSem did not release permit on worker exhaustion")
 				}
-				// Cleanup: release both permits acquired during prep/verify.
+				// Cleanup: release permits acquired during prep/verify.
 				m.backfillSem.Release(1)
-				m.workerSem.Release(1)
+				m.workerSem.Release(2)
 			},
 			wantResult: false,
 		},
@@ -95,7 +283,8 @@ func TestTryAcquireBackfill(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New state error: %v", err)
 			}
-			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 1, 1, 1, 1)
+			// backfillPriority must be strictly less than concurrency now (2 > 1)
+			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1)
 			if err != nil {
 				t.Fatalf("New manager error: %v", err)
 			}
@@ -139,7 +328,8 @@ func TestProcess(t *testing.T) {
 		if c.workerErr {
 			w.err = assertAnError()
 		}
-		m, err := NewManager(zap.NewNop().Sugar(), state, w, 1, 1, 1, 1)
+		// backfillPriority must be strictly less than concurrency now (2 > 1)
+		m, err := NewManager(zap.NewNop().Sugar(), state, w, 2, 1, 1, 1)
 		if err != nil {
 			t.Fatalf("New manager error: %v", err)
 		}
@@ -151,7 +341,21 @@ func TestProcess(t *testing.T) {
 				t.Fatalf("failed to acquire backfill permit in prep")
 			}
 		}
-		m.state.SetInflight(c.h)
+		// Ensure the height is within the window to allow claiming inflight.
+		// Some tests intentionally start with Highest < h to trigger MarkProcessed errors later.
+		// We temporarily expand Highest to claim inflight, then restore it.
+		if c.h > c.initialHighest {
+			if err := m.state.SetHighest(c.h); err != nil {
+				t.Fatalf("failed to expand Highest for claim: %v", err)
+			}
+		}
+		if ok := m.state.TrySetInflight(c.h); !ok {
+			t.Fatalf("failed to set inflight for height %d", c.h)
+		}
+		// Restore original Highest if it was below h, so subsequent logic (e.g., MarkProcessed error) matches expectations.
+		if c.initialHighest < c.h {
+			_ = m.state.SetHighest(c.initialHighest)
+		}
 
 		ctx := context.Background()
 		m.process(ctx, c.h, c.isBackfill)
@@ -261,31 +465,6 @@ func TestProcess(t *testing.T) {
 // assertAnError returns a generic error suitable for mocks.
 func assertAnError() error { return context.Canceled }
 
-type headerStub struct {
-	n *big.Int
-}
-
-func (h headerStub) Number() *big.Int { return h.n }
-func (h headerStub) Hash() common.Hash {
-	_ = h
-	return common.Hash{}
-}
-
-func (h headerStub) ParentHash() common.Hash {
-	_ = h
-	return common.Hash{}
-}
-
-func (h headerStub) Time() uint64 {
-	_ = h
-	return 0
-}
-
-func (h headerStub) ChainID() uint64 {
-	_ = h
-	return 0
-}
-
 func TestRun_BackfillAggressiveFill(t *testing.T) {
 	t.Parallel()
 	// Window has one unprocessed height 5
@@ -293,7 +472,8 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New state error: %v", err)
 	}
-	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 1, 1, 1, 1)
+	// backfillPriority must be strictly less than concurrency now (2 > 1)
+	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1)
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
@@ -347,7 +527,8 @@ func TestRun_RealtimeEventFlow(t *testing.T) {
 	if err := state.MarkProcessed(0); err != nil {
 		t.Fatalf("MarkProcessed error: %v", err)
 	}
-	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 1, 1, 1, 1)
+	// backfillPriority must be strictly less than concurrency now (2 > 1)
+	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1)
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
@@ -358,7 +539,7 @@ func TestRun_RealtimeEventFlow(t *testing.T) {
 
 	// Realtime header arrives
 	h := uint64(10)
-	m.BlockChan() <- headerStub{n: new(big.Int).SetUint64(h)}
+	m.SubmitHeight(h)
 
 	// Wait until processed and no longer inflight
 	done := make(chan struct{}, 1)
@@ -394,5 +575,48 @@ func TestRun_RealtimeEventFlow(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timeout waiting for Run to exit")
 	}
-	// no expectations on stub
+}
+
+func TestRun_FailureChain(t *testing.T) {
+	t.Parallel()
+	// Window has one unprocessed height 5; worker always fails; maxFailures triggers shutdown.
+	state, err := NewState(5, 5)
+	if err != nil {
+		t.Fatalf("New state error: %v", err)
+	}
+	maxFailures := 3
+	m, err := NewManager(
+		zap.NewNop().Sugar(),
+		state,
+		workerStub{err: assertAnError()},
+		2,
+		1,
+		1,
+		maxFailures,
+	)
+	if err != nil {
+		t.Fatalf("New manager error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(ctx) }()
+
+	select {
+	case runErr := <-errCh:
+		if runErr == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		// Validate message contains sentinel text and additional context.
+		msg := runErr.Error()
+		if !strings.Contains(msg, "max failures exceeded for block") {
+			t.Fatalf("expected sentinel error message, got: %q", msg)
+		}
+		if !strings.Contains(msg, "block 5") || !strings.Contains(msg, "after 3 attempts") {
+			t.Fatalf("unexpected error message: %q", msg)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("timeout waiting for failure threshold to trigger")
+	}
 }

@@ -20,8 +20,8 @@ type Manager struct {
 	// Caps how many of the concurrent workers may be backfill tasks.
 	backfillSem *semaphore.Weighted
 
-	// Input for realtime headers (send-only by callers).
-	blockChan chan Header
+	// Input for new heights (send-only by callers).
+	heightChan chan uint64
 	// Wake-up signal to re-run scheduling; buffered (size 1) to coalesce signals.
 	workReady chan struct{}
 
@@ -30,16 +30,14 @@ type Manager struct {
 	failureChan chan uint64
 }
 
-var ErrMaxFailuresExceeded = errors.New("max failures exceeded for block")
-
 // New creates a Manager and returns an error if arguments are invalid.
-// Constraints: concurrency>0; 1<=backfillPriority<=concurrency; blocksChCapacity>0; maxFailures>0.
+// Constraints: concurrency>0; 0<backfillPriority<concurrency; heightsChCapacity>0; maxFailures>0.
 func NewManager(
 	log *zap.SugaredLogger,
 	s *State,
 	w worker.Worker,
 	concurrency, backfillPriority uint64,
-	blocksChCapacity, maxFailures int,
+	heightChanCapacity, maxFailures int,
 ) (*Manager, error) {
 	if log == nil {
 		return nil, errors.New("invalid logger: must not be nil")
@@ -56,13 +54,13 @@ func NewManager(
 	if concurrency <= 0 {
 		return nil, errors.New("invalid concurrency: must be greater than 0")
 	}
-	if backfillPriority <= 0 || backfillPriority > concurrency {
+	if backfillPriority <= 0 || backfillPriority >= concurrency {
 		return nil, errors.New(
-			"invalid backfill priority: must be less than or equal to concurrency",
+			"invalid backfill priority: must be greater than 0 and less than concurrency",
 		)
 	}
-	if blocksChCapacity <= 0 {
-		return nil, errors.New("invalid new blocks capacity: must be greater than 0")
+	if heightChanCapacity <= 0 {
+		return nil, errors.New("invalid new heights channel capacity: must be greater than 0")
 	}
 
 	if maxFailures <= 0 {
@@ -75,21 +73,36 @@ func NewManager(
 		worker:      w,
 		workerSem:   semaphore.NewWeighted(int64(concurrency)),
 		backfillSem: semaphore.NewWeighted(int64(backfillPriority)),
-		blockChan:   make(chan Header, blocksChCapacity),
+		heightChan:  make(chan uint64, heightChanCapacity),
 		workReady:   make(chan struct{}, 1),
 		maxFailures: maxFailures,
 		failureChan: make(chan uint64, 1),
 	}, nil
 }
 
-// BlockChan returns the channel to send realtime headers to.
-func (m *Manager) BlockChan() chan<- Header { return m.blockChan }
+// SubmitHeight initially sets the highest block height if the new block height
+// is greater than the current highest to make sure backfill can pick
+// it up if the height channel is full. It returns true if the height was submitted,
+// false if the channel is full.
+func (m *Manager) SubmitHeight(h uint64) bool {
+	if err := m.state.SetHighest(h); err != nil {
+		m.log.Debugw("failed to set highest", "height", h, "error", err)
+		return false
+	}
+
+	select {
+	case m.heightChan <- h:
+		return true
+	default:
+		return false
+	}
+}
 
 // Run executes the scheduling loop until shutdown. It performs backfill work if there is capacity,
-// and there is working window (lowest <= highest). It also handles realtime headers. The work among the two
+// and there is working window (lowest <= highest). It also handles realtime heights. The work among the two
 // processes is performed concurrently and distributed according to priority threshold (backfillPriority).
 //
-// It returns when ctx is done or when the failure threshold is exceeded for a block.
+// It returns when ctx is done or when the failure threshold is exceeded for a block height.
 func (m *Manager) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -97,7 +110,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	for {
 		// Aggressive backfill fill (non-blocking)
 		for {
-			next, ok := m.state.FindNextUnclaimedBlock()
+			next, ok := m.state.FindNextUnclaimedHeight()
 			if !ok {
 				break
 			}
@@ -105,7 +118,12 @@ func (m *Manager) Run(ctx context.Context) error {
 			if !ok {
 				break
 			}
-			m.state.SetInflight(next)
+			if ok := m.state.TrySetInflight(next); !ok {
+				// Block is not in the window or already processed or already inflight.
+				m.backfillSem.Release(1)
+				m.workerSem.Release(1)
+				break
+			}
 			go m.process(ctx, next, true)
 		}
 
@@ -115,54 +133,35 @@ func (m *Manager) Run(ctx context.Context) error {
 			return ctx.Err()
 		case h := <-m.failureChan:
 			return fmt.Errorf(
-				"block %d failed after %d attempts: %w",
+				"max failures exceeded for block %d, failed after %d attempts",
 				h,
 				m.state.GetFailureCount(h),
-				ErrMaxFailuresExceeded,
 			)
-		case header := <-m.blockChan:
-			m.handleRealtimeHeader(ctx, header)
+		case h := <-m.heightChan:
+			m.handleNewHeight(ctx, h)
 		case <-m.workReady:
 			// A worker finished or watermarks changed; loop restarts
 		}
 	}
 }
 
-// handleRealtimeHeader processes new headers as they arrive. If there is a capacity, the worker is
-// dispatched. In case there is no capacity, the header is dropped (backfill will pick it up via lowest..highest scan).
-func (m *Manager) handleRealtimeHeader(ctx context.Context, header Header) {
-	if header == nil {
-		return
-	}
-	h := header.Number().Uint64()
-
-	// Ensure highest covers this height so backfill can pick it up if we drop.
-	highest := m.state.GetHighest()
-	if h > highest {
-		_ = m.state.SetHighest(h)
-	}
-
-	// Skip if already handled
-	if m.state.IsProcessed(h) || m.state.IsInflight(h) {
-		return
-	}
-
-	// Realtime event: try to acquire a worker slot immediately for low-latency.
+// handleNewHeight processes new heights as they arrive. If there is a capacity, the worker is
+// dispatched. In case there is no capacity, the height is dropped (backfill will pick it up via lowest..highest scan).
+func (m *Manager) handleNewHeight(ctx context.Context, h uint64) {
+	// Try to acquire a worker slot immediately for low-latency.
 	// Do NOT consume backfill priority for realtime work.
-	// if no slot available; drop event. Backfill will pick it up via lowest..highest scan.
+	// If no slot available; drop height. Backfill will pick it up via lowest..highest scan.
 	if ok := m.tryAcquireWorker(); ok {
-		// Re-check inflight after acquiring to avoid race
-		if m.state.IsInflight(h) || m.state.IsProcessed(h) {
+		if ok := m.state.TrySetInflight(h); !ok {
 			m.workerSem.Release(1)
 			return
 		}
-		m.state.SetInflight(h)
 		go m.process(ctx, h, false)
 	}
 }
 
-// process is the main worker function for backfill and realtime headers.
-// It acquires semaphores, processes the block, and releases them.
+// process is the main worker function for backfill and realtime heights.
+// It acquires semaphores, processes the block height, and releases them.
 // It also signals the backfill ready channel when the window advances.
 func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 	defer func() {
@@ -175,7 +174,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 	}()
 
 	if err := m.worker.Process(ctx, h); err != nil {
-		m.log.Warnw("failed processing block", "height", h, "error", err)
+		m.log.Warnw("failed processing block height", "height", h, "error", err)
 		m.handleFailure(h)
 		return
 	}

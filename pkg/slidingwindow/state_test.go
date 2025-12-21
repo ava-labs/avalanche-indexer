@@ -362,10 +362,10 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 				}
 			}
 			for _, h := range tt.fields.inflight {
-				state.SetInflight(h)
+				_ = state.TrySetInflight(h)
 			}
 
-			gotH, gotOK := state.FindNextUnclaimedBlock()
+			gotH, gotOK := state.FindNextUnclaimedHeight()
 			if gotH != tt.want.height || gotOK != tt.want.ok {
 				t.Fatalf("FindNextUnclaimedBlock()=(%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
 			}
@@ -373,7 +373,7 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 	}
 }
 
-func TestSetInflight(t *testing.T) {
+func TestTrySetInflight(t *testing.T) {
 	t.Parallel()
 
 	type step struct {
@@ -420,14 +420,17 @@ func TestSetInflight(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			state, err := NewState(0, 0)
+			// Use a wide window so all tested heights are in-range for TrySetInflight.
+			state, err := NewState(0, 100)
 			if err != nil {
 				t.Fatalf("New state error: %v", err)
 			}
 			// Seed initial inflight map
 			for h, v := range tt.initial {
 				if v {
-					state.SetInflight(h)
+					if ok := state.TrySetInflight(h); !ok {
+						t.Fatalf("failed to seed inflight for height %d", h)
+					}
 				} else {
 					state.UnsetInflight(h)
 				}
@@ -435,13 +438,13 @@ func TestSetInflight(t *testing.T) {
 			// Execute steps
 			for _, s := range tt.steps {
 				if s.value {
-					state.SetInflight(s.height)
+					_ = state.TrySetInflight(s.height)
 				} else {
 					state.UnsetInflight(s.height)
 				}
 				got := state.IsInflight(s.height)
 				if got != s.wantInFlight {
-					t.Fatalf("after setInflight(%d,%t): isInflight=%t, want %t", s.height, s.value, got, s.wantInFlight)
+					t.Fatalf("after TrySetInflight/UnsetInflight(%d,%t): isInflight=%t, want %t", s.height, s.value, got, s.wantInFlight)
 				}
 			}
 		})

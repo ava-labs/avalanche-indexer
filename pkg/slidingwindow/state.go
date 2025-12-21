@@ -5,20 +5,18 @@ import (
 	"sync"
 )
 
-// State is a thread-safe in-memory store for the sliding window state (watermarks and processed/inflight blocks).
+// State is a thread-safe in-memory store for the sliding window state (watermarks and processed/inflight block heights).
 type State struct {
-	mu        sync.Mutex          // TODO check if I need this many mutexes
-	lowest    uint64              // lowest unprocessed block watermark.
-	highest   uint64              // highest unprocessed block watermark.
+	mu        sync.Mutex
+	lowest    uint64              // lowest unprocessed block height watermark.
+	highest   uint64              // highest unprocessed block height watermark.
 	processed map[uint64]struct{} // set of processed block heights.
 
 	// Heights currently being processed to avoid duplicate work.
-	inflight   map[uint64]struct{}
-	inflightMu sync.Mutex
+	inflight map[uint64]struct{}
 
 	// Per-height failure counters; trip threshold shuts down Run.
 	failCounts map[uint64]int
-	failMu     sync.Mutex
 }
 
 // NewState creates a new in-memory State with the given initial watermarks.
@@ -39,21 +37,21 @@ func NewState(initialLowest, initialHighest uint64) (*State, error) {
 	}, nil
 }
 
-// GetLowest returns lowest unprocessed block.
+// GetLowest returns lowest unprocessed block height.
 func (s *State) GetLowest() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lowest
 }
 
-// GetHighest returns highest unprocessed block.
+// GetHighest returns highest unprocessed block height.
 func (s *State) GetHighest() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.highest
 }
 
-// SetHighest sets highest unprocessed block.
+// SetHighest sets highest unprocessed block height.
 // New highest must be greater than or equal to the current lowest.
 func (s *State) SetHighest(newHighest uint64) error {
 	s.mu.Lock()
@@ -69,7 +67,7 @@ func (s *State) SetHighest(newHighest uint64) error {
 	return nil
 }
 
-// ResetLowest sets lowest unprocessed block explicitly (used for re-ingestion).
+// ResetLowest sets lowest unprocessed block height explicitly (used for re-ingestion).
 // This may move the lowest forward or backward. Additionally, it drops all processed
 // marks strictly below the new lowest.
 func (s *State) ResetLowest(newLowest uint64) error {
@@ -94,7 +92,7 @@ func (s *State) ResetLowest(newLowest uint64) error {
 	return nil
 }
 
-// MarkProcessed marks a block as processed.
+// MarkProcessed marks a height as processed.
 func (s *State) MarkProcessed(h uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -113,7 +111,7 @@ func (s *State) MarkProcessed(h uint64) error {
 	return nil
 }
 
-// IsProcessed returns true if a block is recorded as processed.
+// IsProcessed returns true if a block height is recorded as processed.
 // Note: block heights below the current lowest are considered committed and implicitly processed.
 func (s *State) IsProcessed(h uint64) bool {
 	s.mu.Lock()
@@ -125,7 +123,7 @@ func (s *State) IsProcessed(h uint64) bool {
 	return ok
 }
 
-// AdvanceLowest slides lowest forward while contiguous block heights starting from current lowest are processed.
+// AdvanceLowest slides lowest forward while contiguous heights starting from current lowest are processed.
 // Returns the new lowest and whether it changed. Idepempotent.
 func (s *State) AdvanceLowest() (uint64, bool) {
 	s.mu.Lock()
@@ -144,56 +142,70 @@ func (s *State) AdvanceLowest() (uint64, bool) {
 
 // GetFailureCount returns the current failure count for a height.
 func (s *State) GetFailureCount(h uint64) int {
-	s.failMu.Lock()
-	defer s.failMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.failCounts[h]
 }
 
 // IncrementFailureCount increments the failure count for a height.
 // Returns the new failure count.
 func (s *State) IncrementFailureCount(h uint64) int {
-	s.failMu.Lock()
-	defer s.failMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.failCounts[h]++
 	return s.failCounts[h]
 }
 
 // ResetFailureCount resets the failure count for a height.
 func (s *State) ResetFailureCount(h uint64) {
-	s.failMu.Lock()
-	defer s.failMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.failCounts, h)
 }
 
 // IsInflight returns true if a height is being processed.
 func (s *State) IsInflight(h uint64) bool {
-	s.inflightMu.Lock()
-	defer s.inflightMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_, ok := s.inflight[h]
 	return ok
 }
 
-// SetInflight marks a height as being processed.
-func (s *State) SetInflight(h uint64) {
-	s.inflightMu.Lock()
-	defer s.inflightMu.Unlock()
+// TrySetInflight sets height as inflight if it's not processed and not already inflight.
+// If height is not in the window or already processed or already inflight, returns false.
+func (s *State) TrySetInflight(h uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if h < s.lowest || h > s.highest {
+		return false
+	}
+	if _, ok := s.processed[h]; ok {
+		return false
+	}
+	if _, ok := s.inflight[h]; ok {
+		return false
+	}
 	s.inflight[h] = struct{}{}
+	return true
 }
 
 // UnsetInflight removes a height from the inflight set.
 func (s *State) UnsetInflight(h uint64) {
-	s.inflightMu.Lock()
-	defer s.inflightMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.inflight, h)
 }
 
-// FindNextUnclaimedBlock finds the next height in the [lowset..highest] window that is not processed and not inflight.
-func (s *State) FindNextUnclaimedBlock() (uint64, bool) {
+// FindNextUnclaimedHeight finds the next height in the [lowset..highest] window that is not processed and not inflight.
+func (s *State) FindNextUnclaimedHeight() (uint64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for h := s.lowest; h <= s.highest; h++ {
-		if s.IsProcessed(h) {
+		if _, ok := s.processed[h]; ok {
 			continue
 		}
-		if s.IsInflight(h) {
+		if _, ok := s.inflight[h]; ok {
 			continue
 		}
 		return h, true
