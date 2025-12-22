@@ -28,4 +28,10 @@ type QueuePublisher interface {
 	// flushing in-flight messages. Canceling the context may result in
 	// message loss depending on the implementation.
 	Close(ctx context.Context)
+
+	// Errors returns a receive-only channel for fatal publisher errors.
+	//
+	// Callers should select on this channel to detect unrecoverable publisher
+	// failures and take appropriate action (e.g., restart the publisher).
+	Errors() <-chan error
 }

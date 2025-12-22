@@ -22,6 +22,7 @@ type KafkaPublisher struct {
 	log        *zap.SugaredLogger
 	eventsDone chan struct{}
 	logsDone   chan struct{}
+	errCh      chan error
 	cancel     context.CancelFunc
 }
 
@@ -51,6 +52,7 @@ func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.Suga
 		log:        log,
 		eventsDone: make(chan struct{}),
 		logsDone:   make(chan struct{}),
+		errCh:      make(chan error, 1),
 		cancel:     cancel,
 	}
 
@@ -109,6 +111,7 @@ func (q *KafkaPublisher) Publish(ctx context.Context, msg Msg) error {
 // in undefined behavior.
 func (q *KafkaPublisher) Close(ctx context.Context) {
 	q.log.Info("closing kafka publisher")
+	defer close(q.errCh)
 	q.cancel()
 	<-q.eventsDone
 	<-q.logsDone
@@ -129,6 +132,16 @@ func (q *KafkaPublisher) Close(ctx context.Context) {
 
 	q.producer.Close()
 	q.log.Info("kafka publisher closed")
+}
+
+// Errors returns a channel that receives at most one fatal error.
+// The channel is closed when the publisher shuts down.
+// Non-fatal Kafka errors are logged and ignored.
+//
+// After receiving an error, the publisher is no longer usable.
+// Call Close() and create a new publisher to recover.
+func (q *KafkaPublisher) Errors() <-chan error {
+	return q.errCh
 }
 
 func (q *KafkaPublisher) printKafkaLogs(ctx context.Context) {
@@ -201,7 +214,12 @@ func (q *KafkaPublisher) monitorProducerEvents(ctx context.Context) {
 
 		case ev, ok := <-q.producer.Events():
 			if !ok {
-				q.log.Info("kafka producer events monitoring, event channel closed")
+				err := fmt.Errorf("kafka producer events monitoring, event channel closed")
+				select {
+				case q.errCh <- err:
+				default:
+					q.log.Warnf("error channel is full, should not happen: %v", err)
+				}
 				return
 			}
 
@@ -216,7 +234,12 @@ func (q *KafkaPublisher) monitorProducerEvents(ctx context.Context) {
 				}
 			case kafka.Error:
 				if e.IsFatal() || e.Code() == kafka.ErrAllBrokersDown {
-					q.log.Errorf("fatal err or ErrAllBrokersDown: %#x, %v", e.Code(), e)
+					err := fmt.Errorf("fatal err or ErrAllBrokersDown: %#x, %v", e.Code(), e)
+					select {
+					case q.errCh <- err:
+					default:
+						q.log.Warnf("error channel is full, should not happen: %v", err)
+					}
 					return
 				} else {
 					q.log.Warnf("ignoring unexpected kafka error: %#x, %v", e.Code(), e)
