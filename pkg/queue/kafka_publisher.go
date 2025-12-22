@@ -234,7 +234,7 @@ func (q *KafkaPublisher) monitorProducerEvents(ctx context.Context) {
 				}
 			case kafka.Error:
 				if e.IsFatal() || e.Code() == kafka.ErrAllBrokersDown {
-					err := fmt.Errorf("fatal err or ErrAllBrokersDown: %#x, %v", e.Code(), e)
+					err := fmt.Errorf("fatal err or ErrAllBrokersDown: %#x, %w", e.Code(), e)
 					select {
 					case q.errCh <- err:
 					default:
