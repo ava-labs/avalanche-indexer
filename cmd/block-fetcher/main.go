@@ -127,16 +127,24 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.Flags().StringP("rpc-url", "r", "", "The websocket RPC URL to fetch blocks from")
 	rootCmd.Flags().Uint64P("start-height", "s", 0, "The start height to fetch blocks from")
-	rootCmd.Flags().Uint64P("end-height", "e", 0, "The end height to fetch blocks to")
+	rootCmd.Flags().Uint64P("end-height", "e", 0, "The end height to fetch blocks to. If not specified, will fetch the latest block height")
 	rootCmd.Flags().Uint64P("concurrency", "c", 0, "The number of concurrent workers to use")
 	rootCmd.Flags().Uint64P("backfill-priority", "b", 0, "The priority of the backfill workers (must be less than concurrency)")
 	rootCmd.Flags().IntP("blocks-ch-capacity", "B", 100, "The capacity of the eth_subscribe channel")
 	rootCmd.Flags().IntP("max-failures", "f", 3, "The maximum number of block processing failures before stopping")
 
-	rootCmd.MarkFlagRequired("rpc-url")
-	rootCmd.MarkFlagRequired("start-height")
-	rootCmd.MarkFlagRequired("concurrency")
-	rootCmd.MarkFlagRequired("backfill-priority")
+	if err := rootCmd.MarkFlagRequired("rpc-url"); err != nil {
+		panic(fmt.Errorf("mark flag required rpc-url: %w", err))
+	}
+	if err := rootCmd.MarkFlagRequired("start-height"); err != nil {
+		panic(fmt.Errorf("mark flag required start-height: %w", err))
+	}
+	if err := rootCmd.MarkFlagRequired("concurrency"); err != nil {
+		panic(fmt.Errorf("mark flag required concurrency: %w", err))
+	}
+	if err := rootCmd.MarkFlagRequired("backfill-priority"); err != nil {
+		panic(fmt.Errorf("mark flag required backfill-priority: %w", err))
+	}
 }
 
 func main() {
