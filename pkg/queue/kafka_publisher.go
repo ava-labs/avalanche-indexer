@@ -26,6 +26,8 @@ type KafkaPublisher struct {
 	cancel     context.CancelFunc
 }
 
+const flushTimeoutMs = 10000
+
 // NewKafkaPublisher creates a Kafka-backed QueuePublisher.
 //
 // The provided context controls the lifetime of background goroutines.
@@ -116,10 +118,8 @@ func (q *KafkaPublisher) Close(ctx context.Context) {
 	<-q.eventsDone
 	<-q.logsDone
 
-	for q.producer.Flush(10000) > 0 {
+	for q.producer.Flush(flushTimeoutMs) > 0 {
 		q.log.Warn("producer queue not flushed, retrying")
-		time.Sleep(time.Second)
-
 		select {
 		case <-ctx.Done():
 			q.log.Info("context done, stopping producer flush")
