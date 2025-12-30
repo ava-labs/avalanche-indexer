@@ -24,7 +24,7 @@ type QueuePublisher interface {
 
 	// Close stops the publisher and releases all resources.
 	//
-	// Close MUST be called exactly once. Implementations may block while
+	// Close MUST be called at least once. Implementations may block while
 	// flushing in-flight messages. Canceling the context may result in
 	// message loss depending on the implementation.
 	Close(ctx context.Context)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -15,15 +16,16 @@ import (
 // Publish blocks until a delivery confirmation is received from Kafka.
 // Background goroutines are used to process Kafka producer events and logs.
 //
-// Close MUST be called exactly once to stop background goroutines and flush
+// Close MUST be called at least once to stop background goroutines and flush
 // all in-flight messages.
 type KafkaPublisher struct {
 	producer   *kafka.Producer
 	log        *zap.SugaredLogger
+	errCh      chan error
 	eventsDone chan struct{}
 	logsDone   chan struct{}
-	errCh      chan error
-	cancel     context.CancelFunc
+	closedCh   chan struct{}
+	once       sync.Once
 }
 
 const flushTimeoutMs = 10000
@@ -35,17 +37,14 @@ const flushTimeoutMs = 10000
 //
 // Callers must call Close to flush messages and release resources.
 func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.SugaredLogger) (*KafkaPublisher, error) {
-	chCtx, cancel := context.WithCancel(ctx)
 
 	p, err := kafka.NewProducer(conf)
 	if err != nil {
-		cancel()
 		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
 	}
 
 	logsChEnabled, err := conf.Get("go.logs.channel.enable", false)
 	if err != nil {
-		cancel()
 		return nil, fmt.Errorf("failed to get go.logs.channel.enable: %w", err)
 	}
 
@@ -55,16 +54,17 @@ func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.Suga
 		eventsDone: make(chan struct{}),
 		logsDone:   make(chan struct{}),
 		errCh:      make(chan error, 1),
-		cancel:     cancel,
+		closedCh:   make(chan struct{}),
+		once:       sync.Once{},
 	}
 
 	if logsChEnabled.(bool) {
-		go kq.printKafkaLogs(chCtx)
+		go kq.printKafkaLogs(ctx)
 	} else {
 		close(kq.logsDone)
 	}
 
-	go kq.monitorProducerEvents(chCtx)
+	go kq.monitorProducerEvents(ctx)
 
 	return &kq, nil
 }
@@ -109,29 +109,35 @@ func (q *KafkaPublisher) Publish(ctx context.Context, msg Msg) error {
 // If the context is canceled, Close aborts the flush and closes the producer.
 // Callers should be aware that canceling the context may result in message loss.
 //
-// Close must be called exactly once. Calling Close multiple times results
-// in undefined behavior.
+// Close must be called at least once. Calling Close multiple times does nothing.
 func (q *KafkaPublisher) Close(ctx context.Context) {
-	q.log.Info("closing kafka publisher")
-	defer close(q.errCh)
-	q.cancel()
-	<-q.eventsDone
-	<-q.logsDone
+	q.once.Do(func() {
+		q.log.Info("closing kafka publisher")
+		defer close(q.errCh)
 
-	for q.producer.Flush(flushTimeoutMs) > 0 {
-		q.log.Warn("producer queue not flushed, retrying")
-		select {
-		case <-ctx.Done():
-			q.log.Info("context done, stopping producer flush")
-			q.producer.Close()
-			return
-		default:
-			continue
+		// Signal the monitor or logs goroutines to stop.
+		close(q.closedCh)
+
+		// Wait for the monitor or logs goroutines to stop.
+		<-q.eventsDone
+		<-q.logsDone
+
+		// Flush the producer queue.
+		for q.producer.Flush(flushTimeoutMs) > 0 {
+			q.log.Warn("producer queue not flushed, retrying")
+			select {
+			case <-ctx.Done():
+				q.log.Info("context done, stopping producer flush")
+				q.producer.Close()
+				return
+			default:
+				continue
+			}
 		}
-	}
 
-	q.producer.Close()
-	q.log.Info("kafka publisher closed")
+		q.producer.Close()
+		q.log.Info("kafka publisher closed")
+	})
 }
 
 // Errors returns a channel that receives at most one fatal error.
@@ -150,6 +156,9 @@ func (q *KafkaPublisher) printKafkaLogs(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			q.log.Info("stopping kafka logs printing")
+			return
+		case <-q.closedCh:
+			q.log.Info("stopping kafka logs printing, done channel closed")
 			return
 		case log, ok := <-q.producer.Logs():
 			if !ok {
@@ -211,7 +220,9 @@ func (q *KafkaPublisher) monitorProducerEvents(ctx context.Context) {
 		case <-ctx.Done():
 			q.log.Info("stopping kafka producer events monitoring, context done")
 			return
-
+		case <-q.closedCh:
+			q.log.Info("stopping kafka producer events monitoring, done channel closed")
+			return
 		case ev, ok := <-q.producer.Events():
 			if !ok {
 				err := fmt.Errorf("kafka producer events monitoring, event channel closed")
