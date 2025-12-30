@@ -37,7 +37,6 @@ const flushTimeoutMs = 10000
 //
 // Callers must call Close to flush messages and release resources.
 func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.SugaredLogger) (*KafkaPublisher, error) {
-
 	p, err := kafka.NewProducer(conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
@@ -71,8 +70,15 @@ func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.Suga
 
 // Publish synchronously publishes a message to Kafka.
 //
-// Publish blocks until Kafka returns a delivery receipt or the context
-// is canceled.
+// Publish blocks until either a delivery receipt is received from Kafka
+// or the provided context is canceled. If the producer queue is full,
+// the message will be retried internally with a 1 second delay.
+//
+// Publish returns an error in the following cases:
+//   - the broker is unavailable,
+//   - the message is invalid or exceeds size limits,
+//   - the topic or partition is unknown,
+//   - authentication or authorization fails.
 //
 // If the context is canceled before delivery confirmation, Publish returns
 // ctx.Err(). The message MAY still be delivered after Publish returns.
@@ -170,6 +176,12 @@ func (q *KafkaPublisher) printKafkaLogs(ctx context.Context) {
 	}
 }
 
+// produceWithRetry produces a message to Kafka with retry logic.
+//
+// If the context is done, produceWithRetry returns the context error.
+// If the producer queue is full, produceWithRetry sleeps for 1 second and retries.
+// If the broker is not available, message size is invalid, the message is invalid,
+// topic or partition is unknown, or the authentication fails, produceWithRetry returns an error.
 func (q *KafkaPublisher) produceWithRetry(
 	ctx context.Context,
 	msg *kafka.Message,
