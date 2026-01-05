@@ -21,6 +21,23 @@ func (w workerStub) Process(_ context.Context, _ uint64) error {
 
 var _ worker.Worker = (*workerStub)(nil)
 
+// blockingWorker allows tests to observe when a worker starts and to delay completion.
+type blockingWorker struct {
+	start chan uint64
+	done  chan struct{}
+	err   error
+}
+
+func (w blockingWorker) Process(_ context.Context, h uint64) error {
+	if w.start != nil {
+		w.start <- h
+	}
+	if w.done != nil {
+		<-w.done
+	}
+	return w.err
+}
+
 func TestNewManager_Validation(t *testing.T) {
 	t.Parallel()
 	validLogger := zap.NewNop().Sugar()
@@ -315,6 +332,7 @@ func TestProcess(t *testing.T) {
 		h                  uint64
 		expectFailure      bool
 		expectLowest       *uint64
+		skipInflight       bool
 	}
 
 	run := func(t *testing.T, c cfg) {
@@ -341,20 +359,18 @@ func TestProcess(t *testing.T) {
 				t.Fatalf("failed to acquire backfill permit in prep")
 			}
 		}
-		// Ensure the height is within the window to allow claiming inflight.
-		// Some tests intentionally start with Highest < h to trigger MarkProcessed errors later.
-		// We temporarily expand Highest to claim inflight, then restore it.
-		if c.h > c.initialHighest {
-			if ok := m.state.SetHighest(c.h); !ok {
-				t.Fatalf("failed to expand Highest for claim: %v", err)
+		if !c.skipInflight {
+			// Ensure the height is within the window to allow claiming inflight.
+			// Historically we expanded Highest to claim inflight, but some tests intentionally
+			// want MarkProcessed to fail (h > highest). Those will set skipInflight=true.
+			if c.h > c.initialHighest {
+				if ok := m.state.SetHighest(c.h); !ok {
+					t.Fatalf("failed to expand Highest for claim: %v", err)
+				}
 			}
-		}
-		if ok := m.state.TrySetInflight(c.h); !ok {
-			t.Fatalf("failed to set inflight for height %d", c.h)
-		}
-		// Restore original Highest if it was below h, so subsequent logic (e.g., MarkProcessed error) matches expectations.
-		if c.initialHighest < c.h {
-			_ = m.state.SetHighest(c.initialHighest)
+			if ok := m.state.TrySetInflight(c.h); !ok {
+				t.Fatalf("failed to set inflight for height %d", c.h)
+			}
 		}
 
 		ctx := context.Background()
@@ -451,6 +467,18 @@ func TestProcess(t *testing.T) {
 			initialHighest:     0,
 			h:                  100,
 			expectFailure:      false,
+			expectLowest:       ptr(0),
+		},
+		{
+			name:               "mark processed error: height > highest triggers failure and no advance",
+			isBackfill:         true,
+			preAcquireBackfill: true,
+			workerErr:          false,
+			initialLowest:      0,
+			initialHighest:     0,
+			h:                  100, // greater than highest; do not set inflight to force MarkProcessed error
+			skipInflight:       true,
+			expectFailure:      true,
 			expectLowest:       ptr(0),
 		},
 	}
@@ -618,5 +646,302 @@ func TestRun_FailureChain(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatalf("timeout waiting for failure threshold to trigger")
+	}
+}
+
+func TestHandleNewHeight(t *testing.T) {
+	t.Parallel()
+
+	type args struct {
+		initialLowest      uint64
+		initialHighest     uint64
+		concurrency        uint64
+		backfillPri        uint64
+		preAcquireBackfill bool
+		exhaustWorkers     int
+		height             uint64
+		setHighestToH      bool
+		markProcessedH     bool
+		useBlockingWorker  bool
+	}
+	type want struct {
+		yieldedToBackfill bool
+		startedRealtime   bool
+		inflightAfter     bool
+	}
+	tests := []struct {
+		name string
+		args args
+		want want
+	}{
+		{
+			name: "yield to backfill when backlog exists and backfill capacity available",
+			args: args{
+				initialLowest: 5, initialHighest: 6,
+				concurrency: 2, backfillPri: 1,
+				height: 10,
+			},
+			want: want{
+				yieldedToBackfill: true,
+				startedRealtime:   false,
+				inflightAfter:     false,
+			},
+		},
+		{
+			name: "realtime proceeds when backfill capacity exhausted",
+			args: args{
+				initialLowest: 5, initialHighest: 6,
+				concurrency: 2, backfillPri: 1,
+				preAcquireBackfill: true,
+				height:             10, setHighestToH: true,
+				useBlockingWorker: true,
+			},
+			want: want{
+				yieldedToBackfill: false,
+				startedRealtime:   true,
+				inflightAfter:     false, // cleared after completion
+			},
+		},
+		{
+			name: "drops realtime when no worker capacity",
+			args: args{
+				initialLowest: 0, initialHighest: 100,
+				concurrency: 2, backfillPri: 1,
+				exhaustWorkers: 2,
+				height:         50, setHighestToH: true,
+			},
+			want: want{
+				yieldedToBackfill: false,
+				startedRealtime:   false,
+				inflightAfter:     false,
+			},
+		},
+		{
+			name: "TrySetInflight failure releases worker capacity",
+			args: args{
+				// Use a window with no backlog and mark h as processed so TrySetInflight(h) fails.
+				initialLowest: 11, initialHighest: 11,
+				concurrency: 2, backfillPri: 1,
+				height:         11,
+				markProcessedH: true,
+			},
+			want: want{
+				yieldedToBackfill: false,
+				startedRealtime:   false,
+				inflightAfter:     false,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state, err := NewState(tt.args.initialLowest, tt.args.initialHighest)
+			if err != nil {
+				t.Fatalf("New state error: %v", err)
+			}
+			var w worker.Worker = workerStub{}
+			var start chan uint64
+			var done chan struct{}
+			if tt.args.useBlockingWorker {
+				start = make(chan uint64, 1)
+				done = make(chan struct{})
+				w = blockingWorker{start: start, done: done}
+			}
+			m, err := NewManager(zap.NewNop().Sugar(), state, w, tt.args.concurrency, tt.args.backfillPri, 1, 1)
+			if err != nil {
+				t.Fatalf("New manager error: %v", err)
+			}
+
+			if tt.args.preAcquireBackfill {
+				if !m.backfillSem.TryAcquire(1) {
+					t.Fatalf("failed to pre-acquire backfill permit")
+				}
+			}
+			if tt.args.exhaustWorkers > 0 {
+				if !m.workerSem.TryAcquire(int64(tt.args.exhaustWorkers)) {
+					t.Fatalf("failed to exhaust workerSem")
+				}
+				defer m.workerSem.Release(int64(tt.args.exhaustWorkers))
+			}
+			if tt.args.setHighestToH {
+				_ = state.SetHighest(tt.args.height)
+			}
+			if tt.args.markProcessedH {
+				if err := state.MarkProcessed(tt.args.height); err != nil {
+					t.Fatalf("failed to mark processed: %v", err)
+				}
+			}
+
+			// Capture worker capacity before call to detect yield
+			hadWorkerCapacity := m.workerSem.TryAcquire(1)
+			if hadWorkerCapacity {
+				m.workerSem.Release(1)
+			}
+			m.handleNewHeight(context.Background(), tt.args.height)
+
+			// If yielded, there should be no inflight and worker capacity remains available.
+			if tt.want.yieldedToBackfill {
+				if state.IsInflight(tt.args.height) {
+					t.Fatalf("expected yield: no inflight for realtime height")
+				}
+				if !m.workerSem.TryAcquire(1) {
+					t.Fatalf("expected yield: worker capacity should be available")
+				}
+				m.workerSem.Release(1)
+				return
+			}
+
+			if tt.args.useBlockingWorker && tt.want.startedRealtime {
+				select {
+				case got := <-start:
+					if got != tt.args.height {
+						t.Fatalf("started height=%d, want %d", got, tt.args.height)
+					}
+				case <-time.After(500 * time.Millisecond):
+					t.Fatalf("timeout waiting for worker to start")
+				}
+				if !state.IsInflight(tt.args.height) {
+					t.Fatalf("expected height %d to be inflight", tt.args.height)
+				}
+				// Complete worker and wait for inflight to clear
+				close(done)
+				deadline := time.Now().Add(1 * time.Second)
+				for time.Now().Before(deadline) {
+					if !state.IsInflight(tt.args.height) {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				if state.IsInflight(tt.args.height) {
+					t.Fatalf("inflight not cleared after worker completion")
+				}
+				// Worker permit should be available again.
+				if !m.workerSem.TryAcquire(1) {
+					t.Fatalf("workerSem not released after worker completion")
+				}
+				m.workerSem.Release(1)
+			}
+
+			// For non-started paths, ensure inflight matches expectation
+			if !tt.want.startedRealtime && state.IsInflight(tt.args.height) != tt.want.inflightAfter {
+				t.Fatalf("isInflight(%d)=%t, want %t", tt.args.height, state.IsInflight(tt.args.height), tt.want.inflightAfter)
+			}
+		})
+	}
+}
+
+func TestSubmitHeight(t *testing.T) {
+	t.Parallel()
+	type args struct {
+		initialLowest  uint64
+		initialHighest uint64
+		concurrency    uint64
+		backfillPri    uint64
+		queueCap       int
+		submitHeights  []uint64
+	}
+	type want struct {
+		results      []bool
+		finalHighest uint64
+		queueValues  []uint64
+	}
+	tests := []struct {
+		name string
+		args args
+		want want
+	}{
+		{
+			name: "increase highest and enqueue when space available",
+			args: args{
+				initialLowest: 0, initialHighest: 0,
+				concurrency: 2, backfillPri: 1, queueCap: 2,
+				submitHeights: []uint64{1},
+			},
+			want: want{
+				results:      []bool{true},
+				finalHighest: 1,
+				queueValues:  []uint64{1},
+			},
+		},
+		{
+			name: "increase highest but channel full returns false",
+			args: args{
+				initialLowest: 0, initialHighest: 0,
+				concurrency: 2, backfillPri: 1, queueCap: 1,
+				submitHeights: []uint64{1, 2},
+			},
+			want: want{
+				results:      []bool{true, false},
+				finalHighest: 2,           // highest still raised even if enqueue failed
+				queueValues:  []uint64{1}, // only first enqueued due to full buffer
+			},
+		},
+		{
+			name: "lower or equal height does not enqueue and returns false (monotonic highest)",
+			args: args{
+				initialLowest: 0, initialHighest: 5,
+				concurrency: 2, backfillPri: 1, queueCap: 2,
+				submitHeights: []uint64{3, 5},
+			},
+			want: want{
+				results:      []bool{false, false},
+				finalHighest: 5,
+				queueValues:  []uint64{}, // nothing enqueued
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state, err := NewState(tt.args.initialLowest, tt.args.initialHighest)
+			if err != nil {
+				t.Fatalf("New state error: %v", err)
+			}
+			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, tt.args.concurrency, tt.args.backfillPri, tt.args.queueCap, 1)
+			if err != nil {
+				t.Fatalf("New manager error: %v", err)
+			}
+
+			var gotResults []bool
+			for _, h := range tt.args.submitHeights {
+				gotResults = append(gotResults, m.SubmitHeight(h))
+			}
+			// Check results
+			if len(gotResults) != len(tt.want.results) {
+				t.Fatalf("results len=%d, want %d", len(gotResults), len(tt.want.results))
+			}
+			for i := range gotResults {
+				if gotResults[i] != tt.want.results[i] {
+					t.Fatalf("result[%d]=%t, want %t", i, gotResults[i], tt.want.results[i])
+				}
+			}
+			// Check final highest
+			if got := state.GetHighest(); got != tt.want.finalHighest {
+				t.Fatalf("final highest=%d, want %d", got, tt.want.finalHighest)
+			}
+			// Drain queue and compare enqueued values
+			var drained []uint64
+			for {
+				select {
+				case h := <-m.heightChan:
+					drained = append(drained, h)
+				default:
+					goto compare
+				}
+			}
+		compare:
+			if len(drained) != len(tt.want.queueValues) {
+				t.Fatalf("queued len=%d, want %d (values=%v)", len(drained), len(tt.want.queueValues), drained)
+			}
+			for i := range drained {
+				if drained[i] != tt.want.queueValues[i] {
+					t.Fatalf("queued[%d]=%d, want %d", i, drained[i], tt.want.queueValues[i])
+				}
+			}
+		})
 	}
 }

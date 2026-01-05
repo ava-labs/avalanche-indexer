@@ -379,47 +379,234 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 	}
 }
 
+func TestFindAndSetNextInflight(t *testing.T) {
+	t.Parallel()
+	type fields struct {
+		lowest    uint64
+		highest   uint64
+		processed []uint64
+		inflight  []uint64
+	}
+	type want struct {
+		height   uint64
+		ok       bool
+		inflight []uint64 // expected inflight after the call
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   want
+	}{
+		{
+			name: "single available height claims and marks inflight",
+			fields: fields{
+				lowest: 10, highest: 10,
+			},
+			want: want{height: 10, ok: true, inflight: []uint64{10}},
+		},
+		{
+			name: "single processed height returns none",
+			fields: fields{
+				lowest: 10, highest: 10,
+				processed: []uint64{10},
+			},
+			want: want{height: 0, ok: false, inflight: nil},
+		},
+		{
+			name: "single inflight height returns none",
+			fields: fields{
+				lowest: 10, highest: 10,
+				inflight: []uint64{10},
+			},
+			want: want{height: 0, ok: false, inflight: []uint64{10}},
+		},
+		{
+			name: "skips processed at lowest and claims next",
+			fields: fields{
+				lowest: 5, highest: 7,
+				processed: []uint64{5},
+			},
+			want: want{height: 6, ok: true, inflight: []uint64{6}},
+		},
+		{
+			name: "skips inflight at start and claims next",
+			fields: fields{
+				lowest: 5, highest: 7,
+				inflight: []uint64{5},
+			},
+			want: want{height: 6, ok: true, inflight: []uint64{5, 6}},
+		},
+		{
+			name: "all heights blocked (processed) returns none",
+			fields: fields{
+				lowest: 5, highest: 7,
+				processed: []uint64{5, 6, 7},
+			},
+			want: want{height: 0, ok: false, inflight: nil},
+		},
+		{
+			name: "all heights blocked (inflight) returns none",
+			fields: fields{
+				lowest: 5, highest: 7,
+				inflight: []uint64{5, 6, 7},
+			},
+			want: want{height: 0, ok: false, inflight: []uint64{5, 6, 7}},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state, err := NewState(tt.fields.lowest, tt.fields.highest)
+			if err != nil {
+				t.Fatalf("New state error: %v", err)
+			}
+			for _, h := range tt.fields.processed {
+				if err := state.MarkProcessed(h); err != nil {
+					t.Fatalf("MarkProcessed(%d) error: %v", h, err)
+				}
+			}
+			for _, h := range tt.fields.inflight {
+				if ok := state.TrySetInflight(h); !ok {
+					t.Fatalf("failed to seed inflight for %d", h)
+				}
+			}
+
+			origLowest := state.GetLowest()
+			origHighest := state.GetHighest()
+
+			gotH, gotOK := state.FindAndSetNextInflight()
+			if gotH != tt.want.height || gotOK != tt.want.ok {
+				t.Fatalf("FindAndSetNextInflight()=(%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
+			}
+
+			// Verify inflight set membership after the call
+			for _, h := range tt.want.inflight {
+				if !state.IsInflight(h) {
+					t.Fatalf("IsInflight(%d)=false, want true", h)
+				}
+			}
+			// Ensure no unexpected inflight when none expected
+			if tt.want.inflight == nil && gotOK {
+				if !state.IsInflight(gotH) {
+					t.Fatalf("claimed height %d should be inflight", gotH)
+				}
+			}
+			// Lowest/Highest should not change
+			if state.GetLowest() != origLowest || state.GetHighest() != origHighest {
+				t.Fatalf("watermarks changed: got (lowest=%d, highest=%d), want (lowest=%d, highest=%d)",
+					state.GetLowest(), state.GetHighest(), origLowest, origHighest)
+			}
+		})
+	}
+
+	t.Run("sequential claims across window", func(t *testing.T) {
+		t.Parallel()
+		state, err := NewState(5, 7)
+		if err != nil {
+			t.Fatalf("New state error: %v", err)
+		}
+		// First claim: 5
+		if h, ok := state.FindAndSetNextInflight(); !ok || h != 5 {
+			t.Fatalf("first claim=(%d,%t), want (5,true)", h, ok)
+		}
+		// Second claim: 6
+		if h, ok := state.FindAndSetNextInflight(); !ok || h != 6 {
+			t.Fatalf("second claim=(%d,%t), want (6,true)", h, ok)
+		}
+		// Third claim: 7
+		if h, ok := state.FindAndSetNextInflight(); !ok || h != 7 {
+			t.Fatalf("third claim=(%d,%t), want (7,true)", h, ok)
+		}
+		// Fourth claim: none left
+		if h, ok := state.FindAndSetNextInflight(); ok || h != 0 {
+			t.Fatalf("fourth claim=(%d,%t), want (0,false)", h, ok)
+		}
+		// Watermarks unchanged
+		if state.GetLowest() != 5 || state.GetHighest() != 7 {
+			t.Fatalf("watermarks changed unexpectedly: lowest=%d highest=%d", state.GetLowest(), state.GetHighest())
+		}
+	})
+}
+
 func TestTrySetInflight(t *testing.T) {
 	t.Parallel()
 
 	type step struct {
 		height       uint64
 		value        bool
+		expectOk     bool
 		wantInFlight bool
 	}
 	tests := []struct {
-		name    string
-		initial map[uint64]bool
-		steps   []step
+		name      string
+		initial   map[uint64]bool
+		processed []uint64
+		steps     []step
 	}{
 		{
-			name:    "add new height",
-			initial: map[uint64]bool{},
+			name:      "set inflight height < lowest is no-op",
+			initial:   map[uint64]bool{},
+			processed: []uint64{},
 			steps: []step{
-				{height: 10, value: true, wantInFlight: true},
+				{height: 3, value: true, expectOk: false, wantInFlight: false},
 			},
 		},
 		{
-			name:    "remove existing height",
-			initial: map[uint64]bool{10: true},
+			name:      "set inflight height > highest is no-op",
+			initial:   map[uint64]bool{},
+			processed: []uint64{},
 			steps: []step{
-				{height: 10, value: false, wantInFlight: false},
+				{height: 110, value: true, expectOk: false, wantInFlight: false},
 			},
 		},
 		{
-			name:    "remove non-existent height is no-op",
-			initial: map[uint64]bool{},
+			name: "set inflight height already inflight is no-op",
+			initial: map[uint64]bool{
+				10: true,
+			},
+			processed: []uint64{},
 			steps: []step{
-				{height: 11, value: false, wantInFlight: false},
+				{height: 10, value: true, expectOk: false, wantInFlight: true},
 			},
 		},
 		{
-			name:    "toggle add-remove-add",
+			name:      "set inflight height already processed is no-op",
+			initial:   map[uint64]bool{},
+			processed: []uint64{10},
+			steps: []step{
+				{height: 10, value: true, expectOk: false, wantInFlight: false},
+			},
+		},
+		{
+			name:    "set inflight correct height (mid-window)",
 			initial: map[uint64]bool{},
 			steps: []step{
-				{height: 12, value: true, wantInFlight: true},
+				{height: 10, value: true, expectOk: true, wantInFlight: true},
+			},
+		},
+		{
+			name:    "set inflight at lowest boundary",
+			initial: map[uint64]bool{},
+			steps: []step{
+				{height: 5, value: true, expectOk: true, wantInFlight: true},
+			},
+		},
+		{
+			name:    "set inflight at highest boundary",
+			initial: map[uint64]bool{},
+			steps: []step{
+				{height: 100, value: true, expectOk: true, wantInFlight: true},
+			},
+		},
+		{
+			name:    "toggle inflight height",
+			initial: map[uint64]bool{},
+			steps: []step{
+				{height: 12, value: true, expectOk: true, wantInFlight: true},
 				{height: 12, value: false, wantInFlight: false},
-				{height: 12, value: true, wantInFlight: true},
+				{height: 12, value: true, expectOk: true, wantInFlight: true},
 			},
 		},
 	}
@@ -427,7 +614,7 @@ func TestTrySetInflight(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use a wide window so all tested heights are in-range for TrySetInflight.
-			state, err := NewState(0, 100)
+			state, err := NewState(5, 100)
 			if err != nil {
 				t.Fatalf("New state error: %v", err)
 			}
@@ -441,10 +628,20 @@ func TestTrySetInflight(t *testing.T) {
 					state.UnsetInflight(h)
 				}
 			}
+
+			for _, h := range tt.processed {
+				if err := state.MarkProcessed(h); err != nil {
+					t.Fatalf("MarkProcessed(%d) error: %v", h, err)
+				}
+			}
+
 			// Execute steps
 			for _, s := range tt.steps {
 				if s.value {
-					_ = state.TrySetInflight(s.height)
+					ok := state.TrySetInflight(s.height)
+					if ok != s.expectOk {
+						t.Fatalf("TrySetInflight(%d) ok=%t, want %t", s.height, ok, s.expectOk)
+					}
 				} else {
 					state.UnsetInflight(s.height)
 				}
