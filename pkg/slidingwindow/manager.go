@@ -74,9 +74,9 @@ func NewManager(
 		workerSem:   semaphore.NewWeighted(int64(concurrency)),
 		backfillSem: semaphore.NewWeighted(int64(backfillPriority)),
 		heightChan:  make(chan uint64, heightChanCapacity),
-		workReady:   make(chan struct{}, 1),
+		workReady:   make(chan struct{}, 1), // buffered (size 1) to coalesce signals
 		maxFailures: maxFailures,
-		failureChan: make(chan uint64, 1),
+		failureChan: make(chan uint64, 1), // buffered (size 1) to send failure signal
 	}, nil
 }
 
@@ -85,8 +85,8 @@ func NewManager(
 // it up if the height channel is full. It returns true if the height was submitted,
 // false if the channel is full.
 func (m *Manager) SubmitHeight(h uint64) bool {
-	if err := m.state.SetHighest(h); err != nil {
-		m.log.Debugw("failed to set highest", "height", h, "error", err)
+	if ok := m.state.SetHighest(h); !ok {
+		m.log.Debugw("failed to set highest height", h)
 		return false
 	}
 
@@ -108,18 +108,16 @@ func (m *Manager) Run(ctx context.Context) error {
 	defer cancel()
 
 	for {
-		// Aggressive backfill fill (non-blocking)
+		// Aggressive backfill (non-blocking)
 		for {
-			next, ok := m.state.FindNextUnclaimedHeight()
+			// acquire both backfill and worker capacity
+			ok := m.tryAcquireBackfill()
 			if !ok {
-				break
+				break // no more backfill capacity
 			}
-			ok = m.tryAcquireBackfill()
+			next, ok := m.state.FindAndSetNextInflight()
 			if !ok {
-				break
-			}
-			if ok := m.state.TrySetInflight(next); !ok {
-				// Block is not in the window or already processed or already inflight.
+				// No available heights to claim; release capacity and stop scanning
 				m.backfillSem.Release(1)
 				m.workerSem.Release(1)
 				break
@@ -127,16 +125,21 @@ func (m *Manager) Run(ctx context.Context) error {
 			go m.process(ctx, next, true)
 		}
 
-		// Blocking wait for event (backfill, realtime, failure)
+		// Check for failure threshold
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case h := <-m.failureChan:
 			return fmt.Errorf(
 				"max failures exceeded for block %d, failed after %d attempts",
 				h,
 				m.state.GetFailureCount(h),
 			)
+		default:
+		}
+
+		// Blocking wait for event (backfill, realtime)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case h := <-m.heightChan:
 			m.handleNewHeight(ctx, h)
 		case <-m.workReady:
@@ -145,9 +148,22 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 }
 
-// handleNewHeight processes new heights as they arrive. If there is a capacity, the worker is
-// dispatched. In case there is no capacity, the height is dropped (backfill will pick it up via lowest..highest scan).
+// handleNewHeight applies admission control that preserves fairness without sacrificing utilization.
+// When there is backfill backlog and unused backfill quota, we deliberately yield this opportunity
+// so the scheduler loop can assign a backfill task on the next available worker permit. This prevents
+// realtime from monopolizing the shared pool under sustained new-block load while still allowing
+// realtime to use all remaining capacity once backfill reaches its cap or has no backlog. If worker
+// capacity is unavailable for realtime, the height is dropped; backfill will pick it up later.
 func (m *Manager) handleNewHeight(ctx context.Context, h uint64) {
+	// If there is backfill backlog and backfill capacity available, yield this chance
+	// so the scheduler loop
+	if _, ok := m.state.FindNextUnclaimedHeight(); ok {
+		if m.backfillSem.TryAcquire(1) {
+			m.backfillSem.Release(1)
+			return
+		}
+	}
+
 	// Try to acquire a worker slot immediately for low-latency.
 	// Do NOT consume backfill priority for realtime work.
 	// If no slot available; drop height. Backfill will pick it up via lowest..highest scan.
@@ -173,14 +189,16 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 		m.signalWorkReady()
 	}()
 
-	if err := m.worker.Process(ctx, h); err != nil {
+	err := m.worker.Process(ctx, h)
+	if err != nil {
 		m.log.Warnw("failed processing block height", "height", h, "error", err)
 		m.handleFailure(h)
 		return
 	}
 
 	// Mark processed and attempt to advance lowest
-	if err := m.state.MarkProcessed(h); err != nil {
+	err = m.state.MarkProcessed(h)
+	if err != nil {
 		m.log.Warnw("failed to mark processed", "height", h, "error", err)
 		m.handleFailure(h)
 		return

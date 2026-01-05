@@ -4,7 +4,7 @@ A concurrent scheduler that processes block heights within a sliding window. It 
 
 ### Terminology
 - **lowest**: the lowest unprocessed height in the window.
-- **highest**: the highest unprocessed height. The active window is `[lowest..highest]`, inclusive, and the invariant `highest >= lowest` holds.
+- **highest**: the highest unprocessed height. The active window is `[lowest..highest]`, inclusive, and the invariant `highest >= lowest` and `lowest >= 0` holds.
 
 ### Main Components
 - **Manager**: coordinator and scheduler.
@@ -13,17 +13,18 @@ A concurrent scheduler that processes block heights within a sliding window. It 
   - Tracks per‑height failures and stops when a threshold is exceeded.
   - Realtime heights are accepted via a method and processed with low latency when capacity is available; otherwise backfill scanning picks them up.
 - **Worker**: user‑provided unit of work that processes a single height with a context. The Manager reacts to success (mark + advance) or failure (increment failure count, enforce threshold).
-- **State**: thread‑safe in‑memory store of the sliding window. Maintains `lowest/highest`, processed heights, advances `lowest` when contiguous, and preserves invariants for concurrent access, tracks inflight heights to preent duplicate work.
+- **State**: thread‑safe in‑memory store of the sliding window. Maintains `lowest/highest`, processed heights, advances `lowest` when contiguous, and preserves invariants for concurrent access, tracks inflight heights to prevent duplicate work.
 - **Subscriber**: integrates with a chain client (e.g., Coreth) to receive new heads and forward their heights to the Manager via `SubmitHeight`.
 
 ### Scheduling Strategy
 - **Backfill (aggressive fill)**:
-  - Scan `[lowest..highest]` to find the next height that is not processed and not inflight.
-  - If both backfill and worker capacity are available, dispatch a worker and repeat until capacity or work is exhausted.
+  - Acquire backfill capacity first (bounded by `backfillPriority`), then atomically claim a height by calling `State.FindAndSetNextInflight()` which finds the next available height and marks it inflight under a single lock.
+  - This ordering guarantees we never strand a height in `inflight` without the capacity to process it and eliminates find‑then‑claim races.
+  - Repeat until capacity or work is exhausted.
 - **Realtime**:
   - On a new height, ensure `highest >= height`.
-  - Try to acquire only a worker slot (realtime does not consume backfill priority).
-  - If no worker capacity, the event is dropped; backfill picks it up from the window.
+  - Soft admission control prevents starvation: if backfill has backlog and backfill capacity is available, realtime yields this turn so backfill can take the next worker slot; otherwise realtime proceeds immediately.
+  - Realtime uses only the worker pool (does not consume backfill capacity). If no worker capacity, the event is dropped; backfill picks it up from the window.
 
 ### Success and Failure Handling
 - On worker success:
@@ -56,4 +57,12 @@ A concurrent scheduler that processes block heights within a sliding window. It 
 ### Notes
 - Realtime submission is non‑blocking: if the height channel is full, the Manager ensures `highest` covers the submitted height so backfill can pick it up.
 - Backfill priority is strictly less than concurrency to guarantee that realtime tasks always have the opportunity to acquire worker capacity.
+  
+#### Why acquire capacity first, then claim atomically?
+- Acquiring backfill capacity before claiming ensures a claimed height can start immediately; we do not mark `inflight` unless a worker will actually run. This avoids “stranded inflight” entries and simplifies recovery.
+- The atomic `FindAndSetNextInflight()` takes the State lock while scanning and marking, removing the time‑of‑check/time‑of‑use race where another goroutine could claim the same height between separate “find” and “set” calls.
+
+#### Why this removes livelock/near‑livelock risks
+- The `Run` loop prioritizes failures (non‑blocking check of the failure channel) so shutdown isn’t starved by other activity.
+- Realtime gating yields only while backfill has backlog and unused backfill capacity; once backfill reaches its cap, realtime proceeds normally. This prevents realtime starving backfill without reserving idle capacity, and backfill cannot starve realtime because it is capped by `backfillPriority < concurrency`.
 

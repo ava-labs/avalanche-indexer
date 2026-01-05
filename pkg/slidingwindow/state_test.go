@@ -68,37 +68,43 @@ func TestSetHighest(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
-		initialLowest  uint64
 		initialHighest uint64
 		newHighest     uint64
-		wantErr        bool
+		heightSet      bool
 		wantHighest    uint64
 	}{
 		{
-			name:          "valid increase",
-			initialLowest: 5, initialHighest: 5, newHighest: 8,
-			wantErr: false, wantHighest: 8,
+			name:           "valid increase",
+			initialHighest: 5, newHighest: 8,
+			heightSet: true, wantHighest: 8,
 		},
 		{
-			name:          "invalid below Lowest",
-			initialLowest: 5, initialHighest: 7, newHighest: 3,
-			wantErr: true, wantHighest: 7,
+			name:           "invalid below highest",
+			initialHighest: 7, newHighest: 3,
+			heightSet: false, wantHighest: 7,
+		},
+		{
+			name:           "invalid equal to highest",
+			initialHighest: 7, newHighest: 7,
+			heightSet: false, wantHighest: 7,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c, err := NewState(tt.initialLowest, tt.initialHighest)
+			c, err := NewState(0, tt.initialHighest)
 			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.initialLowest, tt.initialHighest, err)
+				t.Fatalf("NewState(0, %d) unexpected error: %v", tt.initialHighest, err)
 			}
-			err = c.SetHighest(tt.newHighest)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("SetHighest(%d) expected error", tt.newHighest)
+			ok := c.SetHighest(tt.newHighest)
+			if tt.heightSet {
+				if !ok {
+					t.Fatalf("SetHighest(%d) expected true, got false", tt.newHighest)
 				}
-			} else if err != nil {
-				t.Fatalf("SetHighest(%d) unexpected error: %v", tt.newHighest, err)
+			} else {
+				if ok {
+					t.Fatalf("SetHighest(%d) expected false, got true", tt.newHighest)
+				}
 			}
 			if got := c.GetHighest(); got != tt.wantHighest {
 				t.Fatalf("GetHighest()=%d, want %d", got, tt.wantHighest)

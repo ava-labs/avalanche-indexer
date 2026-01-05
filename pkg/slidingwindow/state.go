@@ -52,19 +52,15 @@ func (s *State) GetHighest() uint64 {
 }
 
 // SetHighest sets highest unprocessed block height.
-// New highest must be greater than or equal to the current lowest.
-func (s *State) SetHighest(newHighest uint64) error {
+// New highest must be greater than the current highest.
+func (s *State) SetHighest(newHighest uint64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if newHighest < s.lowest {
-		return fmt.Errorf(
-			"invalid watermark update: new watermark violates invariants: new highest < lowest: %d < %d",
-			newHighest,
-			s.lowest,
-		)
+	if newHighest <= s.highest {
+		return false // ignore out-of-order or lower heights
 	}
 	s.highest = newHighest
-	return nil
+	return true
 }
 
 // ResetLowest sets lowest unprocessed block height explicitly (used for re-ingestion).
@@ -195,6 +191,25 @@ func (s *State) UnsetInflight(h uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.inflight, h)
+}
+
+// FindAndSetNextInflight finds the next available height in [lowest..highest] that is not
+// processed and not inflight, and marks it inflight atomically.
+// Returns the claimed height and true on success, or 0,false if none available.
+func (s *State) FindAndSetNextInflight() (uint64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for h := s.lowest; h <= s.highest; h++ {
+		if _, ok := s.processed[h]; ok {
+			continue
+		}
+		if _, ok := s.inflight[h]; ok {
+			continue
+		}
+		s.inflight[h] = struct{}{}
+		return h, true
+	}
+	return 0, false
 }
 
 // FindNextUnclaimedHeight finds the next height in the [lowset..highest] window that is not processed and not inflight.

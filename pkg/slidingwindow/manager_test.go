@@ -345,7 +345,7 @@ func TestProcess(t *testing.T) {
 		// Some tests intentionally start with Highest < h to trigger MarkProcessed errors later.
 		// We temporarily expand Highest to claim inflight, then restore it.
 		if c.h > c.initialHighest {
-			if err := m.state.SetHighest(c.h); err != nil {
+			if ok := m.state.SetHighest(c.h); !ok {
 				t.Fatalf("failed to expand Highest for claim: %v", err)
 			}
 		}
@@ -443,14 +443,14 @@ func TestProcess(t *testing.T) {
 			expectLowest:       advance(100),
 		},
 		{
-			name:               "mark processed error: no advance; failure signaled",
+			name:               "mark processed succeeds with monotonic highest: no advance; no failure",
 			isBackfill:         true,
 			preAcquireBackfill: true,
 			workerErr:          false,
 			initialLowest:      0,
 			initialHighest:     0,
 			h:                  100,
-			expectFailure:      true,
+			expectFailure:      false,
 			expectLowest:       ptr(0),
 		},
 	}
