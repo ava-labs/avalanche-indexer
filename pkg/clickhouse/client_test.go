@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const envTrue = "true"
+
 func TestLoad(t *testing.T) {
 	cfg := Load()
 
@@ -33,11 +35,11 @@ func TestLoad(t *testing.T) {
 
 	expectedPassword := os.Getenv("CLICKHOUSE_PASSWORD")
 
-	expectedDebug := os.Getenv("CLICKHOUSE_DEBUG") == "true"
+	expectedDebug := os.Getenv("CLICKHOUSE_DEBUG") == envTrue
 
 	expectedInsecureSkipVerify := os.Getenv("CLICKHOUSE_INSECURE_SKIP_VERIFY")
 	if expectedInsecureSkipVerify == "" {
-		expectedInsecureSkipVerify = "true" // default
+		expectedInsecureSkipVerify = envTrue // default
 	}
 
 	// Verify values match environment or defaults
@@ -46,7 +48,7 @@ func TestLoad(t *testing.T) {
 	assert.Equal(t, expectedUsername, cfg.Username)
 	assert.Equal(t, expectedPassword, cfg.Password)
 	assert.Equal(t, expectedDebug, cfg.Debug)
-	assert.Equal(t, expectedInsecureSkipVerify == "true", cfg.InsecureSkipVerify)
+	assert.Equal(t, expectedInsecureSkipVerify == envTrue, cfg.InsecureSkipVerify)
 
 	// These values come from defaults or environment (if set)
 	assert.GreaterOrEqual(t, cfg.MaxExecutionTime, 0)

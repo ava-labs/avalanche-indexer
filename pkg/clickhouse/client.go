@@ -105,6 +105,7 @@ func NewClient(cfg ClickhouseConfig) (Client, error) {
 			},
 		},
 		TLS: &tls.Config{
+			//nolint:gosec // InsecureSkipVerify is configurable via environment variable for development/testing
 			InsecureSkipVerify: cfg.InsecureSkipVerify,
 		},
 	}
