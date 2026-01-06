@@ -1,6 +1,4 @@
 avalanche-indexer
-blockfetcher
-consumerindexer
 .DS_Store
 .env
 /bin
