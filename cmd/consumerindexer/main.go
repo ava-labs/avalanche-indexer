@@ -8,9 +8,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ava-labs/avalanche-indexer/cmd/utils"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -74,7 +74,7 @@ func run(c *cli.Context) error {
 	topicsStr := c.String("topics")
 	autoOffsetReset := c.String("auto-offset-reset")
 
-	sugar, err := newSugaredLogger(verbose)
+	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
@@ -151,20 +151,4 @@ func run(c *cli.Context) error {
 			}
 		}
 	}
-}
-
-func newSugaredLogger(verbose bool) (*zap.SugaredLogger, error) {
-	if verbose {
-		l, err := zap.NewDevelopment()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create development logger: %w", err)
-		}
-		return l.Sugar(), nil
-	}
-
-	l, err := zap.NewProduction()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create production logger: %w", err)
-	}
-	return l.Sugar(), nil
 }

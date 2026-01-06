@@ -4,12 +4,12 @@ Consumes blocks from Kafka pipeline
 
 ### Usage
 
-Run locally (from repo root):
+Run locally (from repo root after build):
 
 ```bash
-go run ./cmd/consumerindexer run \
+bin/consumerindexer run \
   --bootstrap-servers localhost:9092 \
-  --group-id my-consumer-group \
+  --group-id hello-avalanche-group \
   --topics blocks,transactions
 ```
 

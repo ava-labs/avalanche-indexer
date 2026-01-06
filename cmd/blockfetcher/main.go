@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ava-labs/avalanche-indexer/cmd/utils"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -15,7 +16,6 @@ import (
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
 	"github.com/urfave/cli/v2"
-	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -103,7 +103,7 @@ func run(c *cli.Context) error {
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
 
-	sugar, err := newSugaredLogger(verbose)
+	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
@@ -180,20 +180,4 @@ func run(c *cli.Context) error {
 
 	sugar.Info("shutting down")
 	return nil
-}
-
-func newSugaredLogger(verbose bool) (*zap.SugaredLogger, error) {
-	if verbose {
-		l, err := zap.NewDevelopment()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create development logger: %w", err)
-		}
-		return l.Sugar(), nil
-	}
-
-	l, err := zap.NewProduction()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create production logger: %w", err)
-	}
-	return l.Sugar(), nil
 }
