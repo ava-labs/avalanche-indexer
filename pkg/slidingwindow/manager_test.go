@@ -491,7 +491,7 @@ func TestProcess(t *testing.T) {
 }
 
 // assertAnError returns a generic error suitable for mocks.
-func assertAnError() error { return context.Canceled }
+func assertAnError() error { return errors.New("synthetic failure") }
 
 func TestRun_BackfillAggressiveFill(t *testing.T) {
 	t.Parallel()
