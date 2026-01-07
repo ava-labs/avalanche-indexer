@@ -1,9 +1,8 @@
-package queue
+package kafka
 
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -11,14 +10,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// KafkaPublisher is a synchronous Kafka producer implementation of QueuePublisher.
+type Msg struct {
+	Topic   string
+	Value   []byte
+	Key     []byte
+	Headers map[string]string
+}
+
+// Producer is a synchronous Kafka producer implementation of QueueProducer.
 //
-// Publish blocks until a delivery confirmation is received from Kafka.
+// Produce blocks until a delivery confirmation is received from Kafka.
 // Background goroutines are used to process Kafka producer events and logs.
 //
 // Close MUST be called at least once to stop background goroutines and flush
 // all in-flight messages.
-type KafkaPublisher struct {
+type Producer struct {
 	producer   *kafka.Producer
 	log        *zap.SugaredLogger
 	errCh      chan error
@@ -29,14 +35,15 @@ type KafkaPublisher struct {
 }
 
 const flushTimeoutMs = 10000
+const queueFullErrorRetryDelayMs = time.Second
 
-// NewKafkaPublisher creates a Kafka-backed QueuePublisher.
+// NewProducer creates a Kafka-backed QueueProducer.
 //
 // The provided context controls the lifetime of background goroutines.
-// Canceling the context signals the publisher to stop processing events.
+// Canceling the context signals the producer to stop processing events.
 //
 // Callers must call Close to flush messages and release resources.
-func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.SugaredLogger) (*KafkaPublisher, error) {
+func NewProducer(ctx context.Context, conf *kafka.ConfigMap, log *zap.SugaredLogger) (*Producer, error) {
 	p, err := kafka.NewProducer(conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
@@ -47,7 +54,7 @@ func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.Suga
 		return nil, fmt.Errorf("failed to get go.logs.channel.enable: %w", err)
 	}
 
-	kq := KafkaPublisher{
+	kq := Producer{
 		producer:   p,
 		log:        log,
 		eventsDone: make(chan struct{}),
@@ -68,22 +75,22 @@ func NewKafkaPublisher(ctx context.Context, conf *kafka.ConfigMap, log *zap.Suga
 	return &kq, nil
 }
 
-// Publish synchronously publishes a message to Kafka.
+// Produce synchronously produces a message to Kafka.
 //
-// Publish blocks until either a delivery receipt is received from Kafka
+// Produce blocks until either a delivery receipt is received from Kafka
 // or the provided context is canceled. If the producer queue is full,
 // the message will be retried internally with a 1 second delay.
 //
-// Publish returns an error in the following cases:
+// Produce returns an error in the following cases:
 //   - the broker is unavailable,
 //   - the message is invalid or exceeds size limits,
 //   - the topic or partition is unknown,
 //   - authentication or authorization fails.
 //
-// If the context is canceled before delivery confirmation, Publish returns
-// ctx.Err(). The message MAY still be delivered after Publish returns.
+// If the context is canceled before delivery confirmation, Produce returns
+// ctx.Err(). The message MAY still be delivered after Produce returns.
 // Callers should design for possible duplicate delivery when retrying.
-func (q *KafkaPublisher) Publish(ctx context.Context, msg Msg) error {
+func (q *Producer) Produce(ctx context.Context, msg Msg) error {
 	deliveryCh := make(chan kafka.Event, 1)
 	defer close(deliveryCh)
 
@@ -116,9 +123,9 @@ func (q *KafkaPublisher) Publish(ctx context.Context, msg Msg) error {
 // Callers should be aware that canceling the context may result in message loss.
 //
 // Close must be called at least once. Calling Close multiple times does nothing.
-func (q *KafkaPublisher) Close(ctx context.Context) {
+func (q *Producer) Close(ctx context.Context) {
 	q.once.Do(func() {
-		q.log.Info("closing kafka publisher")
+		q.log.Info("closing kafka producer")
 		defer close(q.errCh)
 
 		// Signal the monitor or logs goroutines to stop.
@@ -142,21 +149,21 @@ func (q *KafkaPublisher) Close(ctx context.Context) {
 		}
 
 		q.producer.Close()
-		q.log.Info("kafka publisher closed")
+		q.log.Info("kafka producer closed")
 	})
 }
 
 // Errors returns a channel that receives at most one fatal error.
-// The channel is closed when the publisher shuts down.
+// The channel is closed when the producer shuts down.
 // Non-fatal Kafka errors are logged and ignored.
 //
-// After receiving an error, the publisher is no longer usable.
-// Call Close() and create a new publisher to recover.
-func (q *KafkaPublisher) Errors() <-chan error {
+// After receiving an error, the producer is no longer usable.
+// Call Close() and create a new producer to recover.
+func (q *Producer) Errors() <-chan error {
 	return q.errCh
 }
 
-func (q *KafkaPublisher) printKafkaLogs(ctx context.Context) {
+func (q *Producer) printKafkaLogs(ctx context.Context) {
 	defer close(q.logsDone)
 	for {
 		select {
@@ -182,7 +189,7 @@ func (q *KafkaPublisher) printKafkaLogs(ctx context.Context) {
 // If the producer queue is full, produceWithRetry sleeps for 1 second and retries.
 // If the broker is not available, message size is invalid, the message is invalid,
 // topic or partition is unknown, or the authentication fails, produceWithRetry returns an error.
-func (q *KafkaPublisher) produceWithRetry(
+func (q *Producer) produceWithRetry(
 	ctx context.Context,
 	msg *kafka.Message,
 	deliveryCh chan kafka.Event,
@@ -206,8 +213,8 @@ func (q *KafkaPublisher) produceWithRetry(
 
 		switch kafkaErr.Code() {
 		case kafka.ErrQueueFull:
-			q.log.Warn("producer queue full, retrying")
-			time.Sleep(time.Second)
+			q.log.Warn("producer queue full, retrying in %s", queueFullErrorRetryDelayMs)
+			time.Sleep(queueFullErrorRetryDelayMs)
 			continue
 		case kafka.ErrBrokerNotAvailable:
 			return fmt.Errorf("broker not available: %w", err)
@@ -225,7 +232,7 @@ func (q *KafkaPublisher) produceWithRetry(
 	}
 }
 
-func (q *KafkaPublisher) monitorProducerEvents(ctx context.Context) {
+func (q *Producer) monitorProducerEvents(ctx context.Context) {
 	defer close(q.eventsDone)
 	for {
 		select {
@@ -248,13 +255,15 @@ func (q *KafkaPublisher) monitorProducerEvents(ctx context.Context) {
 
 			switch e := ev.(type) {
 			case *kafka.Message:
-				q.log.Error("delivery receipts should be handled during publishing")
+				q.log.Error("delivery receipts should be handled during producing")
 				if e.TopicPartition.Error != nil {
 					q.log.Errorf("failed to deliver message: %v", e.TopicPartition)
 				} else {
 					q.log.Debugf("Successfully produced record to topic %s partition [%d] @ offset %v",
 						*e.TopicPartition.Topic, e.TopicPartition.Partition, e.TopicPartition.Offset)
 				}
+			case kafka.Stats:
+				q.log.Infof("kafka stats event received %s", e.String())
 			case kafka.Error:
 				if e.IsFatal() || e.Code() == kafka.ErrAllBrokersDown {
 					err := fmt.Errorf("fatal err or ErrAllBrokersDown: %#x, %w", e.Code(), e)
@@ -280,11 +289,6 @@ func handleDeliveryEvent(log *zap.SugaredLogger, msg *kafka.Message, ev kafka.Ev
 		if err := e.TopicPartition.Error; err != nil {
 			return fmt.Errorf("delivery failed: %w", err)
 		}
-
-		if !slices.Equal(e.Value, msg.Value) {
-			return fmt.Errorf("delivery receipt: %v did not match expected value: %v", e.Value, msg.Value)
-		}
-
 		log.Debugf(
 			"delivered to topic [%s] partition [%d] at offset [%d]",
 			*msg.TopicPartition.Topic,
