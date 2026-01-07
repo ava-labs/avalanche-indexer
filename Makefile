@@ -17,7 +17,7 @@ build-all:
 	@# Only build directories in cmd/ that contain main.go (excludes cmd/utils, etc.)
 	@set -e; \
 	for d in cmd/*; do \
-		if [ -d "$$d" ] && [ -f "$$d/main.go" ]; then \
+		if [ -d "$$d" ]; then \
 			name=$$(basename "$$d"); \
 			echo "Building $$name..."; \
 			$(GO) build -o $(BIN_DIR)/$$name ./$$d || exit 1; \

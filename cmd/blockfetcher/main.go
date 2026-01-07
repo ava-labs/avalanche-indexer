@@ -7,7 +7,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -41,11 +44,10 @@ func main() {
 						Required: true,
 					},
 					&cli.Uint64Flag{
-						Name:     "start-height",
-						Aliases:  []string{"s"},
-						Usage:    "The start height to fetch blocks from",
-						EnvVars:  []string{"START_HEIGHT"},
-						Required: true,
+						Name:    "start-height",
+						Aliases: []string{"s"},
+						Usage:   "The start height to fetch blocks from",
+						EnvVars: []string{"START_HEIGHT"},
 					},
 					&cli.Uint64Flag{
 						Name:    "end-height",
@@ -81,6 +83,20 @@ func main() {
 						EnvVars: []string{"MAX_FAILURES"},
 						Value:   3,
 					},
+					&cli.StringFlag{
+						Name:    "snapshot-table-name",
+						Aliases: []string{"t"},
+						Usage:   "The name of the table to write the snapshot to",
+						EnvVars: []string{"SNAPSHOT_TABLE_NAME"},
+						Value:   "snapshots",
+					},
+					&cli.DurationFlag{
+						Name:    "snapshot-interval",
+						Aliases: []string{"i"},
+						Usage:   "The interval to write the snapshot to the repository",
+						EnvVars: []string{"SNAPSHOT_INTERVAL"},
+						Value:   1 * time.Minute,
+					},
 				},
 				Action: run,
 			},
@@ -102,7 +118,8 @@ func run(c *cli.Context) error {
 	backfill := c.Uint64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
-
+	snapshotTableName := c.String("snapshot-table-name")
+	snapshotInterval := c.Duration("snapshot-interval")
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
@@ -117,7 +134,17 @@ func run(c *cli.Context) error {
 		"backfill", backfill,
 		"blocksCap", blocksCap,
 		"maxFailures", maxFailures,
+		"snapshotTableName", snapshotTableName,
+		"snapshotInterval", snapshotInterval,
 	)
+
+	var fetchStartHeight bool
+	if start == 0 {
+		sugar.Infof("start block height: not specified, will fetch from the latest snapshot")
+		fetchStartHeight = true
+	} else {
+		sugar.Infof("start block height: %d", start)
+	}
 
 	var fetchLatestHeight bool
 	if end == 0 {
@@ -141,12 +168,35 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
 
+	// Initialize ClickHouse client
+	chCfg := clickhouse.Load()
+	chClient, err := clickhouse.New(chCfg, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to create ClickHouse client: %w", err)
+	}
+	defer chClient.Close()
+
+	sugar.Info("ClickHouse client created successfully")
+
 	if fetchLatestHeight {
 		end, err = customethclient.New(client).BlockNumber(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get latest block height: %w", err)
 		}
 		sugar.Infof("latest block height: %d", end)
+	}
+
+	repo := snapshot.NewRepository(chClient, snapshotTableName)
+	if fetchStartHeight {
+		snapshot, err := repo.ReadSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to read snapshot: %w", err)
+		}
+		if snapshot == nil {
+			return fmt.Errorf("snapshot not found")
+		}
+		start = snapshot.Lowest
+		sugar.Infof("start block height: %d", start)
 	}
 
 	s, err := slidingwindow.NewState(start, end)
@@ -166,6 +216,9 @@ func run(c *cli.Context) error {
 	})
 	g.Go(func() error {
 		return m.Run(gctx)
+	})
+	g.Go(func() error {
+		return startSnapshotScheduler(gctx, s, repo, snapshotInterval)
 	})
 
 	err = g.Wait()
