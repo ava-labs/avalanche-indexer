@@ -5,8 +5,8 @@ go 1.24.9
 require (
 	github.com/ava-labs/coreth v0.16.0
 	github.com/ava-labs/libevm v1.13.15-0.20251016142715-1bccf4f2ddb2
-	github.com/prometheus/client_golang v1.23.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.13.0
+	github.com/prometheus/client_golang v1.23.0
 	github.com/urfave/cli/v2 v2.27.7
 	go.uber.org/zap v1.27.1
 	golang.org/x/sync v0.17.0
@@ -57,7 +57,6 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
-	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
