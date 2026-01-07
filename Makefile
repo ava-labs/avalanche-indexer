@@ -15,7 +15,7 @@ build-all:
 	@mkdir -p $(BIN_DIR)
 	@set -e; \
 	for d in cmd/*; do \
-		if [ -d "$$d" ]; then \
+		if [ -d "$$d" ] && [ -f "$$d/main.go" ]; then \
 			name=$$(basename "$$d"); \
 			echo "Building $$name..."; \
 			$(GO) build -o $(BIN_DIR)/$$name ./$$d; \
