@@ -75,7 +75,7 @@ func TestLoad(t *testing.T) {
 // TestLoad_ConfigParseError tests the config parsing error path
 // Note: Testing os.Exit(1) directly is difficult without subprocess testing.
 func TestLoad_ConfigParseError(t *testing.T) {
-	// The config parsing error path (slog.Error + os.Exit(1)) is difficult to test
+	// The config parsing error path (zap logger + os.Exit(1)) is difficult to test
 	cfg := Load()
 	assert.NotNil(t, cfg)
 }
@@ -243,7 +243,7 @@ func TestNew_PingFailure(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, client)
 
-	// This exercises the non-Exception error logging path: slog.Error("failed to ping ClickHouse", "error", err)
+	// This exercises the non-Exception error logging path: sugar.Errorw("failed to ping ClickHouse", "error", err)
 }
 
 // TestClient_Ping_ExceptionError tests the Exception error logging path
@@ -276,7 +276,7 @@ func TestClient_Ping_ExceptionError(t *testing.T) {
 	assert.Equal(t, exception.Message, ex.Message)
 	assert.Equal(t, exception.StackTrace, ex.StackTrace)
 
-	// Note: The structured logging (slog.Error with code, message, stack_trace) happens in New,
+	// Note: The structured logging (sugar.Errorw with error details) happens in New,
 	// not in client.Ping(). That path is tested in integration tests. This test verifies the Exception
 	// can be returned and type-asserted correctly.
 

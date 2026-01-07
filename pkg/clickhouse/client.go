@@ -141,15 +141,13 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 	defer cancel()
 
 	if err := conn.Ping(ctx); err != nil {
-		// Create client first to use its logger
-		c := &client{conn: conn, logger: sugar}
 		if exception, ok := err.(*clickhouse.Exception); ok {
-			if c.logger != nil {
-				c.logger.Errorw("failed to ping ClickHouse", "error", exception)
+			if sugar != nil {
+				sugar.Errorw("failed to ping ClickHouse", "error", exception)
 			}
 		} else {
-			if c.logger != nil {
-				c.logger.Errorw("failed to ping ClickHouse", "error", err)
+			if sugar != nil {
+				sugar.Errorw("failed to ping ClickHouse", "error", err)
 			}
 		}
 		// Close connection to avoid resource leaks, but ignore close errors since we're already failing
