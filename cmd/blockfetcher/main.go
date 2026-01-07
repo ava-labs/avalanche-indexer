@@ -7,13 +7,16 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/ava-labs/avalanche-indexer/internal/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -81,6 +84,13 @@ func main() {
 						EnvVars: []string{"MAX_FAILURES"},
 						Value:   3,
 					},
+					&cli.StringFlag{
+						Name:    "metrics-addr",
+						Aliases: []string{"m"},
+						Usage:   "Address to expose Prometheus metrics (e.g., :9090)",
+						EnvVars: []string{"METRICS_ADDR"},
+						Value:   ":9090",
+					},
 				},
 				Action: run,
 			},
@@ -102,6 +112,7 @@ func run(c *cli.Context) error {
 	backfill := c.Uint64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
+	metricsAddr := c.String("metrics-addr")
 
 	sugar, err := newSugaredLogger(verbose)
 	if err != nil {
@@ -117,6 +128,7 @@ func run(c *cli.Context) error {
 		"backfill", backfill,
 		"blocksCap", blocksCap,
 		"maxFailures", maxFailures,
+		"metricsAddr", metricsAddr,
 	)
 
 	var fetchLatestHeight bool
@@ -127,6 +139,18 @@ func run(c *cli.Context) error {
 		sugar.Infof("end block height: %d", end)
 	}
 
+	// Initialize Prometheus metrics
+	registry := prometheus.NewRegistry()
+	m, err := metrics.New(registry)
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+
+	// Start metrics server
+	metricsServer := metrics.NewServer(metricsAddr, registry)
+	metricsErrCh := metricsServer.Start()
+	sugar.Infof("metrics server started at http://localhost%s/metrics", metricsAddr)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -136,7 +160,7 @@ func run(c *cli.Context) error {
 	}
 	defer client.Close()
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, m)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
@@ -154,32 +178,47 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create state: %w", err)
 	}
 
-	m, err := slidingwindow.NewManager(sugar, s, w, concurrency, backfill, blocksCap, maxFailures)
+	mgr, err := slidingwindow.NewManager(sugar, s, w, concurrency, backfill, blocksCap, maxFailures, m)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
 
+	// Initialize window metrics with starting state
+	m.UpdateWindowMetrics(start, end, 0)
+
 	sub := subscriber.NewCoreth(sugar, customethclient.New(client))
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return sub.Subscribe(gctx, blocksCap, m)
+		return sub.Subscribe(gctx, blocksCap, mgr)
 	})
 	g.Go(func() error {
-		return m.Run(gctx)
+		return mgr.Run(gctx)
 	})
+
+	// Also monitor metrics server errors
+	go func() {
+		if err := <-metricsErrCh; err != nil {
+			sugar.Errorw("metrics server error", "error", err)
+		}
+	}()
 
 	err = g.Wait()
 	if errors.Is(err, context.Canceled) {
 		sugar.Infow("exiting due to context cancellation")
-		return nil
-	}
-	if err != nil {
+	} else if err != nil {
 		sugar.Errorw("run failed", "error", err)
-		return err
 	}
 
-	sugar.Info("shutting down")
-	return nil
+	// Gracefully shutdown metrics server
+	sugar.Info("shutting down metrics server")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		sugar.Warnw("metrics server shutdown error", "error", err)
+	}
+
+	sugar.Info("shutdown complete")
+	return err
 }
 
 func newSugaredLogger(verbose bool) (*zap.SugaredLogger, error) {

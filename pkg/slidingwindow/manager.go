@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/ava-labs/avalanche-indexer/internal/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 )
 
 type Manager struct {
-	log    *zap.SugaredLogger
-	state  *State
-	worker worker.Worker
+	log     *zap.SugaredLogger
+	state   *State
+	worker  worker.Worker
+	metrics *metrics.Metrics
 
 	// Limits total concurrent workers (both realtime and backfill).
 	workerSem *semaphore.Weighted
@@ -32,12 +35,14 @@ type Manager struct {
 
 // New creates a Manager and returns an error if arguments are invalid.
 // Constraints: concurrency>0; 0<backfillPriority<concurrency; heightsChCapacity>0; maxFailures>0.
+// The metrics parameter is optional
 func NewManager(
 	log *zap.SugaredLogger,
 	s *State,
 	w worker.Worker,
 	concurrency, backfillPriority uint64,
 	heightChanCapacity, maxFailures int,
+	m *metrics.Metrics,
 ) (*Manager, error) {
 	if log == nil {
 		return nil, errors.New("invalid logger: must not be nil")
@@ -71,6 +76,7 @@ func NewManager(
 		log:         log,
 		state:       s,
 		worker:      w,
+		metrics:     m,
 		workerSem:   semaphore.NewWeighted(int64(concurrency)),
 		backfillSem: semaphore.NewWeighted(int64(backfillPriority)),
 		heightChan:  make(chan uint64, heightChanCapacity),
@@ -88,6 +94,13 @@ func (m *Manager) SubmitHeight(h uint64) bool {
 	if ok := m.state.SetHighest(h); !ok {
 		m.log.Debugw("failed to set highest height", h)
 		return false
+	}
+
+	// Update window metrics when HIB changes
+	if m.metrics != nil {
+		lowest, highest := m.state.Window()
+		processedCount := m.state.ProcessedCount()
+		m.metrics.UpdateWindowMetrics(lowest, highest, processedCount)
 	}
 
 	select {
@@ -180,6 +193,8 @@ func (m *Manager) handleNewHeight(ctx context.Context, h uint64) {
 // It acquires semaphores, processes the block height, and releases them.
 // It also signals the backfill ready channel when the window advances.
 func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
+	start := time.Now()
+
 	defer func() {
 		if isBackfill {
 			m.backfillSem.Release(1)
@@ -211,8 +226,22 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 		m.handleFailure(h)
 		return
 	}
+
+	// Record block processing duration on success
+	if m.metrics != nil {
+		m.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
+	}
+
 	// Attempt to slide lowest forward; idempotent if not contiguous
 	_, _ = m.state.AdvanceLowest()
+
+	// Update window metrics after state change
+	if m.metrics != nil {
+		lowest, highest := m.state.Window()
+		processedCount := m.state.ProcessedCount()
+		m.metrics.UpdateWindowMetrics(lowest, highest, processedCount)
+	}
+
 	m.state.ResetFailureCount(h)
 }
 

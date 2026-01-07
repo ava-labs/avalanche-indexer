@@ -227,3 +227,17 @@ func (s *State) FindNextUnclaimedHeight() (uint64, bool) {
 	}
 	return 0, false
 }
+
+// Window returns the current window boundaries (lowest, highest).
+func (s *State) Window() (uint64, uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lowest, s.highest
+}
+
+// ProcessedCount returns the number of blocks in the processed set.
+func (s *State) ProcessedCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.processed)
+}
