@@ -21,8 +21,12 @@ import (
 // Load configuration from environment variables
 cfg := clickhouse.Load()
 
+// Create a logger (using zap)
+logger, _ := zap.NewProduction()
+sugar := logger.Sugar()
+
 // Create a new client
-client, err := clickhouse.NewClient(cfg)
+client, err := clickhouse.New(cfg, sugar)
 if err != nil {
     log.Fatal(err)
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,8 +52,14 @@ func TestMain(m *testing.M) {
 	// Override with test-friendly settings
 	cfg.DialTimeout = 5
 
+	// Create a test logger
+	sugar, err := utils.NewSugaredLogger(true) // Use verbose mode for integration tests
+	if err != nil {
+		log.Fatalf("integration: failed to create logger: %v", err)
+	}
+
 	// Initialize ClickHouse client - fail if not available
-	chClient, err := NewClient(cfg)
+	chClient, err := New(cfg, sugar)
 	if err != nil {
 		log.Fatalf("integration: failed to open ClickHouse connection: %v", err)
 	}
@@ -93,16 +100,19 @@ func TestClientImpl_Methods(t *testing.T) {
 	tempCfg := Load()
 	tempCfg.DialTimeout = 5
 
-	tempClient, err := NewClient(tempCfg)
+	sugar, err := utils.NewSugaredLogger(true) // Use verbose mode for tests
+	require.NoError(t, err)
+
+	tempClient, err := New(tempCfg, sugar)
 	require.NoError(t, err, "Should be able to create a temporary client")
 	err = tempClient.Close()
 	assert.NoError(t, err, "Close() should succeed")
 }
 
-// TestNewClient_ExceptionError tests the clickhouse.Exception error path
-// This test exercises the Exception handling code in NewClient's Ping error handler
+// TestNew_ExceptionError tests the clickhouse.Exception error path
+// This test exercises the Exception handling code in New's Ping error handler
 // by attempting to connect with invalid credentials, which triggers a clickhouse.Exception
-func TestNewClient_ExceptionError(t *testing.T) {
+func TestNew_ExceptionError(t *testing.T) {
 	require.NotNil(t, testClickHouseClient, "ClickHouse client must be initialized")
 
 	// Use a config that will connect but fail authentication, triggering a clickhouse.Exception
@@ -111,10 +121,13 @@ func TestNewClient_ExceptionError(t *testing.T) {
 	cfg.Username = "invaliduser"
 	cfg.Password = "invalidpass"
 
-	client, err := NewClient(cfg)
+	sugar, err := utils.NewSugaredLogger(true) // Use verbose mode for tests
+	require.NoError(t, err)
+
+	client, err := New(cfg, sugar)
 
 	// Should fail with authentication error (clickhouse.Exception)
-	require.Error(t, err, "NewClient should fail with invalid credentials")
+	require.Error(t, err, "New should fail with invalid credentials")
 	assert.Nil(t, client, "Client should be nil when creation fails")
 
 	// Verify it's a clickhouse.Exception

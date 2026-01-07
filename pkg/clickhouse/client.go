@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/caarlos0/env/v11"
+	"go.uber.org/zap"
 )
 
 // Client wraps the ClickHouse connection
@@ -30,8 +30,14 @@ const (
 	maxBlockSize     = "max_block_size"
 )
 
+// Connection timeout for initial ping during client creation
+const (
+	defaultPingTimeout = 10 * time.Second
+)
+
 type client struct {
-	conn driver.Conn
+	conn   driver.Conn
+	logger *zap.SugaredLogger
 }
 
 // ClickhouseConfig holds the configuration for a ClickHouse client
@@ -63,14 +69,21 @@ type ClickhouseConfig struct {
 func Load() ClickhouseConfig {
 	var cfg ClickhouseConfig
 	if err := env.Parse(&cfg); err != nil {
-		slog.Error("failed to parse clickhouse config", "error", err)
+		// Create a temporary logger for error reporting during config loading
+		logger, logErr := zap.NewProduction()
+		if logErr == nil {
+			logger.Sugar().Errorw("failed to parse clickhouse config", "error", err)
+		} else {
+			// Fallback to fmt if logger creation fails
+			fmt.Fprintf(os.Stderr, "failed to parse clickhouse config: %v\n", err)
+		}
 		os.Exit(1)
 	}
 	return cfg
 }
 
-// NewClient creates a new ClickHouse client with the provided configuration
-func NewClient(cfg ClickhouseConfig) (Client, error) {
+// New creates a new ClickHouse client with the provided configuration
+func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 	opts := &clickhouse.Options{
 		Addr: cfg.Addresses,
 		Auth: clickhouse.Auth{
@@ -111,9 +124,9 @@ func NewClient(cfg ClickhouseConfig) (Client, error) {
 	}
 
 	// Set debug function if debug is enabled
-	if cfg.Debug {
+	if cfg.Debug && sugar != nil {
 		opts.Debugf = func(format string, v ...interface{}) {
-			fmt.Printf(format, v...)
+			sugar.Debugf(format, v...)
 		}
 	}
 
@@ -124,21 +137,27 @@ func NewClient(cfg ClickhouseConfig) (Client, error) {
 
 	// Test the connection. if this fails, the service should not start
 	// as ClickHouse is critical for the service to function
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultPingTimeout)
 	defer cancel()
 
 	if err := conn.Ping(ctx); err != nil {
+		// Create client first to use its logger
+		c := &client{conn: conn, logger: sugar}
 		if exception, ok := err.(*clickhouse.Exception); ok {
-			slog.Error("failed to ping ClickHouse", "error", exception)
+			if c.logger != nil {
+				c.logger.Errorw("failed to ping ClickHouse", "error", exception)
+			}
 		} else {
-			slog.Error("failed to ping ClickHouse", "error", err)
+			if c.logger != nil {
+				c.logger.Errorw("failed to ping ClickHouse", "error", err)
+			}
 		}
 		// Close connection to avoid resource leaks, but ignore close errors since we're already failing
 		_ = conn.Close()
 		return nil, err
 	}
 
-	return &client{conn: conn}, nil
+	return &client{conn: conn, logger: sugar}, nil
 }
 
 func (c *client) Conn() driver.Conn {
@@ -151,10 +170,4 @@ func (c *client) Ping(ctx context.Context) error {
 
 func (c *client) Close() error {
 	return c.conn.Close()
-}
-
-// newTestClient creates a client with a provided connection for testing purposes
-// This allows unit tests to test client methods without requiring a real ClickHouse connection
-func newTestClient(conn driver.Conn) Client {
-	return &client{conn: conn}
 }
