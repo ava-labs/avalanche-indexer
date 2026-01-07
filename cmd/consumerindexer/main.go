@@ -120,8 +120,30 @@ func run(c *cli.Context) error {
 		topics[i] = strings.TrimSpace(topic)
 	}
 
+	// Rebalance callback to handle partition assignment/revocation
+	rebalanceCallback := func(c *kafka.Consumer, event kafka.Event) error {
+		switch e := event.(type) {
+		case kafka.AssignedPartitions:
+			partitions := make([]string, len(e.Partitions))
+			for i, p := range e.Partitions {
+				partitions[i] = fmt.Sprintf("%s[%d]", *p.Topic, p.Partition)
+			}
+			sugar.Infow("partitions assigned", "partitions", partitions)
+			return c.Assign(e.Partitions)
+		case kafka.RevokedPartitions:
+			partitions := make([]string, len(e.Partitions))
+			for i, p := range e.Partitions {
+				partitions[i] = fmt.Sprintf("%s[%d]", *p.Topic, p.Partition)
+			}
+			sugar.Infow("partitions revoked", "partitions", partitions)
+			return c.Unassign()
+		default:
+			return nil
+		}
+	}
+
 	// Subscribe to topics
-	err = consumer.SubscribeTopics(topics, nil)
+	err = consumer.SubscribeTopics(topics, rebalanceCallback)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to topics: %w", err)
 	}
@@ -155,8 +177,17 @@ func run(c *cli.Context) error {
 					sugar.Debugw("reached end of partition", "error", e)
 					continue
 				}
-				sugar.Errorw("consumer error", "error", e)
-				return fmt.Errorf("consumer error: %w", e)
+				if e.IsFatal() {
+					sugar.Errorw("fatal kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
+					return fmt.Errorf("fatal kafka error: %w", e)
+				}
+				if e.Code() == kafka.ErrAllBrokersDown {
+					sugar.Errorw("all brokers down", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
+					return fmt.Errorf("all brokers down: %w", e)
+				}
+				// Non-fatal errors are usually informational
+				sugar.Warnw("ignoring unexpected kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
+				continue
 			default:
 				sugar.Debugw("ignored event", "type", fmt.Sprintf("%T", e))
 			}
