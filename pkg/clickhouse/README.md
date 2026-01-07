@@ -70,25 +70,24 @@ go test ./pkg/clickhouse
 
 ### Integration Tests
 
-Integration tests require a running ClickHouse instance. Use the provided docker-compose file:
+Integration tests require a running ClickHouse instance. Use the root docker-compose file:
 
 ```bash
-# Start ClickHouse
-cd pkg/clickhouse
-docker-compose up -d
+# Start ClickHouse (from repo root)
+docker-compose up -d clickhouse
 
 # Run integration tests
 go test -tags=integration ./pkg/clickhouse
 
 # Stop ClickHouse
-docker-compose down
+docker-compose stop clickhouse
 ```
 
 The integration tests will automatically load `.env.test` if present, or use default values.
 
 ## Docker Compose
 
-A `docker-compose.yml` file is provided for local testing. It starts a ClickHouse server on:
+The root `docker-compose.yml` includes a ClickHouse service for local testing. It starts a ClickHouse server on:
 - Port `8123` (HTTP interface)
 - Port `9000` (Native protocol)
 
