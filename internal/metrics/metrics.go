@@ -121,6 +121,9 @@ func (m *Metrics) IncError(errType string) {
 
 // CommitBlocks records blocks being committed when LUB advances.
 func (m *Metrics) CommitBlocks(count int, lub, hib uint64, processedSetSize int) {
+	if m == nil {
+		return
+	}
 	m.lubAdvances.Inc()
 	m.blocksProcessed.Add(float64(count))
 	m.UpdateWindowMetrics(lub, hib, processedSetSize)
@@ -128,6 +131,9 @@ func (m *Metrics) CommitBlocks(count int, lub, hib uint64, processedSetSize int)
 
 // UpdateWindowMetrics updates sliding window state gauges.
 func (m *Metrics) UpdateWindowMetrics(lub, hib uint64, processedSetSize int) {
+	if m == nil {
+		return
+	}
 	m.lub.Set(float64(lub))
 	m.hib.Set(float64(hib))
 	m.processedSetSize.Set(float64(processedSetSize))
@@ -135,16 +141,25 @@ func (m *Metrics) UpdateWindowMetrics(lub, hib uint64, processedSetSize int) {
 
 // IncRPCInFlight increments the in-flight RPC gauge.
 func (m *Metrics) IncRPCInFlight() {
+	if m == nil {
+		return
+	}
 	m.rpcInFlight.Inc()
 }
 
 // DecRPCInFlight decrements the in-flight RPC gauge.
 func (m *Metrics) DecRPCInFlight() {
+	if m == nil {
+		return
+	}
 	m.rpcInFlight.Dec()
 }
 
 // RecordRPCCall records an RPC call outcome.
 func (m *Metrics) RecordRPCCall(method string, err error, durationSeconds float64) {
+	if m == nil {
+		return
+	}
 	status := "success"
 	if err != nil {
 		status = "error"
@@ -155,5 +170,8 @@ func (m *Metrics) RecordRPCCall(method string, err error, durationSeconds float6
 
 // ObserveBlockProcessingDuration records a block processing duration.
 func (m *Metrics) ObserveBlockProcessingDuration(seconds float64) {
+	if m == nil {
+		return
+	}
 	m.blockProcessingDuration.Observe(seconds)
 }

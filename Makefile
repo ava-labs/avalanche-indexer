@@ -1,3 +1,4 @@
+
 GO ?= go
 BIN_DIR ?= bin
 

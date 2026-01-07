@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/internal/metrics"
 	"github.com/ava-labs/avalanche-indexer/cmd/utils"
+	"github.com/ava-labs/avalanche-indexer/internal/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -194,13 +194,12 @@ func run(c *cli.Context) error {
 	g.Go(func() error {
 		return mgr.Run(gctx)
 	})
-
-	// Also monitor metrics server errors
-	go func() {
+	g.Go(func() error {
 		if err := <-metricsErrCh; err != nil {
-			sugar.Errorw("metrics server error", "error", err)
+			return fmt.Errorf("metrics server failed: %w", err)
 		}
-	}()
+		return nil
+	})
 
 	err = g.Wait()
 	if errors.Is(err, context.Canceled) {

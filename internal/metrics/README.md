@@ -5,8 +5,8 @@ This package provides Prometheus metrics instrumentation for the Avalanche index
 ## Quick Start
 
 ```bash
-# Start the indexer (exposes metrics on :9090)
-go run ./cmd/indexer
+# Start the block fetcher (exposes metrics on :9090)
+go run ./cmd/blockfetcher run --rpc-url=<RPC_URL> --start=<HEIGHT> --end=<HEIGHT> --concurrency=4 --backfill-priority=2
 
 # In another terminal, start Prometheus + Grafana
 docker compose up -d
@@ -34,7 +34,6 @@ All metrics use the `indexer` namespace.
 |--------|------|-------------|
 | `indexer_blocks_processed_total` | Counter | Total blocks processed and committed |
 | `indexer_lub_advances_total` | Counter | Times LUB was advanced |
-| `indexer_errors_total` | Counter | Total errors by type (`out_of_window`, `invalid_watermark`) |
 
 ### RPC Metrics
 

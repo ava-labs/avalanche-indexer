@@ -232,14 +232,23 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 		m.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	}
 
-	// Attempt to slide lowest forward; idempotent if not contiguous
-	_, _ = m.state.AdvanceLowest()
+	// Get current lowest before attempting to advance (needed for commit count)
+	oldLowest, _ := m.state.Window()
 
-	// Update window metrics after state change
+	// Attempt to slide lowest forward; idempotent if not contiguous
+	newLowest, advanced := m.state.AdvanceLowest()
+
+	// Update metrics after state change
 	if m.metrics != nil {
-		lowest, highest := m.state.Window()
+		_, highest := m.state.Window()
 		processedCount := m.state.ProcessedCount()
-		m.metrics.UpdateWindowMetrics(lowest, highest, processedCount)
+		if advanced {
+			// Window advanced - record committed blocks
+			blocksCommitted := int(newLowest - oldLowest)
+			m.metrics.CommitBlocks(blocksCommitted, newLowest, highest, processedCount)
+		} else {
+			m.metrics.UpdateWindowMetrics(newLowest, highest, processedCount)
+		}
 	}
 
 	m.state.ResetFailureCount(h)
