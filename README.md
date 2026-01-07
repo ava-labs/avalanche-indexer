@@ -70,6 +70,80 @@ See each service’s README for its full flag/env reference.
 - `blockfetcher` — fetches blocks from a Coreth-compatible RPC and processes them via a sliding window.
   - See `cmd/blockfetcher/README.md`
 
+---
+
+### Local Development Setup
+
+This project includes a Docker Compose configuration for local development with:
+- **Apache Kafka** (KRaft mode, no Zookeeper)
+- **Confluent Schema Registry**
+- **Provectus Kafka UI**
+
+##### Quick Start
+
+```bash
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+```
+
+##### Services & Ports
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Kafka | `9092` | External client access (from host) |
+| Kafka | `9093` | Internal access (container-to-container) |
+| Schema Registry | `8081` | Avro/JSON/Protobuf schema management |
+| Kafka UI | `8080` | Web UI for Kafka management |
+
+##### Connecting from Host Applications
+
+```bash
+# Kafka bootstrap server
+localhost:9092
+
+# Schema Registry
+http://localhost:8081
+
+# Kafka UI
+http://localhost:8080
+```
+
+##### Connecting from Other Docker Containers
+
+Add your container to the `kafka-network` network and use:
+
+```bash
+# Kafka bootstrap server
+kafka:9093
+
+# Schema Registry
+http://schema-registry:8081
+```
+
+##### Kafka UI Features
+
+The Kafka UI is pre-configured with:
+- **Cluster**: `local-kafka` pointing to the local Kafka broker
+- **Schema Registry**: Already integrated
+- **Dynamic Config**: Enabled (`DYNAMIC_CONFIG_ENABLED=true`) — allows adding/editing clusters via the UI
+
+Access the UI at [http://localhost:8080](http://localhost:8080) to:
+- View and create topics
+- Browse messages
+- Manage consumer groups
+- View and register schemas
+
+---
+
 ### Contributing
 - Open an issue or pull request
 - Run `make unit-test` and `make lint` before submitting
