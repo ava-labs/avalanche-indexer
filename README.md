@@ -72,19 +72,17 @@ See each service’s README for its full flag/env reference.
 
 ---
 
-### Local Kafka Development Setup
+### Local Development Setup
 
-This project includes a Docker Compose configuration for local Kafka development with:
+This project includes a Docker Compose configuration for local development with:
 - **Apache Kafka** (KRaft mode, no Zookeeper)
 - **Confluent Schema Registry**
 - **Provectus Kafka UI**
 
-![Kafka UI Topics View](docs/images/kafka-ui.png)
-
-#### Quick Start
+##### Quick Start
 
 ```bash
-# Start all Kafka services
+# Start all services
 docker compose up -d
 
 # View logs
@@ -97,7 +95,7 @@ docker compose down
 docker compose down -v
 ```
 
-#### Services & Ports
+##### Services & Ports
 
 | Service | Port | Description |
 |---------|------|-------------|
@@ -106,7 +104,7 @@ docker compose down -v
 | Schema Registry | `8081` | Avro/JSON/Protobuf schema management |
 | Kafka UI | `8080` | Web UI for Kafka management |
 
-#### Connecting from Host Applications
+##### Connecting from Host Applications
 
 ```bash
 # Kafka bootstrap server
@@ -119,7 +117,7 @@ http://localhost:8081
 http://localhost:8080
 ```
 
-#### Connecting from Other Docker Containers
+##### Connecting from Other Docker Containers
 
 Add your container to the `kafka-network` network and use:
 
@@ -131,7 +129,7 @@ kafka:9093
 http://schema-registry:8081
 ```
 
-#### Kafka UI Features
+##### Kafka UI Features
 
 The Kafka UI is pre-configured with:
 - **Cluster**: `local-kafka` pointing to the local Kafka broker
