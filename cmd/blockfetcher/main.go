@@ -1,0 +1,199 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
+
+	"github.com/ava-labs/coreth/plugin/evm/customethclient"
+	"github.com/ava-labs/coreth/rpc"
+	"github.com/urfave/cli/v2"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+)
+
+func main() {
+	app := &cli.App{
+		Name:  "blockfetcher",
+		Usage: "Fetch blocks from a given RPC endpoint",
+		Commands: []*cli.Command{
+			{
+				Name:  "run",
+				Usage: "Run the block fetcher",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "verbose",
+						Aliases: []string{"v"},
+						Usage:   "Enable verbose logging",
+					},
+					&cli.StringFlag{
+						Name:     "rpc-url",
+						Aliases:  []string{"r"},
+						Usage:    "The websocket RPC URL to fetch blocks from",
+						EnvVars:  []string{"RPC_URL"},
+						Required: true,
+					},
+					&cli.Uint64Flag{
+						Name:     "start-height",
+						Aliases:  []string{"s"},
+						Usage:    "The start height to fetch blocks from",
+						EnvVars:  []string{"START_HEIGHT"},
+						Required: true,
+					},
+					&cli.Uint64Flag{
+						Name:    "end-height",
+						Aliases: []string{"e"},
+						Usage:   "The end height to fetch blocks to. If not specified, will fetch the latest block height",
+						EnvVars: []string{"END_HEIGHT"},
+					},
+					&cli.Uint64Flag{
+						Name:     "concurrency",
+						Aliases:  []string{"c"},
+						Usage:    "The number of concurrent workers to use",
+						EnvVars:  []string{"CONCURRENCY"},
+						Required: true,
+					},
+					&cli.Uint64Flag{
+						Name:     "backfill-priority",
+						Aliases:  []string{"b"},
+						Usage:    "The priority of the backfill workers (must be less than concurrency)",
+						EnvVars:  []string{"BACKFILL_PRIORITY"},
+						Required: true,
+					},
+					&cli.IntFlag{
+						Name:    "blocks-ch-capacity",
+						Aliases: []string{"B"},
+						Usage:   "The capacity of the eth_subscribe channel",
+						EnvVars: []string{"BLOCKS_CH_CAPACITY"},
+						Value:   100,
+					},
+					&cli.IntFlag{
+						Name:    "max-failures",
+						Aliases: []string{"f"},
+						Usage:   "The maximum number of block processing failures before stopping",
+						EnvVars: []string{"MAX_FAILURES"},
+						Value:   3,
+					},
+				},
+				Action: run,
+			},
+		},
+	}
+	err := app.Run(os.Args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(c *cli.Context) error {
+	verbose := c.Bool("verbose")
+	rpcURL := c.String("rpc-url")
+	start := c.Uint64("start-height")
+	end := c.Uint64("end-height")
+	concurrency := c.Uint64("concurrency")
+	backfill := c.Uint64("backfill-priority")
+	blocksCap := c.Int("blocks-ch-capacity")
+	maxFailures := c.Int("max-failures")
+
+	sugar, err := newSugaredLogger(verbose)
+	if err != nil {
+		return fmt.Errorf("failed to create logger: %w", err)
+	}
+	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
+	sugar.Infow("config",
+		"verbose", verbose,
+		"rpcURL", rpcURL,
+		"start", start,
+		"end", end,
+		"concurrency", concurrency,
+		"backfill", backfill,
+		"blocksCap", blocksCap,
+		"maxFailures", maxFailures,
+	)
+
+	var fetchLatestHeight bool
+	if end == 0 {
+		sugar.Infof("end block height: not specified, will fetch until the latest block")
+		fetchLatestHeight = true
+	} else {
+		sugar.Infof("end block height: %d", end)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	client, err := rpc.DialContext(ctx, rpcURL)
+	if err != nil {
+		return fmt.Errorf("failed to dial rpc: %w", err)
+	}
+	defer client.Close()
+
+	w, err := worker.NewCorethWorker(ctx, rpcURL)
+	if err != nil {
+		return fmt.Errorf("failed to create worker: %w", err)
+	}
+
+	if fetchLatestHeight {
+		end, err = customethclient.New(client).BlockNumber(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get latest block height: %w", err)
+		}
+		sugar.Infof("latest block height: %d", end)
+	}
+
+	s, err := slidingwindow.NewState(start, end)
+	if err != nil {
+		return fmt.Errorf("failed to create state: %w", err)
+	}
+
+	m, err := slidingwindow.NewManager(sugar, s, w, concurrency, backfill, blocksCap, maxFailures)
+	if err != nil {
+		return fmt.Errorf("failed to create manager: %w", err)
+	}
+
+	sub := subscriber.NewCoreth(sugar, customethclient.New(client))
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return sub.Subscribe(gctx, blocksCap, m)
+	})
+	g.Go(func() error {
+		return m.Run(gctx)
+	})
+
+	err = g.Wait()
+	if errors.Is(err, context.Canceled) {
+		sugar.Infow("exiting due to context cancellation")
+		return nil
+	}
+	if err != nil {
+		sugar.Errorw("run failed", "error", err)
+		return err
+	}
+
+	sugar.Info("shutting down")
+	return nil
+}
+
+func newSugaredLogger(verbose bool) (*zap.SugaredLogger, error) {
+	if verbose {
+		l, err := zap.NewDevelopment()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create development logger: %w", err)
+		}
+		return l.Sugar(), nil
+	}
+
+	l, err := zap.NewProduction()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create production logger: %w", err)
+	}
+	return l.Sugar(), nil
+}
