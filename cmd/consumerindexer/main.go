@@ -8,7 +8,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/ava-labs/avalanche-indexer/cmd/utils"
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
 )
@@ -89,6 +90,16 @@ func run(c *cli.Context) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Initialize ClickHouse client
+	chCfg := clickhouse.Load()
+	chClient, err := clickhouse.New(chCfg, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to create ClickHouse client: %w", err)
+	}
+	defer chClient.Close()
+
+	sugar.Info("ClickHouse client created successfully")
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{

@@ -8,10 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ava-labs/avalanche-indexer/cmd/utils"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"

@@ -4,6 +4,7 @@ networks:
 
 volumes:
   kafka-data:
+  clickhouse-test-data:
 
 services:
   # Kafka Broker with KRaft (no Zookeeper) - Official Apache Kafka
@@ -108,3 +109,33 @@ services:
       retries: 5
       start_period: 30s
 
+  # ClickHouse Server
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-test
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native protocol
+    environment:
+      CLICKHOUSE_DB: test_db
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse-test-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Tabix UI for ClickHouse
+  tabix:
+    image: spoonest/clickhouse-tabix-web-client
+    container_name: tabix
+    ports:
+      - "8082:80"
+    depends_on:
+      clickhouse:
+        condition: service_healthy

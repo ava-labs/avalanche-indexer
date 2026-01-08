@@ -15,6 +15,7 @@ lint:
 build-all:
 	@mkdir -p $(BIN_DIR)
 	@set -e; \
+	# Only build directories in cmd/ that contain main.go (excludes cmd/utils, etc.) \
 	for d in cmd/*; do \
 		if [ -d "$$d" ] && [ -f "$$d/main.go" ]; then \
 			name=$$(basename "$$d"); \
