@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/internal/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"

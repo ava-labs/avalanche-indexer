@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/internal/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"

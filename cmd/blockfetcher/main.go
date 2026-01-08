@@ -9,8 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/cmd/utils"
-	"github.com/ava-labs/avalanche-indexer/internal/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
