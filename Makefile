@@ -14,12 +14,13 @@ lint:
 .PHONY: build-all
 build-all:
 	@mkdir -p $(BIN_DIR)
+	@# Only build directories in cmd/ that contain main.go (excludes cmd/utils, etc.)
 	@set -e; \
 	for d in cmd/*; do \
 		if [ -d "$$d" ] && [ -f "$$d/main.go" ]; then \
 			name=$$(basename "$$d"); \
 			echo "Building $$name..."; \
-			$(GO) build -o $(BIN_DIR)/$$name ./$$d; \
+			$(GO) build -o $(BIN_DIR)/$$name ./$$d || exit 1; \
 		fi; \
 	done
 
