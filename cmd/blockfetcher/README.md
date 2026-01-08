@@ -10,9 +10,11 @@ Fetches blocks from an RPC endpoint and processes them concurrently using a slid
 
 ### Usage
 
-Run locally (from repo root after build):
+Run locally (from repo root):
 
 ```bash
+make build-all 
+
 bin/blockfetcher run \
   --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
   --start-height 0 \
