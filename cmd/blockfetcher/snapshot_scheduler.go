@@ -16,6 +16,7 @@ func startSnapshotScheduler(
 	s *slidingwindow.State,
 	repo snapshot.Repository,
 	interval time.Duration,
+	chainID uint64,
 ) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -28,6 +29,7 @@ func startSnapshotScheduler(
 			lowest := s.GetLowest()
 			ctxW, cancel := context.WithTimeout(ctx, 10*time.Second)
 			err := repo.WriteSnapshot(ctxW, &snapshot.Snapshot{
+				ChainID:   chainID,
 				Lowest:    lowest,
 				Timestamp: time.Now().Unix(),
 			})

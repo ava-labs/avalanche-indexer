@@ -21,8 +21,8 @@ func (m *mockSnapshotRepo) WriteSnapshot(ctx context.Context, s *snapshot.Snapsh
 	return args.Error(0)
 }
 
-func (m *mockSnapshotRepo) ReadSnapshot(ctx context.Context) (*snapshot.Snapshot, error) {
-	args := m.Called(ctx)
+func (m *mockSnapshotRepo) ReadSnapshot(ctx context.Context, chainID uint64) (*snapshot.Snapshot, error) {
+	args := m.Called(ctx, chainID)
 	if v := args.Get(0); v != nil {
 		return v.(*snapshot.Snapshot), args.Error(1)
 	}
@@ -56,7 +56,7 @@ func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- startSnapshotScheduler(ctx, state, repo, 10*time.Millisecond)
+		done <- startSnapshotScheduler(ctx, state, repo, 10*time.Millisecond, 43114)
 	}()
 
 	select {
@@ -90,7 +90,7 @@ func TestStartSnapshotScheduler_ErrorPropagates(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	gotErr := startSnapshotScheduler(ctx, state, repo, 5*time.Millisecond)
+	gotErr := startSnapshotScheduler(ctx, state, repo, 5*time.Millisecond, 43114)
 	assert.Error(t, gotErr)
 	assert.Contains(t, gotErr.Error(), "failed to write snapshot")
 	repo.AssertExpectations(t)
@@ -105,6 +105,6 @@ func TestStartSnapshotScheduler_ImmediateCancel(t *testing.T) {
 	repo := &mockSnapshotRepo{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = startSnapshotScheduler(ctx, state, repo, time.Second)
+	err = startSnapshotScheduler(ctx, state, repo, time.Second, 43114)
 	assert.NoError(t, err)
 }

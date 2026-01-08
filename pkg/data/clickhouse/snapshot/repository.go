@@ -11,7 +11,7 @@ import (
 // to the persistent storage (ClickHouse).
 type Repository interface {
 	WriteSnapshot(ctx context.Context, snapshot *Snapshot) error
-	ReadSnapshot(ctx context.Context) (*Snapshot, error)
+	ReadSnapshot(ctx context.Context, chainID uint64) (*Snapshot, error)
 }
 
 type repository struct {
@@ -24,21 +24,21 @@ func NewRepository(client clickhouse.Client, tableName string) Repository {
 }
 
 func (r *repository) WriteSnapshot(ctx context.Context, snapshot *Snapshot) error {
-	query := fmt.Sprintf("INSERT INTO %s (lowest, timestamp) VALUES (?, ?)", r.tableName)
+	query := fmt.Sprintf("INSERT INTO %s (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)", r.tableName)
 	err := r.client.Conn().
-		Exec(ctx, query, snapshot.Lowest, snapshot.Timestamp)
+		Exec(ctx, query, snapshot.ChainID, snapshot.Lowest, snapshot.Timestamp)
 	if err != nil {
 		return fmt.Errorf("failed to write snapshot: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) ReadSnapshot(ctx context.Context) (*Snapshot, error) {
+func (r *repository) ReadSnapshot(ctx context.Context, chainID uint64) (*Snapshot, error) {
 	var snapshot Snapshot
-	query := fmt.Sprintf("SELECT lowest, timestamp FROM %s", r.tableName)
+	query := fmt.Sprintf("SELECT * FROM %s FINAL WHERE chain_id = %d", r.tableName, chainID)
 	err := r.client.Conn().
 		QueryRow(ctx, query).
-		Scan(&snapshot.Lowest, &snapshot.Timestamp)
+		Scan(&snapshot.ChainID, &snapshot.Lowest, &snapshot.Timestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read snapshot: %w", err)
 	}

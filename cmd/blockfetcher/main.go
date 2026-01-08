@@ -37,6 +37,13 @@ func main() {
 						Usage:   "Enable verbose logging",
 					},
 					&cli.StringFlag{
+						Name:     "chain-id",
+						Aliases:  []string{"C"},
+						Usage:    "The chain ID to write the snapshot to",
+						EnvVars:  []string{"CHAIN_ID"},
+						Required: true,
+					},
+					&cli.StringFlag{
 						Name:     "rpc-url",
 						Aliases:  []string{"r"},
 						Usage:    "The websocket RPC URL to fetch blocks from",
@@ -88,7 +95,7 @@ func main() {
 						Aliases: []string{"t"},
 						Usage:   "The name of the table to write the snapshot to",
 						EnvVars: []string{"SNAPSHOT_TABLE_NAME"},
-						Value:   "snapshots",
+						Value:   "test_db.snapshots",
 					},
 					&cli.DurationFlag{
 						Name:    "snapshot-interval",
@@ -111,6 +118,7 @@ func main() {
 
 func run(c *cli.Context) error {
 	verbose := c.Bool("verbose")
+	chainID := c.Uint64("chain-id")
 	rpcURL := c.String("rpc-url")
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
@@ -127,6 +135,7 @@ func run(c *cli.Context) error {
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 	sugar.Infow("config",
 		"verbose", verbose,
+		"chainID", chainID,
 		"rpcURL", rpcURL,
 		"start", start,
 		"end", end,
@@ -188,7 +197,7 @@ func run(c *cli.Context) error {
 
 	repo := snapshot.NewRepository(chClient, snapshotTableName)
 	if fetchStartHeight {
-		snapshot, err := repo.ReadSnapshot(ctx)
+		snapshot, err := repo.ReadSnapshot(ctx, chainID)
 		if err != nil {
 			return fmt.Errorf("failed to read snapshot: %w", err)
 		}
@@ -218,7 +227,7 @@ func run(c *cli.Context) error {
 		return m.Run(gctx)
 	})
 	g.Go(func() error {
-		return startSnapshotScheduler(gctx, s, repo, snapshotInterval)
+		return startSnapshotScheduler(gctx, s, repo, snapshotInterval, chainID)
 	})
 
 	err = g.Wait()

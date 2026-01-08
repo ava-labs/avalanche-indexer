@@ -15,18 +15,22 @@ import (
 
 // rowMock is a minimal implementation of driver.Row that populates provided destinations.
 type rowMock struct {
-	lowest    uint64
-	timestamp int64
+	chainID                uint64
+	lowestUnprocessedBlock uint64
+	timestamp              int64
 }
 
 func (r rowMock) Scan(dest ...interface{}) error {
-	if len(dest) != 2 {
+	if len(dest) != 3 {
 		return errors.New("unexpected dest len")
 	}
 	if p, ok := dest[0].(*uint64); ok && p != nil {
-		*p = r.lowest
+		*p = r.chainID
 	}
-	if p, ok := dest[1].(*int64); ok && p != nil {
+	if p, ok := dest[1].(*uint64); ok && p != nil {
+		*p = r.lowestUnprocessedBlock
+	}
+	if p, ok := dest[2].(*int64); ok && p != nil {
 		*p = r.timestamp
 	}
 	return nil
@@ -47,13 +51,13 @@ func TestRepository_WriteSnapshot_Success(t *testing.T) {
 	ctx := context.Background()
 	// Expect Exec with query and args
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO snapshots (lowest, timestamp) VALUES (?, ?)",
-			mock.Anything, mock.Anything).
+		On("Exec", mock.Anything, "INSERT INTO snapshots (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)",
+			mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
 
 	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
 	now := time.Now().Unix()
-	err := repo.WriteSnapshot(ctx, &Snapshot{Lowest: 123, Timestamp: now})
+	err := repo.WriteSnapshot(ctx, &Snapshot{ChainID: 43114, Lowest: 123, Timestamp: now})
 	assert.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
@@ -63,12 +67,12 @@ func TestRepository_WriteSnapshot_Error(t *testing.T) {
 	mockConn := &testutils.MockConn{}
 	ctx := context.Background()
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO snapshots (lowest, timestamp) VALUES (?, ?)",
-			mock.Anything, mock.Anything).
+		On("Exec", mock.Anything, "INSERT INTO snapshots (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)",
+			mock.Anything, mock.Anything, mock.Anything).
 		Return(errors.New("exec failed"))
 
 	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
-	err := repo.WriteSnapshot(ctx, &Snapshot{Lowest: 1, Timestamp: 2})
+	err := repo.WriteSnapshot(ctx, &Snapshot{ChainID: 43114, Lowest: 1, Timestamp: 2})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to write snapshot")
 	mockConn.AssertExpectations(t)
@@ -80,13 +84,13 @@ func TestRepository_ReadSnapshot_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Prepare row with values
-	row := rowMock{lowest: 777, timestamp: 1700000000}
+	row := rowMock{chainID: 43114, lowestUnprocessedBlock: 777, timestamp: 1700000000}
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT lowest, timestamp FROM snapshots").
+		On("QueryRow", mock.Anything, "SELECT * FROM snapshots FINAL WHERE chain_id = 43114").
 		Return(row)
 
 	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
-	got, err := repo.ReadSnapshot(ctx)
+	got, err := repo.ReadSnapshot(ctx, 43114)
 	assert.NoError(t, err)
 	assert.NotNil(t, got)
 	assert.Equal(t, uint64(777), got.Lowest)
@@ -115,11 +119,11 @@ func TestRepository_ReadSnapshot_Error(t *testing.T) {
 
 	scanErr := errors.New("scan failed")
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT lowest, timestamp FROM snapshots").
+		On("QueryRow", mock.Anything, "SELECT * FROM snapshots FINAL WHERE chain_id = 43114").
 		Return(rowErrMock{err: scanErr})
 
 	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
-	got, err := repo.ReadSnapshot(ctx)
+	got, err := repo.ReadSnapshot(ctx, 43114)
 	assert.Nil(t, got)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read snapshot")
