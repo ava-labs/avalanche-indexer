@@ -63,7 +63,6 @@ func (w *CorethWorker) Process(ctx context.Context, height uint64) error {
 		Value: bytes,
 		Key:   []byte(block.Number().String()),
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to produce block %d: %w", height, err)
 	}
