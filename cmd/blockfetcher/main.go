@@ -13,12 +13,12 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
 	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
-	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -139,7 +139,8 @@ func run(c *cli.Context) error {
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
 	kafkaClientID := c.String("kafka-client-id")
-	sugar, err := newSugaredLogger(verbose)
+
+	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
@@ -251,20 +252,4 @@ func run(c *cli.Context) error {
 
 	sugar.Info("shutting down")
 	return nil
-}
-
-func newSugaredLogger(verbose bool) (*zap.SugaredLogger, error) {
-	if verbose {
-		l, err := zap.NewDevelopment()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create development logger: %w", err)
-		}
-		return l.Sugar(), nil
-	}
-
-	l, err := zap.NewProduction()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create production logger: %w", err)
-	}
-	return l.Sugar(), nil
 }
