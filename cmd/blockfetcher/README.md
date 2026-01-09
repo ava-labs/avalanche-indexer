@@ -26,8 +26,9 @@ bin/blockfetcher run \
 ```
 
 All flags have environment variable equivalents:
+- `--chain-id` → `CHAIN_ID` 
 - `--rpc-url` → `RPC_URL`
-- `--start-height` → `START_HEIGHT`
+- `--start-height` → `START_HEIGHT` (optional; if unset, use latest snapshot)
 - `--end-height` → `END_HEIGHT` (optional; if unset the latest is used)
 - `--concurrency` → `CONCURRENCY`
 - `--backfill-priority` → `BACKFILL_PRIORITY`
@@ -48,6 +49,7 @@ Run `blockfetcher` with environment variables (ENTRYPOINT selects the binary by 
 ```bash
 docker run --rm \
   -e APP=blockfetcher \
+  -e CHAIN_ID=43113 \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
   -e START_HEIGHT=0 \
   -e CONCURRENCY=16 \
@@ -65,6 +67,7 @@ Notes:
 docker build -t indexer:blockfetcher --build-arg APP=blockfetcher .
 docker run --rm \
   -e APP=blockfetcher \
+  -e CHAIN_ID=43113 \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
   -e START_HEIGHT=0 \
   -e CONCURRENCY=16 \
@@ -80,5 +83,4 @@ docker run --rm \
 ### Exit behavior
 - Returns a non-zero exit code on unrecoverable errors (e.g., RPC dial failure, failure threshold exceeded).
 - Gracefully exits on `SIGTERM`/`SIGINT`.
-
 
