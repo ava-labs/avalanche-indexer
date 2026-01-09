@@ -28,7 +28,7 @@ type Block struct {
 	BaseFee  *big.Int `json:"baseFeePerGas,omitempty"`
 
 	Timestamp uint64 `json:"timestamp"` // hex string to match RPC
-	Size      string `json:"size"`
+	Size      uint64 `json:"size"`
 
 	Difficulty *big.Int `json:"difficulty"`
 	MixHash    string   `json:"mixHash"`
@@ -83,6 +83,8 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 	}
 
 	return &Block{
+		Size:                  block.Size(),
+		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
 		GasLimit:              block.GasLimit(),
 		GasUsed:               block.GasUsed(),
