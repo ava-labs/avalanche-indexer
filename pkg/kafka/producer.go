@@ -34,7 +34,7 @@ type Producer struct {
 	once       sync.Once
 }
 
-const queueFullErrorRetryDelayMs = time.Second
+const queueFullErrorRetryDelay = time.Second
 
 // NewProducer creates a Kafka-backed QueueProducer.
 //
@@ -205,8 +205,8 @@ func (q *Producer) produceWithRetry(
 
 		switch kafkaErr.Code() {
 		case kafka.ErrQueueFull:
-			q.log.Warn("producer queue full, retrying in %s", queueFullErrorRetryDelayMs)
-			time.Sleep(queueFullErrorRetryDelayMs)
+			q.log.Warn("producer queue full, retrying in %s", queueFullErrorRetryDelay)
+			time.Sleep(queueFullErrorRetryDelay)
 			continue
 		case kafka.ErrBrokerNotAvailable:
 			return fmt.Errorf("broker not available: %w", err)
