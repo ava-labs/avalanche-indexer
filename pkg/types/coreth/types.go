@@ -77,6 +77,11 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 		return nil, fmt.Errorf("convert transactions: %w", err)
 	}
 
+	var beaconRoot string
+	if block.BeaconRoot() != nil {
+		beaconRoot = block.BeaconRoot().Hex()
+	}
+
 	return &Block{
 		Number:                block.Number(),
 		GasLimit:              block.GasLimit(),
@@ -94,7 +99,7 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 		ReceiptsRoot:          block.ReceiptHash().Hex(),
 		UncleHash:             block.UncleHash().Hex(),
 		ExtraData:             hexutil.Encode(block.Extra()),
-		ParentBeaconBlockRoot: block.BeaconRoot().Hex(),
+		ParentBeaconBlockRoot: beaconRoot,
 		ExcessBlobGas:         block.ExcessBlobGas(),
 		BlobGasUsed:           block.BlobGasUsed(),
 		Withdrawals:           WithdrawalsFromLibevm(block.Withdrawals()),

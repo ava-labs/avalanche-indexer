@@ -134,7 +134,7 @@ func run(c *cli.Context) error {
 	backfill := c.Uint64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
-	kafkaBrokers := c.StringSlice("kafka-brokers")
+	kafkaBrokers := c.String("kafka-brokers")
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
 	kafkaClientID := c.String("kafka-client-id")
