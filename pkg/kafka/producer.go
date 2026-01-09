@@ -276,28 +276,22 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 }
 
 func handleDeliveryEvent(log *zap.SugaredLogger, msg *kafka.Message, ev kafka.Event) error {
-	switch e := ev.(type) {
-	case *kafka.Message:
-		if err := e.TopicPartition.Error; err != nil {
-			return fmt.Errorf("delivery failed: %w", err)
-		}
-		log.Debugf(
-			"delivered to topic [%s] partition [%d] at offset [%d]",
-			*msg.TopicPartition.Topic,
-			e.TopicPartition.Partition,
-			e.TopicPartition.Offset,
-		)
-		return nil
-
-	case kafka.Error:
-		return fmt.Errorf(
-			"kafka error: code=%d fatal=%t: %w",
-			e.Code(),
-			e.IsFatal(),
-			e,
-		)
-
-	default:
+	e, ok := ev.(*kafka.Message)
+	if !ok {
+		// Per-message delivery channels only receive *kafka.Message events,
+		// but we keep this check as a defensive measure.
 		return fmt.Errorf("unexpected delivery event: %T", ev)
 	}
+
+	if err := e.TopicPartition.Error; err != nil {
+		return fmt.Errorf("delivery failed: %w", err)
+	}
+
+	log.Debugf(
+		"delivered to topic [%s] partition [%d] at offset [%d]",
+		*msg.TopicPartition.Topic,
+		e.TopicPartition.Partition,
+		e.TopicPartition.Offset,
+	)
+	return nil
 }
