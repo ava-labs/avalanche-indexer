@@ -85,11 +85,17 @@ func main() {
 						Value:   3,
 					},
 					&cli.StringFlag{
-						Name:    "metrics-addr",
+						Name:    "metrics-host",
+						Usage:   "Host for Prometheus metrics server (empty for all interfaces)",
+						EnvVars: []string{"METRICS_HOST"},
+						Value:   "",
+					},
+					&cli.IntFlag{
+						Name:    "metrics-port",
 						Aliases: []string{"m"},
-						Usage:   "Address to expose Prometheus metrics (e.g., :9090)",
-						EnvVars: []string{"METRICS_ADDR"},
-						Value:   ":9090",
+						Usage:   "Port for Prometheus metrics server",
+						EnvVars: []string{"METRICS_PORT"},
+						Value:   9090,
 					},
 				},
 				Action: run,
@@ -112,7 +118,9 @@ func run(c *cli.Context) error {
 	backfill := c.Uint64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
-	metricsAddr := c.String("metrics-addr")
+	metricsHost := c.String("metrics-host")
+	metricsPort := c.Int("metrics-port")
+	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -128,7 +136,8 @@ func run(c *cli.Context) error {
 		"backfill", backfill,
 		"blocksCap", blocksCap,
 		"maxFailures", maxFailures,
-		"metricsAddr", metricsAddr,
+		"metricsHost", metricsHost,
+		"metricsPort", metricsPort,
 	)
 
 	var fetchLatestHeight bool
@@ -195,10 +204,15 @@ func run(c *cli.Context) error {
 		return mgr.Run(gctx)
 	})
 	g.Go(func() error {
-		if err := <-metricsErrCh; err != nil {
-			return fmt.Errorf("metrics server failed: %w", err)
+		select {
+		case <-gctx.Done():
+			return nil
+		case err := <-metricsErrCh:
+			if err != nil {
+				return fmt.Errorf("metrics server failed: %w", err)
+			}
+			return nil
 		}
-		return nil
 	})
 
 	err = g.Wait()

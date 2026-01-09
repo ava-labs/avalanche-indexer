@@ -98,8 +98,7 @@ func (m *Manager) SubmitHeight(h uint64) bool {
 
 	// Update window metrics when HIB changes
 	if m.metrics != nil {
-		lowest, highest := m.state.Window()
-		processedCount := m.state.ProcessedCount()
+		lowest, highest, processedCount := m.state.Snapshot()
 		m.metrics.UpdateWindowMetrics(lowest, highest, processedCount)
 	}
 
@@ -240,8 +239,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 
 	// Update metrics after state change
 	if m.metrics != nil {
-		_, highest := m.state.Window()
-		processedCount := m.state.ProcessedCount()
+		_, highest, processedCount := m.state.Snapshot()
 		if advanced {
 			// Window advanced - record committed blocks
 			blocksCommitted := int(newLowest - oldLowest)

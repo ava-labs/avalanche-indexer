@@ -241,3 +241,11 @@ func (s *State) ProcessedCount() int {
 	defer s.mu.Unlock()
 	return len(s.processed)
 }
+
+// Snapshot returns window state atomically for metrics reporting.
+// This avoids data inconsistency.
+func (s *State) Snapshot() (lowest, highest uint64, processedCount int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lowest, s.highest, len(s.processed)
+}

@@ -10,8 +10,8 @@ const Namespace = "indexer"
 
 type Metrics struct {
 	// Sliding window state
-	lub              prometheus.Gauge
-	hib              prometheus.Gauge
+	lowest           prometheus.Gauge
+	highest          prometheus.Gauge
 	processedSetSize prometheus.Gauge
 
 	// Processing counters
@@ -32,15 +32,15 @@ type Metrics struct {
 // Returns an error if any metric registration fails.
 func New(reg prometheus.Registerer) (*Metrics, error) {
 	m := &Metrics{
-		lub: prometheus.NewGauge(prometheus.GaugeOpts{
+		lowest: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Name:      "lub",
-			Help:      "Lowest Unprocessed Block height",
+			Name:      "lowest",
+			Help:      "Lowest unprocessed block height (window lower bound)",
 		}),
-		hib: prometheus.NewGauge(prometheus.GaugeOpts{
+		highest: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Name:      "hib",
-			Help:      "Highest Ingested Block height",
+			Name:      "highest",
+			Help:      "Highest ingested block height (window upper bound)",
 		}),
 		processedSetSize: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
@@ -54,7 +54,7 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 		}),
 		lubAdvances: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Name:      "lub_advances_total",
+			Name:      "lowest_advances_total",
 			Help:      "Total number of times LUB was advanced",
 		}),
 		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -73,7 +73,9 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 			Subsystem: "rpc",
 			Name:      "duration_seconds",
 			Help:      "RPC call duration in seconds",
-			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+			// Buckets cover typical RPC latencies: 1ms, 5ms, 10ms, 25ms, 50ms,
+			// 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}, []string{"method"}),
 		rpcInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
@@ -90,8 +92,8 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 	}
 
 	err := errors.Join(
-		reg.Register(m.lub),
-		reg.Register(m.hib),
+		reg.Register(m.lowest),
+		reg.Register(m.highest),
 		reg.Register(m.processedSetSize),
 		reg.Register(m.blocksProcessed),
 		reg.Register(m.lubAdvances),
@@ -130,12 +132,12 @@ func (m *Metrics) CommitBlocks(count int, lub, hib uint64, processedSetSize int)
 }
 
 // UpdateWindowMetrics updates sliding window state gauges.
-func (m *Metrics) UpdateWindowMetrics(lub, hib uint64, processedSetSize int) {
+func (m *Metrics) UpdateWindowMetrics(lowest, highest uint64, processedSetSize int) {
 	if m == nil {
 		return
 	}
-	m.lub.Set(float64(lub))
-	m.hib.Set(float64(hib))
+	m.lowest.Set(float64(lowest))
+	m.highest.Set(float64(highest))
 	m.processedSetSize.Set(float64(processedSetSize))
 }
 

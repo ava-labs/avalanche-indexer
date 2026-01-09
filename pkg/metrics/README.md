@@ -5,8 +5,13 @@ This package provides Prometheus metrics instrumentation for the Avalanche index
 ## Quick Start
 
 ```bash
-# Start the block fetcher (exposes metrics on :9090)
-go run ./cmd/blockfetcher run --rpc-url=<RPC_URL> --start=<HEIGHT> --end=<HEIGHT> --concurrency=4 --backfill-priority=2
+# Start the block fetcher with C-Chain mainnet (exposes metrics on :9090)
+go run ./cmd/blockfetcher run \
+   --rpc-url=wss://api.avax.network/ext/bc/C/ws \
+   --start-height=75000000 \
+   --end-height=75000100 \
+   --concurrency=4 \
+   --backfill-priority=2
 
 # In another terminal, start Prometheus + Grafana
 docker compose up -d
@@ -14,6 +19,7 @@ docker compose up -d
 # Access dashboards
 # Prometheus: http://localhost:9091
 # Grafana:    http://localhost:3000 (admin/admin)
+# Health:     http://localhost:9090/health
 ```
 
 ## Available Metrics
@@ -24,8 +30,8 @@ All metrics use the `indexer` namespace.
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `indexer_lub` | Gauge | Lowest Unprocessed Block height |
-| `indexer_hib` | Gauge | Highest Ingested Block height |
+| `indexer_lowest` | Gauge | Lowest unprocessed block height (window lower bound) |
+| `indexer_highest` | Gauge | Highest ingested block height (window upper bound) |
 | `indexer_processed_set_size` | Gauge | Number of blocks in the in-memory processed set |
 
 ### Processing Counters
@@ -33,7 +39,7 @@ All metrics use the `indexer` namespace.
 | Metric | Type | Description |
 |--------|------|-------------|
 | `indexer_blocks_processed_total` | Counter | Total blocks processed and committed |
-| `indexer_lub_advances_total` | Counter | Times LUB was advanced |
+| `indexer_lowest_advances_total` | Counter | Times the lowest bound was advanced |
 
 ### RPC Metrics
 
@@ -53,7 +59,7 @@ All metrics use the `indexer` namespace.
 
 ```promql
 # Current backlog (blocks behind)
-indexer_hib - indexer_lub
+indexer_highest - indexer_lowest
 
 # Processing rate (blocks/sec over 5m)
 rate(indexer_blocks_processed_total[5m])
