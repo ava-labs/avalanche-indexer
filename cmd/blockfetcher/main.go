@@ -11,6 +11,7 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
+	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -227,7 +228,7 @@ func run(c *cli.Context) error {
 		return m.Run(gctx)
 	})
 	g.Go(func() error {
-		return startSnapshotScheduler(gctx, s, repo, snapshotInterval, chainID)
+		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
 	})
 
 	err = g.Wait()

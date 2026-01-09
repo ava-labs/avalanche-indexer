@@ -1,4 +1,4 @@
-package main
+package scheduler
 
 import (
 	"context"
@@ -56,7 +56,7 @@ func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- startSnapshotScheduler(ctx, state, repo, 10*time.Millisecond, 43114)
+		done <- Start(ctx, state, repo, 10*time.Millisecond, 43114)
 	}()
 
 	select {
@@ -86,11 +86,11 @@ func TestStartSnapshotScheduler_ErrorPropagates(t *testing.T) {
 	repo.
 		On("WriteSnapshot", mock.Anything, mock.AnythingOfType("*snapshot.Snapshot")).
 		Return(errors.New("write failed")).
-		Once()
+		Times(4) // initial try + 3 retries
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	gotErr := startSnapshotScheduler(ctx, state, repo, 5*time.Millisecond, 43114)
+	gotErr := Start(ctx, state, repo, 5*time.Millisecond, 43114)
 	assert.Error(t, gotErr)
 	assert.Contains(t, gotErr.Error(), "failed to write snapshot")
 	repo.AssertExpectations(t)
@@ -105,6 +105,6 @@ func TestStartSnapshotScheduler_ImmediateCancel(t *testing.T) {
 	repo := &mockSnapshotRepo{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = startSnapshotScheduler(ctx, state, repo, time.Second, 43114)
+	err = Start(ctx, state, repo, time.Second, 43114)
 	assert.NoError(t, err)
 }
