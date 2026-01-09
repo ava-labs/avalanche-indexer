@@ -7,17 +7,22 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
+
+const flushTimeoutOnClose = 15 * time.Second
 
 func main() {
 	app := &cli.App{
@@ -81,6 +86,34 @@ func main() {
 						EnvVars: []string{"MAX_FAILURES"},
 						Value:   3,
 					},
+					&cli.StringFlag{
+						Name:     "kafka-brokers",
+						Usage:    "The Kafka brokers to use (comma-separated list)",
+						EnvVars:  []string{"KAFKA_BROKERS"},
+						Required: true,
+						Value:    "localhost:9092",
+					},
+					&cli.StringFlag{
+						Name:     "kafka-topic",
+						Aliases:  []string{"t"},
+						Usage:    "The Kafka topic to use",
+						EnvVars:  []string{"KAFKA_TOPIC"},
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:    "kafka-enable-logs",
+						Aliases: []string{"l"},
+						Usage:   "Enable Kafka logs",
+						EnvVars: []string{"KAFKA_ENABLE_LOGS"},
+						Value:   "false",
+					},
+					&cli.StringFlag{
+						Name:    "kafka-client-id",
+						Aliases: []string{"c"},
+						Usage:   "The Kafka client ID to use",
+						EnvVars: []string{"KAFKA_CLIENT_ID"},
+						Value:   "blockfetcher",
+					},
 				},
 				Action: run,
 			},
@@ -102,7 +135,10 @@ func run(c *cli.Context) error {
 	backfill := c.Uint64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
-
+	kafkaBrokers := c.StringSlice("kafka-brokers")
+	kafkaTopic := c.String("kafka-topic")
+	kafkaEnableLogs := c.Bool("kafka-enable-logs")
+	kafkaClientID := c.String("kafka-client-id")
 	sugar, err := newSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
@@ -136,7 +172,34 @@ func run(c *cli.Context) error {
 	}
 	defer client.Close()
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL)
+	// Kafka producer configuration
+	kafkaConfig := &confluentKafka.ConfigMap{
+		// Required
+		"bootstrap.servers": kafkaBrokers,
+		"client.id":         kafkaClientID,
+
+		// Reliability: wait for all replicas to acknowledge
+		"acks": "all",
+
+		// Performance tuning
+		"linger.ms":        5,     // Batch messages for 5ms
+		"batch.size":       16384, // 16KB batch size
+		"compression.type": "lz4", // Fast compression
+
+		// Idempotence for exactly-once semantics
+		"enable.idempotence": true,
+
+		// Go channel for logs (optional, enable for debugging)
+		"go.logs.channel.enable": kafkaEnableLogs,
+	}
+
+	producer, err := kafka.NewProducer(ctx, kafkaConfig, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to create kafka producer: %w", err)
+	}
+	defer producer.Close(flushTimeoutOnClose)
+
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, sugar)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
@@ -166,6 +229,14 @@ func run(c *cli.Context) error {
 	})
 	g.Go(func() error {
 		return m.Run(gctx)
+	})
+	g.Go(func() error {
+		select {
+		case <-gctx.Done():
+			return gctx.Err()
+		case err := <-producer.Errors():
+			return err
+		}
 	})
 
 	err = g.Wait()

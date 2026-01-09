@@ -34,7 +34,6 @@ type Producer struct {
 	once       sync.Once
 }
 
-const flushTimeoutMs = 10000
 const queueFullErrorRetryDelayMs = time.Second
 
 // NewProducer creates a Kafka-backed QueueProducer.
@@ -119,11 +118,11 @@ func (q *Producer) Produce(ctx context.Context, msg Msg) error {
 // Close stops background goroutines and flushes all pending messages.
 //
 // Close blocks until all queued messages are delivered to Kafka.
-// If the context is canceled, Close aborts the flush and closes the producer.
-// Callers should be aware that canceling the context may result in message loss.
+// If the timeout is reached, Close aborts the flush and closes the producer.
+// Callers should be aware that reaching the timeout may result in message loss.
 //
 // Close must be called at least once. Calling Close multiple times does nothing.
-func (q *Producer) Close(ctx context.Context) {
+func (q *Producer) Close(timeout time.Duration) {
 	q.once.Do(func() {
 		q.log.Info("closing kafka producer")
 		defer close(q.errCh)
@@ -136,16 +135,9 @@ func (q *Producer) Close(ctx context.Context) {
 		<-q.logsDone
 
 		// Flush the producer queue.
-		for q.producer.Flush(flushTimeoutMs) > 0 {
-			q.log.Warn("producer queue not flushed, retrying")
-			select {
-			case <-ctx.Done():
-				q.log.Info("context done, stopping producer flush")
-				q.producer.Close()
-				return
-			default:
-				continue
-			}
+		pending := q.producer.Flush(int(timeout.Milliseconds()))
+		if pending > 0 {
+			q.log.Warnf("flush incomplete, messages will be lost. pending: %d", pending)
 		}
 
 		q.producer.Close()
