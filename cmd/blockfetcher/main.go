@@ -109,7 +109,6 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:    "kafka-client-id",
-						Aliases: []string{"c"},
 						Usage:   "The Kafka client ID to use",
 						EnvVars: []string{"KAFKA_CLIENT_ID"},
 						Value:   "blockfetcher",
