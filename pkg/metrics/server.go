@@ -23,9 +23,9 @@ func NewServer(addr string, gatherer prometheus.Gatherer) *Server {
 	mux.Handle("/metrics", promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	}))
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok")) //nolint:errcheck // best-effort health response
+		_, _ = w.Write([]byte("ok"))
 	})
 
 	return &Server{
