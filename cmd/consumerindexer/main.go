@@ -56,6 +56,102 @@ func main() {
 						EnvVars: []string{"KAFKA_AUTO_OFFSET_RESET"},
 						Value:   "earliest",
 					},
+					// ClickHouse configuration flags
+					&cli.StringSliceFlag{
+						Name:    "clickhouse-addresses",
+						Usage:   "ClickHouse server addresses (comma-separated)",
+						EnvVars: []string{"CLICKHOUSE_ADDRESSES"},
+						Value:   cli.NewStringSlice("localhost:9000"),
+					},
+					&cli.StringFlag{
+						Name:    "clickhouse-database",
+						Usage:   "ClickHouse database name",
+						EnvVars: []string{"CLICKHOUSE_DATABASE"},
+						Value:   "default",
+					},
+					&cli.StringFlag{
+						Name:    "clickhouse-username",
+						Usage:   "ClickHouse username",
+						EnvVars: []string{"CLICKHOUSE_USERNAME"},
+						Value:   "default",
+					},
+					&cli.StringFlag{
+						Name:    "clickhouse-password",
+						Usage:   "ClickHouse password",
+						EnvVars: []string{"CLICKHOUSE_PASSWORD"},
+						Value:   "",
+					},
+					&cli.BoolFlag{
+						Name:    "clickhouse-debug",
+						Usage:   "Enable ClickHouse debug logging",
+						EnvVars: []string{"CLICKHOUSE_DEBUG"},
+					},
+					&cli.BoolFlag{
+						Name:    "clickhouse-insecure-skip-verify",
+						Usage:   "Skip TLS certificate verification for ClickHouse",
+						EnvVars: []string{"CLICKHOUSE_INSECURE_SKIP_VERIFY"},
+						Value:   true,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-max-execution-time",
+						Usage:   "ClickHouse max execution time in seconds",
+						EnvVars: []string{"CLICKHOUSE_MAX_EXECUTION_TIME"},
+						Value:   60,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-dial-timeout",
+						Usage:   "ClickHouse dial timeout in seconds",
+						EnvVars: []string{"CLICKHOUSE_DIAL_TIMEOUT"},
+						Value:   30,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-max-open-conns",
+						Usage:   "ClickHouse maximum open connections",
+						EnvVars: []string{"CLICKHOUSE_MAX_OPEN_CONNS"},
+						Value:   5,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-max-idle-conns",
+						Usage:   "ClickHouse maximum idle connections",
+						EnvVars: []string{"CLICKHOUSE_MAX_IDLE_CONNS"},
+						Value:   5,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-conn-max-lifetime",
+						Usage:   "ClickHouse connection max lifetime in minutes",
+						EnvVars: []string{"CLICKHOUSE_CONN_MAX_LIFETIME"},
+						Value:   10,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-block-buffer-size",
+						Usage:   "ClickHouse block buffer size",
+						EnvVars: []string{"CLICKHOUSE_BLOCK_BUFFER_SIZE"},
+						Value:   10,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-max-block-size",
+						Usage:   "ClickHouse max block size (recommended maximum number of rows in a single block)",
+						EnvVars: []string{"CLICKHOUSE_MAX_BLOCK_SIZE"},
+						Value:   1000,
+					},
+					&cli.IntFlag{
+						Name:    "clickhouse-max-compression-buffer",
+						Usage:   "ClickHouse max compression buffer in bytes",
+						EnvVars: []string{"CLICKHOUSE_MAX_COMPRESSION_BUFFER"},
+						Value:   10240,
+					},
+					&cli.StringFlag{
+						Name:    "clickhouse-client-name",
+						Usage:   "ClickHouse client name for ClientInfo",
+						EnvVars: []string{"CLICKHOUSE_CLIENT_NAME"},
+						Value:   "ac-client-name",
+					},
+					&cli.StringFlag{
+						Name:    "clickhouse-client-version",
+						Usage:   "ClickHouse client version for ClientInfo",
+						EnvVars: []string{"CLICKHOUSE_CLIENT_VERSION"},
+						Value:   "1.0",
+					},
 				},
 				Action: run,
 			},
@@ -80,19 +176,26 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
+
+	// Build ClickHouse config from CLI flags
+	chCfg := buildClickHouseConfig(c)
+
 	sugar.Infow("config",
 		"verbose", verbose,
 		"bootstrapServers", bootstrapServers,
 		"groupID", groupID,
 		"topics", topicsStr,
 		"autoOffsetReset", autoOffsetReset,
+		"clickhouseAddresses", chCfg.Addresses,
+		"clickhouseDatabase", chCfg.Database,
+		"clickhouseUsername", chCfg.Username,
+		"clickhouseDebug", chCfg.Debug,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Initialize ClickHouse client
-	chCfg := clickhouse.Load()
 	chClient, err := clickhouse.New(chCfg, sugar)
 	if err != nil {
 		return fmt.Errorf("failed to create ClickHouse client: %w", err)
@@ -192,5 +295,37 @@ func run(c *cli.Context) error {
 				sugar.Debugw("ignored event", "type", fmt.Sprintf("%T", e))
 			}
 		}
+	}
+}
+
+// buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
+func buildClickHouseConfig(c *cli.Context) clickhouse.ClickhouseConfig {
+	// Handle addresses - StringSliceFlag returns []string, but we need to handle comma-separated values
+	addresses := c.StringSlice("clickhouse-addresses")
+	// If addresses is a single comma-separated string, split it
+	if len(addresses) == 1 && strings.Contains(addresses[0], ",") {
+		addresses = strings.Split(addresses[0], ",")
+		for i, addr := range addresses {
+			addresses[i] = strings.TrimSpace(addr)
+		}
+	}
+
+	return clickhouse.ClickhouseConfig{
+		Addresses:            addresses,
+		Database:             c.String("clickhouse-database"),
+		Username:             c.String("clickhouse-username"),
+		Password:             c.String("clickhouse-password"),
+		Debug:                c.Bool("clickhouse-debug"),
+		InsecureSkipVerify:   c.Bool("clickhouse-insecure-skip-verify"),
+		MaxExecutionTime:     c.Int("clickhouse-max-execution-time"),
+		DialTimeout:          c.Int("clickhouse-dial-timeout"),
+		MaxOpenConns:         c.Int("clickhouse-max-open-conns"),
+		MaxIdleConns:         c.Int("clickhouse-max-idle-conns"),
+		ConnMaxLifetime:      c.Int("clickhouse-conn-max-lifetime"),
+		BlockBufferSize:      c.Int("clickhouse-block-buffer-size"),
+		MaxBlockSize:         c.Int("clickhouse-max-block-size"),
+		MaxCompressionBuffer: c.Int("clickhouse-max-compression-buffer"),
+		ClientName:           c.String("clickhouse-client-name"),
+		ClientVersion:        c.String("clickhouse-client-version"),
 	}
 }
