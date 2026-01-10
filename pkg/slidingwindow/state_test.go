@@ -653,3 +653,180 @@ func TestTrySetInflight(t *testing.T) {
 		})
 	}
 }
+
+func TestWindow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		lowest      uint64
+		highest     uint64
+		wantLowest  uint64
+		wantHighest uint64
+	}{
+		{
+			name:        "returns initial bounds",
+			lowest:      5,
+			highest:     10,
+			wantLowest:  5,
+			wantHighest: 10,
+		},
+		{
+			name:        "single block window",
+			lowest:      100,
+			highest:     100,
+			wantLowest:  100,
+			wantHighest: 100,
+		},
+		{
+			name:        "zero-based window",
+			lowest:      0,
+			highest:     50,
+			wantLowest:  0,
+			wantHighest: 50,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state, err := NewState(tt.lowest, tt.highest)
+			if err != nil {
+				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.lowest, tt.highest, err)
+			}
+
+			gotLowest, gotHighest := state.Window()
+			if gotLowest != tt.wantLowest || gotHighest != tt.wantHighest {
+				t.Fatalf("Window()=(%d, %d), want (%d, %d)", gotLowest, gotHighest, tt.wantLowest, tt.wantHighest)
+			}
+		})
+	}
+}
+
+func TestProcessedCount(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		lowest    uint64
+		highest   uint64
+		processed []uint64
+		wantCount int
+	}{
+		{
+			name:      "empty processed set",
+			lowest:    5,
+			highest:   10,
+			processed: nil,
+			wantCount: 0,
+		},
+		{
+			name:      "single processed block",
+			lowest:    5,
+			highest:   10,
+			processed: []uint64{7},
+			wantCount: 1,
+		},
+		{
+			name:      "multiple processed blocks",
+			lowest:    5,
+			highest:   10,
+			processed: []uint64{5, 6, 8, 10},
+			wantCount: 4,
+		},
+		{
+			name:      "all blocks processed",
+			lowest:    5,
+			highest:   7,
+			processed: []uint64{5, 6, 7},
+			wantCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state, err := NewState(tt.lowest, tt.highest)
+			if err != nil {
+				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.lowest, tt.highest, err)
+			}
+
+			for _, h := range tt.processed {
+				if err := state.MarkProcessed(h); err != nil {
+					t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
+				}
+			}
+
+			got := state.ProcessedCount()
+			if got != tt.wantCount {
+				t.Fatalf("ProcessedCount()=%d, want %d", got, tt.wantCount)
+			}
+		})
+	}
+}
+
+func TestSnapshot(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name               string
+		lowest             uint64
+		highest            uint64
+		processed          []uint64
+		wantLowest         uint64
+		wantHighest        uint64
+		wantProcessedCount int
+	}{
+		{
+			name:               "empty state",
+			lowest:             5,
+			highest:            10,
+			processed:          nil,
+			wantLowest:         5,
+			wantHighest:        10,
+			wantProcessedCount: 0,
+		},
+		{
+			name:               "with processed blocks",
+			lowest:             5,
+			highest:            10,
+			processed:          []uint64{5, 6, 7},
+			wantLowest:         5,
+			wantHighest:        10,
+			wantProcessedCount: 3,
+		},
+		{
+			name:               "single block window",
+			lowest:             100,
+			highest:            100,
+			processed:          []uint64{100},
+			wantLowest:         100,
+			wantHighest:        100,
+			wantProcessedCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state, err := NewState(tt.lowest, tt.highest)
+			if err != nil {
+				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.lowest, tt.highest, err)
+			}
+
+			for _, h := range tt.processed {
+				if err := state.MarkProcessed(h); err != nil {
+					t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
+				}
+			}
+
+			gotLowest, gotHighest, gotCount := state.Snapshot()
+			if gotLowest != tt.wantLowest {
+				t.Fatalf("Snapshot() lowest=%d, want %d", gotLowest, tt.wantLowest)
+			}
+			if gotHighest != tt.wantHighest {
+				t.Fatalf("Snapshot() highest=%d, want %d", gotHighest, tt.wantHighest)
+			}
+			if gotCount != tt.wantProcessedCount {
+				t.Fatalf("Snapshot() processedCount=%d, want %d", gotCount, tt.wantProcessedCount)
+			}
+		})
+	}
+}
