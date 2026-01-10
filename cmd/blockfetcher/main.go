@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
@@ -105,8 +105,8 @@ func main() {
 						Usage:   "Port for Prometheus metrics server",
 						EnvVars: []string{"METRICS_PORT"},
 						Value:   9090,
-          },
-          &cli.StringFlag{
+					},
+					&cli.StringFlag{
 						Name:    "snapshot-table-name",
 						Aliases: []string{"t"},
 						Usage:   "The name of the table to write the snapshot to",
