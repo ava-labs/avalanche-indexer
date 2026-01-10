@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
+	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -37,6 +40,13 @@ func main() {
 						Usage:   "Enable verbose logging",
 					},
 					&cli.StringFlag{
+						Name:     "chain-id",
+						Aliases:  []string{"C"},
+						Usage:    "The chain ID to write the snapshot to",
+						EnvVars:  []string{"CHAIN_ID"},
+						Required: true,
+					},
+					&cli.StringFlag{
 						Name:     "rpc-url",
 						Aliases:  []string{"r"},
 						Usage:    "The websocket RPC URL to fetch blocks from",
@@ -44,11 +54,10 @@ func main() {
 						Required: true,
 					},
 					&cli.Uint64Flag{
-						Name:     "start-height",
-						Aliases:  []string{"s"},
-						Usage:    "The start height to fetch blocks from",
-						EnvVars:  []string{"START_HEIGHT"},
-						Required: true,
+						Name:    "start-height",
+						Aliases: []string{"s"},
+						Usage:   "The start height to fetch blocks from",
+						EnvVars: []string{"START_HEIGHT"},
 					},
 					&cli.Uint64Flag{
 						Name:    "end-height",
@@ -96,6 +105,20 @@ func main() {
 						Usage:   "Port for Prometheus metrics server",
 						EnvVars: []string{"METRICS_PORT"},
 						Value:   9090,
+          },
+          &cli.StringFlag{
+						Name:    "snapshot-table-name",
+						Aliases: []string{"t"},
+						Usage:   "The name of the table to write the snapshot to",
+						EnvVars: []string{"SNAPSHOT_TABLE_NAME"},
+						Value:   "test_db.snapshots",
+					},
+					&cli.DurationFlag{
+						Name:    "snapshot-interval",
+						Aliases: []string{"i"},
+						Usage:   "The interval to write the snapshot to the repository",
+						EnvVars: []string{"SNAPSHOT_INTERVAL"},
+						Value:   1 * time.Minute,
 					},
 				},
 				Action: run,
@@ -111,6 +134,7 @@ func main() {
 
 func run(c *cli.Context) error {
 	verbose := c.Bool("verbose")
+	chainID := c.Uint64("chain-id")
 	rpcURL := c.String("rpc-url")
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
@@ -122,6 +146,8 @@ func run(c *cli.Context) error {
 	metricsPort := c.Int("metrics-port")
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 
+	snapshotTableName := c.String("snapshot-table-name")
+	snapshotInterval := c.Duration("snapshot-interval")
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
@@ -129,6 +155,7 @@ func run(c *cli.Context) error {
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 	sugar.Infow("config",
 		"verbose", verbose,
+		"chainID", chainID,
 		"rpcURL", rpcURL,
 		"start", start,
 		"end", end,
@@ -138,7 +165,17 @@ func run(c *cli.Context) error {
 		"maxFailures", maxFailures,
 		"metricsHost", metricsHost,
 		"metricsPort", metricsPort,
+		"snapshotTableName", snapshotTableName,
+		"snapshotInterval", snapshotInterval,
 	)
+
+	var fetchStartHeight bool
+	if start == 0 {
+		sugar.Infof("start block height: not specified, will fetch from the latest snapshot")
+		fetchStartHeight = true
+	} else {
+		sugar.Infof("start block height: %d", start)
+	}
 
 	var fetchLatestHeight bool
 	if end == 0 {
@@ -174,12 +211,35 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
 
+	// Initialize ClickHouse client
+	chCfg := clickhouse.Load()
+	chClient, err := clickhouse.New(chCfg, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to create ClickHouse client: %w", err)
+	}
+	defer chClient.Close()
+
+	sugar.Info("ClickHouse client created successfully")
+
 	if fetchLatestHeight {
 		end, err = customethclient.New(client).BlockNumber(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get latest block height: %w", err)
 		}
 		sugar.Infof("latest block height: %d", end)
+	}
+
+	repo := snapshot.NewRepository(chClient, snapshotTableName)
+	if fetchStartHeight {
+		snapshot, err := repo.ReadSnapshot(ctx, chainID)
+		if err != nil {
+			return fmt.Errorf("failed to read snapshot: %w", err)
+		}
+		if snapshot == nil {
+			return fmt.Errorf("snapshot not found")
+		}
+		start = snapshot.Lowest
+		sugar.Infof("start block height: %d", start)
 	}
 
 	s, err := slidingwindow.NewState(start, end)
@@ -213,6 +273,9 @@ func run(c *cli.Context) error {
 			}
 			return nil
 		}
+	})
+	g.Go(func() error {
+		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
 	})
 
 	err = g.Wait()
