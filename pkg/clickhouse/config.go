@@ -15,7 +15,7 @@ import (
 // The block size should not be too small to avoid noticeable costs when processing each block.
 // see here: https://clickhouse.com/docs/operations/settings/settings
 type ClickhouseConfig struct {
-	Addresses            []string `env:"CLICKHOUSE_ADDRESSES" envSeparator:"," envDefault:"localhost:9000"`
+	Hosts                []string `env:"CLICKHOUSE_HOSTS" envSeparator:"," envDefault:"localhost:9000"`
 	Database             string   `env:"CLICKHOUSE_DATABASE" envDefault:"default"`
 	Username             string   `env:"CLICKHOUSE_USERNAME" envDefault:"default"`
 	Password             string   `env:"CLICKHOUSE_PASSWORD" envDefault:""`

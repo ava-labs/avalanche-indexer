@@ -41,7 +41,7 @@ type client struct {
 // New creates a new ClickHouse client with the provided configuration
 func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 	opts := &clickhouse.Options{
-		Addr: cfg.Addresses,
+		Addr: cfg.Hosts,
 		Auth: clickhouse.Auth{
 			Database: cfg.Database,
 			Username: cfg.Username,
