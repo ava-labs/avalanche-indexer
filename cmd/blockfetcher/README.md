@@ -29,6 +29,7 @@ bin/blockfetcher run \
 ```
 
 All flags have environment variable equivalents:
+- `--chain-id` → `CHAIN_ID` 
 - `--rpc-url` / `-r` → `RPC_URL` (required)
 - `--start-height` / `-s` → `START_HEIGHT` (required)
 - `--end-height` / `-e` → `END_HEIGHT` (optional; if unset the latest is used)
@@ -41,6 +42,7 @@ All flags have environment variable equivalents:
 - `--kafka-enable-logs` / `-l` → `KAFKA_ENABLE_LOGS` (default: false)
 - `--kafka-client-id` → `KAFKA_CLIENT_ID` (default: blockfetcher)
 - `--verbose` / `-v` → none (pass `--verbose`)
+
 
 ### Docker
 
@@ -55,6 +57,7 @@ Run `blockfetcher` with environment variables (ENTRYPOINT selects the binary by 
 ```bash
 docker run --rm \
   -e APP=blockfetcher \
+  -e CHAIN_ID=43113 \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
   -e START_HEIGHT=0 \
   -e CONCURRENCY=16 \
@@ -74,6 +77,7 @@ Notes:
 docker build -t indexer:blockfetcher --build-arg APP=blockfetcher .
 docker run --rm \
   -e APP=blockfetcher \
+  -e CHAIN_ID=43113 \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
   -e START_HEIGHT=0 \
   -e CONCURRENCY=16 \
@@ -93,3 +97,4 @@ docker run --rm \
 ### Exit behavior
 - Returns a non-zero exit code on unrecoverable errors (e.g., RPC dial failure, failure threshold exceeded, Kafka fatal errors).
 - Gracefully exits on `SIGTERM`/`SIGINT`.
+
