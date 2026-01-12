@@ -24,7 +24,7 @@ build-all:
 		fi; \
 	done
 
-.PHONY: build-ap
+.PHONY: build-app
 build-app:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN_DIR)/$(APP) ./cmd/$(APP)

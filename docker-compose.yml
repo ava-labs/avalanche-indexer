@@ -129,6 +129,27 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+  
+  # ClickHouse Init (create tables)
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:latest
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    entrypoint: >
+      bash -lc '
+      clickhouse-client --host clickhouse --query "
+      CREATE TABLE IF NOT EXISTS test_db.snapshots
+      (
+        chain_id UInt64,
+        lowest_unprocessed_block UInt64,
+        timestamp Int64
+      )
+      ENGINE = ReplacingMergeTree(timestamp)
+      ORDER BY chain_id
+      "
+      '
+    restart: "no"
 
   # Tabix UI for ClickHouse
   tabix:
