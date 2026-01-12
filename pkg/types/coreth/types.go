@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
+	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/libevm/common/hexutil"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 )
@@ -27,8 +28,9 @@ type Block struct {
 	GasUsed  uint64   `json:"gasUsed"`
 	BaseFee  *big.Int `json:"baseFeePerGas,omitempty"`
 
-	Timestamp uint64 `json:"timestamp"` // hex string to match RPC
-	Size      uint64 `json:"size"`
+	Timestamp      uint64 `json:"timestampMs,omitempty"`
+	MinDelayExcess uint64 `json:"minDelayExcess,omitempty"`
+	Size           uint64 `json:"size"`
 
 	Difficulty *big.Int `json:"difficulty"`
 	MixHash    string   `json:"mixHash"`
@@ -82,6 +84,16 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 		beaconRoot = block.BeaconRoot().Hex()
 	}
 
+	var timestampMilliseconds uint64
+	var minDelayExcess uint64
+	extra := corethCustomtypes.GetHeaderExtra(block.Header())
+	if extra.TimeMilliseconds != nil {
+		timestampMilliseconds = *extra.TimeMilliseconds
+	}
+	if extra.MinDelayExcess != nil {
+		minDelayExcess = extra.MinDelayExcess.Delay()
+	}
+
 	return &Block{
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
@@ -90,7 +102,8 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 		GasUsed:               block.GasUsed(),
 		BaseFee:               block.BaseFee(),
 		Difficulty:            block.Difficulty(),
-		Timestamp:             block.Time(),
+		Timestamp:             timestampMilliseconds,
+		MinDelayExcess:        minDelayExcess,
 		MixHash:               block.MixDigest().Hex(),
 		Nonce:                 block.Nonce(),
 		LogsBloom:             hexutil.Encode(block.Bloom().Bytes()),

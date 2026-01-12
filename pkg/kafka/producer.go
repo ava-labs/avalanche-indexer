@@ -27,7 +27,7 @@ type Msg struct {
 type Producer struct {
 	producer   *kafka.Producer
 	log        *zap.SugaredLogger
-	errCh      chan error
+	errCh      chan error // used to send fatal errors to the caller
 	eventsDone chan struct{}
 	logsDone   chan struct{}
 	closedCh   chan struct{}

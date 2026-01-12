@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
@@ -121,6 +121,8 @@ func main() {
 						Usage:   "The Kafka client ID to use",
 						EnvVars: []string{"KAFKA_CLIENT_ID"},
 						Value:   "blockfetcher",
+					},
+					&cli.StringFlag{
 						Name:    "snapshot-table-name",
 						Aliases: []string{"t"},
 						Usage:   "The name of the table to write the snapshot to",
@@ -296,9 +298,9 @@ func run(c *cli.Context) error {
 			return err
 		}
 	})
-  g.Go(func() error {
-  		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
-  })
+	g.Go(func() error {
+		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
+	})
 
 	err = g.Wait()
 	if errors.Is(err, context.Canceled) {
