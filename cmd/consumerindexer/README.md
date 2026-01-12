@@ -10,15 +10,48 @@ Run locally (from repo root after build):
 bin/consumerindexer run \
   --bootstrap-servers localhost:9092 \
   --group-id hello-avalanche-group \
+  --topics blocks,transactions \
+  --clickhouse-hosts localhost:9000 \
+  --clickhouse-username default
+```
+
+Or using environment variables:
+
+```bash
+export CLICKHOUSE_HOSTS="localhost:9000"
+export CLICKHOUSE_USERNAME="default"
+bin/consumerindexer run \
+  --bootstrap-servers localhost:9092 \
+  --group-id hello-avalanche-group \
   --topics blocks,transactions
 ```
 
 All flags have environment variable equivalents:
+
+**Kafka flags:**
 - `--bootstrap-servers` / `-b` → `KAFKA_BOOTSTRAP_SERVERS` (required)
 - `--group-id` / `-g` → `KAFKA_GROUP_ID` (required)
 - `--topics` / `-t` → `KAFKA_TOPICS` (required, comma-separated)
 - `--auto-offset-reset` / `-o` → `KAFKA_AUTO_OFFSET_RESET` (optional, default: "earliest")
 - `--verbose` / `-v` → none (pass `--verbose`)
+
+**ClickHouse flags:**
+- `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000", comma-separated)
+- `--clickhouse-database` → `CLICKHOUSE_DATABASE` (default: "default")
+- `--clickhouse-username` → `CLICKHOUSE_USERNAME` (default: "default")
+- `--clickhouse-password` → `CLICKHOUSE_PASSWORD` (default: "")
+- `--clickhouse-debug` → `CLICKHOUSE_DEBUG` (default: false)
+- `--clickhouse-insecure-skip-verify` → `CLICKHOUSE_INSECURE_SKIP_VERIFY` (default: true)
+- `--clickhouse-max-execution-time` → `CLICKHOUSE_MAX_EXECUTION_TIME` (default: 60, seconds)
+- `--clickhouse-dial-timeout` → `CLICKHOUSE_DIAL_TIMEOUT` (default: 30, seconds)
+- `--clickhouse-max-open-conns` → `CLICKHOUSE_MAX_OPEN_CONNS` (default: 5)
+- `--clickhouse-max-idle-conns` → `CLICKHOUSE_MAX_IDLE_CONNS` (default: 5)
+- `--clickhouse-conn-max-lifetime` → `CLICKHOUSE_CONN_MAX_LIFETIME` (default: 10, minutes)
+- `--clickhouse-block-buffer-size` → `CLICKHOUSE_BLOCK_BUFFER_SIZE` (default: 10)
+- `--clickhouse-max-block-size` → `CLICKHOUSE_MAX_BLOCK_SIZE` (default: 1000, recommended maximum number of rows in a single block)
+- `--clickhouse-max-compression-buffer` → `CLICKHOUSE_MAX_COMPRESSION_BUFFER` (default: 10240, bytes)
+- `--clickhouse-client-name` → `CLICKHOUSE_CLIENT_NAME` (default: "ac-client-name")
+- `--clickhouse-client-version` → `CLICKHOUSE_CLIENT_VERSION` (default: "1.0")
 
 ### Docker
 

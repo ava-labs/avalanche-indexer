@@ -27,9 +27,9 @@ func TestLoad(t *testing.T) {
 
 	// Get expected values from environment or use defaults
 	// This allows the test to work both with and without .env.test loaded
-	expectedAddress := os.Getenv("CLICKHOUSE_ADDRESSES")
-	if expectedAddress == "" {
-		expectedAddress = "localhost:9000"
+	expectedHost := os.Getenv("CLICKHOUSE_HOSTS")
+	if expectedHost == "" {
+		expectedHost = "localhost:9000"
 	}
 
 	expectedDatabase := os.Getenv("CLICKHOUSE_DATABASE")
@@ -52,7 +52,7 @@ func TestLoad(t *testing.T) {
 	}
 
 	// Verify values match environment or defaults
-	assert.Equal(t, expectedAddress, cfg.Addresses[0])
+	assert.Equal(t, expectedHost, cfg.Hosts[0])
 	assert.Equal(t, expectedDatabase, cfg.Database)
 	assert.Equal(t, expectedUsername, cfg.Username)
 	assert.Equal(t, expectedPassword, cfg.Password)
@@ -82,10 +82,10 @@ func TestLoad_ConfigParseError(t *testing.T) {
 
 func TestNew_InvalidConfig(t *testing.T) {
 	cfg := ClickhouseConfig{
-		Addresses: []string{"invalid:99999"},
-		Database:  "test",
-		Username:  "test",
-		Password:  "test",
+		Hosts:    []string{"invalid:99999"},
+		Database: "test",
+		Username: "test",
+		Password: "test",
 	}
 
 	client, err := New(cfg, testLogger(t))
@@ -99,7 +99,7 @@ func TestNew_InvalidConfig(t *testing.T) {
 
 func TestNew_WithDebugEnabled(t *testing.T) {
 	cfg := ClickhouseConfig{
-		Addresses:            []string{"invalid:99999"},
+		Hosts:                []string{"invalid:99999"},
 		Database:             "test",
 		Username:             "test",
 		Password:             "test",
@@ -125,10 +125,10 @@ func TestNew_WithDebugEnabled(t *testing.T) {
 }
 
 func TestNew_ConnectionOpenError(t *testing.T) {
-	// Use an invalid address format that will fail during clickhouse.Open()
+	// Use an invalid host format that will fail during clickhouse.Open()
 	// This should trigger the "failed to open ClickHouse connection" error path
 	cfg := ClickhouseConfig{
-		Addresses:   []string{"invalid:99999"},
+		Hosts:       []string{"invalid:99999"},
 		Database:    "test",
 		Username:    "test",
 		Password:    "test",
@@ -228,9 +228,9 @@ func TestNew_SuccessfulCreation(t *testing.T) {
 // This covers the error handling when Ping fails after connection is opened
 // This tests the non-Exception error path (else branch in the error handler)
 func TestNew_PingFailure(t *testing.T) {
-	// Use an invalid address that will fail during Ping
+	// Use an invalid host that will fail during Ping
 	cfg := ClickhouseConfig{
-		Addresses:   []string{"127.0.0.1:1"}, // Invalid port that will fail quickly
+		Hosts:       []string{"127.0.0.1:1"}, // Invalid port that will fail quickly
 		Database:    "test",
 		Username:    "test",
 		Password:    "test",
@@ -286,7 +286,7 @@ func TestClient_Ping_ExceptionError(t *testing.T) {
 // TestNew_AllConfigFields tests that all config fields are properly set
 func TestNew_AllConfigFields(t *testing.T) {
 	cfg := ClickhouseConfig{
-		Addresses:            []string{"localhost:9000"},
+		Hosts:                []string{"localhost:9000"},
 		Database:             "testdb",
 		Username:             "testuser",
 		Password:             "testpass",
