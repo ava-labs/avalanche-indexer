@@ -58,9 +58,9 @@ func main() {
 					},
 					// ClickHouse configuration flags
 					&cli.StringSliceFlag{
-						Name:    "clickhouse-addresses",
-						Usage:   "ClickHouse server addresses (comma-separated)",
-						EnvVars: []string{"CLICKHOUSE_ADDRESSES"},
+						Name:    "clickhouse-hosts",
+						Usage:   "ClickHouse server hosts (comma-separated)",
+						EnvVars: []string{"CLICKHOUSE_HOSTS"},
 						Value:   cli.NewStringSlice("localhost:9000"),
 					},
 					&cli.StringFlag{
@@ -186,7 +186,7 @@ func run(c *cli.Context) error {
 		"groupID", groupID,
 		"topics", topicsStr,
 		"autoOffsetReset", autoOffsetReset,
-		"clickhouseAddresses", chCfg.Addresses,
+		"clickhouseHosts", chCfg.Hosts,
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
 		"clickhouseDebug", chCfg.Debug,
@@ -300,18 +300,18 @@ func run(c *cli.Context) error {
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
 func buildClickHouseConfig(c *cli.Context) clickhouse.ClickhouseConfig {
-	// Handle addresses - StringSliceFlag returns []string, but we need to handle comma-separated values
-	addresses := c.StringSlice("clickhouse-addresses")
-	// If addresses is a single comma-separated string, split it
-	if len(addresses) == 1 && strings.Contains(addresses[0], ",") {
-		addresses = strings.Split(addresses[0], ",")
-		for i, addr := range addresses {
-			addresses[i] = strings.TrimSpace(addr)
+	// Handle hosts - StringSliceFlag returns []string, but we need to handle comma-separated values
+	hosts := c.StringSlice("clickhouse-hosts")
+	// If hosts is a single comma-separated string, split it
+	if len(hosts) == 1 && strings.Contains(hosts[0], ",") {
+		hosts = strings.Split(hosts[0], ",")
+		for i, host := range hosts {
+			hosts[i] = strings.TrimSpace(host)
 		}
 	}
 
 	return clickhouse.ClickhouseConfig{
-		Addresses:            addresses,
+		Hosts:                hosts,
 		Database:             c.String("clickhouse-database"),
 		Username:             c.String("clickhouse-username"),
 		Password:             c.String("clickhouse-password"),

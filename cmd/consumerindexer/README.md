@@ -11,14 +11,14 @@ bin/consumerindexer run \
   --bootstrap-servers localhost:9092 \
   --group-id hello-avalanche-group \
   --topics blocks,transactions \
-  --clickhouse-addresses localhost:9000 \
+  --clickhouse-hosts localhost:9000 \
   --clickhouse-username default
 ```
 
 Or using environment variables:
 
 ```bash
-export CLICKHOUSE_ADDRESSES="localhost:9000"
+export CLICKHOUSE_HOSTS="localhost:9000"
 export CLICKHOUSE_USERNAME="default"
 bin/consumerindexer run \
   --bootstrap-servers localhost:9092 \
@@ -36,7 +36,7 @@ All flags have environment variable equivalents:
 - `--verbose` / `-v` → none (pass `--verbose`)
 
 **ClickHouse flags:**
-- `--clickhouse-addresses` → `CLICKHOUSE_ADDRESSES` (default: "localhost:9000", comma-separated)
+- `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000", comma-separated)
 - `--clickhouse-database` → `CLICKHOUSE_DATABASE` (default: "default")
 - `--clickhouse-username` → `CLICKHOUSE_USERNAME` (default: "default")
 - `--clickhouse-password` → `CLICKHOUSE_PASSWORD` (default: "")

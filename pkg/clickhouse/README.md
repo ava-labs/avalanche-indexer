@@ -41,7 +41,7 @@ conn := client.Conn()
 
 The client can be configured via environment variables:
 
-- `CLICKHOUSE_ADDRESSES` - Comma-separated list of ClickHouse addresses (default: `localhost:9000`)
+- `CLICKHOUSE_HOSTS` - Comma-separated list of ClickHouse hosts (default: `localhost:9000`)
 - `CLICKHOUSE_DATABASE` - Database name (default: `default`)
 - `CLICKHOUSE_USERNAME` - Username (default: `default`)
 - `CLICKHOUSE_PASSWORD` - Password (default: empty)
