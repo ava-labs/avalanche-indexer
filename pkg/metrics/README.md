@@ -5,16 +5,7 @@ This package provides Prometheus metrics instrumentation for the Avalanche index
 ## Quick Start
 
 ```bash
-# Start the block fetcher with C-Chain mainnet (exposes metrics on :9090)
-go run ./cmd/blockfetcher run \
-   --rpc-url=wss://api.avax.network/ext/bc/C/ws \
-   --start-height=75000000 \
-   --end-height=75000100 \
-   --concurrency=4 \
-   --backfill-priority=2
-
-# In another terminal, start Prometheus + Grafana
-docker compose up -d
+Start the blockfetcher as described in /cmd/blockfetcher/main.go, then navigate to the following pages for metrics and visibility.
 
 # Access dashboards
 # Prometheus: http://localhost:9091
