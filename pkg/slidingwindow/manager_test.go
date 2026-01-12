@@ -201,6 +201,7 @@ func TestNewManager_Validation(t *testing.T) {
 				tt.args.backfillPriority,
 				tt.args.heightsChCapacity,
 				tt.args.maxFailures,
+				nil, // metrics
 			)
 			if tt.wantErr {
 				if err == nil {
@@ -301,7 +302,7 @@ func TestTryAcquireBackfill(t *testing.T) {
 				t.Fatalf("New state error: %v", err)
 			}
 			// backfillPriority must be strictly less than concurrency now (2 > 1)
-			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1)
+			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1, nil)
 			if err != nil {
 				t.Fatalf("New manager error: %v", err)
 			}
@@ -347,7 +348,7 @@ func TestProcess(t *testing.T) {
 			w.err = assertAnError()
 		}
 		// backfillPriority must be strictly less than concurrency now (2 > 1)
-		m, err := NewManager(zap.NewNop().Sugar(), state, w, 2, 1, 1, 1)
+		m, err := NewManager(zap.NewNop().Sugar(), state, w, 2, 1, 1, 1, nil)
 		if err != nil {
 			t.Fatalf("New manager error: %v", err)
 		}
@@ -501,7 +502,7 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 		t.Fatalf("New state error: %v", err)
 	}
 	// backfillPriority must be strictly less than concurrency now (2 > 1)
-	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1)
+	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
@@ -556,7 +557,7 @@ func TestRun_RealtimeEventFlow(t *testing.T) {
 		t.Fatalf("MarkProcessed error: %v", err)
 	}
 	// backfillPriority must be strictly less than concurrency now (2 > 1)
-	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1)
+	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
@@ -621,6 +622,7 @@ func TestRun_FailureChain(t *testing.T) {
 		1,
 		1,
 		maxFailures,
+		nil, // metrics
 	)
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
@@ -749,7 +751,7 @@ func TestHandleNewHeight(t *testing.T) {
 				done = make(chan struct{})
 				w = blockingWorker{start: start, done: done}
 			}
-			m, err := NewManager(zap.NewNop().Sugar(), state, w, tt.args.concurrency, tt.args.backfillPri, 1, 1)
+			m, err := NewManager(zap.NewNop().Sugar(), state, w, tt.args.concurrency, tt.args.backfillPri, 1, 1, nil)
 			if err != nil {
 				t.Fatalf("New manager error: %v", err)
 			}
@@ -901,7 +903,7 @@ func TestSubmitHeight(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New state error: %v", err)
 			}
-			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, tt.args.concurrency, tt.args.backfillPri, tt.args.queueCap, 1)
+			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, tt.args.concurrency, tt.args.backfillPri, tt.args.queueCap, 1, nil)
 			if err != nil {
 				t.Fatalf("New manager error: %v", err)
 			}
