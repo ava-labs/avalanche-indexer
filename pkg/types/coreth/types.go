@@ -45,8 +45,7 @@ type Block struct {
 
 	ParentBeaconBlockRoot string `json:"parentBeaconBlockRoot,omitempty"`
 
-	Withdrawals []*Withdrawal `json:"withdrawals,omitempty"`
-
+	Withdrawals  []*Withdrawal  `json:"withdrawals"`
 	Transactions []*Transaction `json:"transactions"`
 }
 
