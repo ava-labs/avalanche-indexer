@@ -18,9 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	testClickHouseClient Client
-)
+var testClickHouseClient Client
 
 // loadTestEnv loads the .env.test file from the clickhouse directory
 func loadTestEnv() error {

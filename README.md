@@ -57,6 +57,7 @@ Run a service (example: `blockfetcher`):
 ```bash
 docker run --rm \
   -e APP=blockfetcher \
+  -e CHAIN_ID=43113 \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
   -e START_HEIGHT=0 \
   -e CONCURRENCY=16 \
@@ -143,6 +144,46 @@ Access the UI at [http://localhost:8080](http://localhost:8080) to:
 - View and register schemas
 
 ---
+
+### Examples
+
+##### Block Fetcher
+
+Start ingestion from specific block (no snapshot):
+```
+# spin up containers (snapshots table will be created)
+docker-compose up -d
+
+# build applications
+make build-all
+
+# run block fetcher for Fuji testnet starting from block 48662238 using default snapshots table
+./bin/blockfetcher run -r wss://api.avax-test.network/ext/bc/C/ws -C 43113 -b 9 -B 5 -c 10 -s 48662238
+
+```
+
+The snapshots can be checked using UI at http://localhost:8082
+To login use these values:
+```
+name: dev (can be any other name)
+host: http://127.0.0.1:8123
+login: default
+```
+
+Select `test_db` in ClickHouse Server tab (on the left).
+
+Snapshot records can be added manually:
+```
+INSERT INTO test_db.snapshots (chain_id, lowest_unprocessed_block, timestamp) 
+VALUES (43114, 48662238, 1767903034)
+```
+
+Start ingestion from snapshot:
+```
+# run block fetcher for Fuji testnet starting from latest un-ingested 
+# block in default snapshots table
+./bin/blockfetcher run -r wss://api.avax-test.network/ext/bc/C/ws -C 43113 -b 9 -B 5 -c 10
+```
 
 ### Contributing
 - Open an issue or pull request
