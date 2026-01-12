@@ -124,7 +124,7 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:    "snapshot-table-name",
-						Aliases: []string{"t"},
+						Aliases: []string{"T"},
 						Usage:   "The name of the table to write the snapshot to",
 						EnvVars: []string{"SNAPSHOT_TABLE_NAME"},
 						Value:   "test_db.snapshots",
@@ -162,7 +162,6 @@ func run(c *cli.Context) error {
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
 	kafkaClientID := c.String("kafka-client-id")
-
 	snapshotTableName := c.String("snapshot-table-name")
 	snapshotInterval := c.Duration("snapshot-interval")
 	sugar, err := utils.NewSugaredLogger(verbose)

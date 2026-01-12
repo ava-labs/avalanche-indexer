@@ -11,12 +11,30 @@ Fetches blocks from an RPC endpoint, processes them concurrently using a sliding
 
 ### Usage
 
-Run locally (from repo root):
+#### Prerequisites
+
+1. **Start infrastructure services** (Kafka, ClickHouse):
+   ```bash
+   docker compose up -d
+   ```
+
+2. **Set ClickHouse environment variables**:
+   ```bash
+   export CLICKHOUSE_HOSTS="localhost:9000"
+   export CLICKHOUSE_USERNAME="default"
+   export CLICKHOUSE_PASSWORD=""
+   ```
+
+3. **Build the application**:
+   ```bash
+   make build-all
+   ```
+
+#### Run the block fetcher
 
 ```bash
-make build-all 
-
 bin/blockfetcher run \
+  --chain-id 43114 \
   --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
   --start-height 0 \
   --concurrency 16 \
