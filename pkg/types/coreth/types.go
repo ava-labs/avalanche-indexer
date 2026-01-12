@@ -28,7 +28,8 @@ type Block struct {
 	GasUsed  uint64   `json:"gasUsed"`
 	BaseFee  *big.Int `json:"baseFeePerGas,omitempty"`
 
-	Timestamp      uint64 `json:"timestampMs,omitempty"`
+	Timestamp      uint64 `json:"timestamp"`
+	TimestampMs    uint64 `json:"timestampMs,omitempty"`
 	MinDelayExcess uint64 `json:"minDelayExcess,omitempty"`
 	Size           uint64 `json:"size"`
 
@@ -102,7 +103,8 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 		GasUsed:               block.GasUsed(),
 		BaseFee:               block.BaseFee(),
 		Difficulty:            block.Difficulty(),
-		Timestamp:             timestampMilliseconds,
+		Timestamp:             block.Time(),
+		TimestampMs:           timestampMilliseconds,
 		MinDelayExcess:        minDelayExcess,
 		MixHash:               block.MixDigest().Hex(),
 		Nonce:                 block.Nonce(),

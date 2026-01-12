@@ -291,16 +291,24 @@ func run(c *cli.Context) error {
 	}
 
 	repo := snapshot.NewRepository(chClient, snapshotTableName)
+
+	err = repo.CreateTableIfNotExists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check existence or create snapshots table: %w", err)
+	}
+
 	if fetchStartHeight {
 		snapshot, err := repo.ReadSnapshot(ctx, chainID)
 		if err != nil {
 			return fmt.Errorf("failed to read snapshot: %w", err)
 		}
 		if snapshot == nil {
-			return fmt.Errorf("snapshot not found")
+			sugar.Infof("snapshot not found, will start from block height 0")
+			start = 0
+		} else {
+			start = snapshot.Lowest
+			sugar.Infof("start block height: %d", start)
 		}
-		start = snapshot.Lowest
-		sugar.Infof("start block height: %d", start)
 	}
 
 	s, err := slidingwindow.NewState(start, end)
