@@ -16,6 +16,11 @@ type mockSnapshotRepo struct {
 	mock.Mock
 }
 
+func (m *mockSnapshotRepo) CreateTableIfNotExists(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func (m *mockSnapshotRepo) WriteSnapshot(ctx context.Context, s *snapshot.Snapshot) error {
 	args := m.Called(ctx, s)
 	return args.Error(0)

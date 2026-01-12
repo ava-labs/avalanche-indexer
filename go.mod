@@ -1,6 +1,6 @@
 module github.com/ava-labs/avalanche-indexer
 
-go 1.24.9
+go 1.25
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0

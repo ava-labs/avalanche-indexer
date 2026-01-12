@@ -126,6 +126,39 @@ func TestRepository_ReadSnapshot_Error(t *testing.T) {
 	got, err := repo.ReadSnapshot(ctx, 43114)
 	assert.Nil(t, got)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to read snapshot")
+	assert.Contains(t, err.Error(), "scan failed")
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_CreateTableIfNotExists_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := context.Background()
+
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 // Just verify a query is passed
+		})).
+		Return(nil)
+
+	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "test_db.snapshots")
+	err := repo.CreateTableIfNotExists(ctx)
+	assert.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_CreateTableIfNotExists_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := context.Background()
+
+	mockConn.
+		On("Exec", mock.Anything, mock.Anything).
+		Return(errors.New("table creation failed"))
+
+	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "test_db.snapshots")
+	err := repo.CreateTableIfNotExists(ctx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create snapshots table")
 	mockConn.AssertExpectations(t)
 }
