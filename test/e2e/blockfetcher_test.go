@@ -15,7 +15,7 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
-	indexerKafka "github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	stream "github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
@@ -31,6 +31,7 @@ import (
 // TestE2EBlockfetcherRealTime validates that blockfetcher ingests realtime blocks
 // by producing them to Kafka. It assumes Docker Compose has started Kafka and ClickHouse.
 func TestE2EBlockfetcherRealTime(t *testing.T) {
+	t.Parallel()
 	// ---- Config (can be overridden via env to match local setup) ----
 	chainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji testnet
 	rpcURL := getEnvStr("RPC_URL", "wss://api.avax-test.network/ext/bc/C/ws")
@@ -99,7 +100,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 		"enable.idempotence":     true,
 		"go.logs.channel.enable": false,
 	}
-	producer, err := indexerKafka.NewProducer(ctx, kCfg, log)
+	producer, err := stream.NewProducer(ctx, kCfg, log)
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
@@ -181,6 +182,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 // TestE2EBlockfetcherBackfill runs backfill over a small recent range and verifies
 // produced Kafka blocks match RPC responses using verifyBlocksFromRPC.
 func TestE2EBlockfetcherBackfill(t *testing.T) {
+	t.Parallel()
 	// ---- Config ----
 	chainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji by default
 	rpcURL := getEnvStr("RPC_URL", "wss://api.avax-test.network/ext/bc/C/ws")
@@ -250,7 +252,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 		"enable.idempotence":     true,
 		"go.logs.channel.enable": false,
 	}
-	producer, err := indexerKafka.NewProducer(ctx, kCfg, log)
+	producer, err := stream.NewProducer(ctx, kCfg, log)
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
