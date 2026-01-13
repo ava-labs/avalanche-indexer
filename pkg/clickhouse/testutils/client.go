@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"go.uber.org/zap"
 )
 
 // Client wraps the ClickHouse connection (matches the interface from pkg/clickhouse)
@@ -20,14 +19,13 @@ type Client interface {
 // NewTestClient creates a client with a provided connection for testing purposes.
 // This allows unit tests to test client methods without requiring a real ClickHouse connection.
 // It can also be used by other packages that need to test ClickHouse integration.
-func NewTestClient(conn driver.Conn, sugar *zap.SugaredLogger) Client {
-	return &testClient{conn: conn, logger: sugar}
+func NewTestClient(conn driver.Conn) Client {
+	return &testClient{conn: conn}
 }
 
 // testClient is an internal implementation that matches the client struct
 type testClient struct {
-	conn   driver.Conn
-	logger *zap.SugaredLogger
+	conn driver.Conn
 }
 
 func (c *testClient) Conn() driver.Conn {

@@ -53,20 +53,20 @@ func TestMain(m *testing.M) {
 	// Create a test logger
 	sugar, err := utils.NewSugaredLogger(true) // Use verbose mode for integration tests
 	if err != nil {
-		log.Fatalf("integration: failed to create logger: %v", err)
+		require.Failf(t, "integration: failed to create logger: %v", err)
 	}
 
 	// Initialize ClickHouse client - fail if not available
 	chClient, err := New(cfg, sugar)
 	if err != nil {
-		log.Fatalf("integration: failed to open ClickHouse connection: %v", err)
+		require.Failf(t, "integration: failed to open ClickHouse connection: %v", err)
 	}
 
 	testClickHouseClient = chClient
 
 	// Ping ClickHouse to ensure connection works - fail if not available
 	if err := testClickHouseClient.Ping(ctx); err != nil {
-		log.Fatalf("integration: failed to ping ClickHouse: %v", err)
+		require.Failf(t, "integration: failed to ping ClickHouse: %v", err)
 	}
 
 	// Run all tests
@@ -125,7 +125,8 @@ func TestNew_ExceptionError(t *testing.T) {
 	client, err := New(cfg, sugar)
 
 	// Should fail with authentication error (clickhouse.Exception)
-	require.Error(t, err, "New should fail with invalid credentials")
+	var exception *clickhouse.Exception
+	require.ErrorAs(t, err, &exception)
 	assert.Nil(t, client, "Client should be nil when creation fails")
 
 	// Verify it's a clickhouse.Exception

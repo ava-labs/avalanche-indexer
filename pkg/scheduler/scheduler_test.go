@@ -38,9 +38,7 @@ func (m *mockSnapshotRepo) ReadSnapshot(ctx context.Context, chainID uint64) (*s
 func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(5, 10)
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
+	require.NoError(t, err)
 	repo := &mockSnapshotRepo{}
 
 	called := make(chan struct{}, 1)
@@ -70,14 +68,14 @@ func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 		// stop scheduler
 		cancel()
 	case <-time.After(500 * time.Millisecond):
-		t.Fatalf("timeout waiting for snapshot write")
+		require.Fail(t, "timeout waiting for snapshot write")
 	}
 
 	select {
 	case err := <-done:
 		require.NoError(t, err)
 	case <-time.After(500 * time.Millisecond):
-		t.Fatalf("timeout waiting for scheduler to exit")
+		require.Fail(t, "timeout waiting for scheduler to exit")
 	}
 	repo.AssertExpectations(t)
 }
@@ -85,29 +83,25 @@ func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 func TestStartSnapshotScheduler_ErrorPropagates(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(1, 1)
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
+	require.NoError(t, err)
 	repo := &mockSnapshotRepo{}
+	writeErr := errors.New("write failed")
 	repo.
 		On("WriteSnapshot", mock.Anything, mock.AnythingOfType("*snapshot.Snapshot")).
-		Return(errors.New("write failed")).
+		Return(writeErr).
 		Times(4) // initial try + 3 retries
 
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	gotErr := Start(ctx, state, repo, 5*time.Millisecond, 43114)
-	require.Error(t, gotErr)
-	assert.Contains(t, gotErr.Error(), "failed to write snapshot")
+	require.ErrorIs(t, gotErr, writeErr)
 	repo.AssertExpectations(t)
 }
 
 func TestStartSnapshotScheduler_ImmediateCancel(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(0, 0)
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
+	require.NoError(t, err)
 	repo := &mockSnapshotRepo{}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

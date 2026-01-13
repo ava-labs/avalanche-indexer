@@ -322,7 +322,7 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 		MaxOpenConns:         c.Int("clickhouse-max-open-conns"),
 		MaxIdleConns:         c.Int("clickhouse-max-idle-conns"),
 		ConnMaxLifetime:      c.Int("clickhouse-conn-max-lifetime"),
-		BlockBufferSize:      uint8(c.Int("clickhouse-block-buffer-size")), //nolint:gosec
+		BlockBufferSize:      uint8(c.Int("clickhouse-block-buffer-size")),
 		MaxBlockSize:         c.Int("clickhouse-max-block-size"),
 		MaxCompressionBuffer: c.Int("clickhouse-max-compression-buffer"),
 		ClientName:           c.String("clickhouse-client-name"),

@@ -35,8 +35,7 @@ const (
 )
 
 type client struct {
-	conn   driver.Conn
-	logger *zap.SugaredLogger
+	conn driver.Conn
 }
 
 // New creates a new ClickHouse client with the provided configuration
@@ -113,7 +112,7 @@ func New(cfg Config, sugar *zap.SugaredLogger) (Client, error) {
 		return nil, err
 	}
 
-	return &client{conn: conn, logger: sugar}, nil
+	return &client{conn: conn}, nil
 }
 
 func (c *client) Conn() driver.Conn {

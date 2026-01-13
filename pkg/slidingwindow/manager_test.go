@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -42,9 +43,7 @@ func TestNewManager_Validation(t *testing.T) {
 	t.Parallel()
 	validLogger := zap.NewNop().Sugar()
 	validState, err := NewState(0, 0)
-	if err != nil {
-		t.Fatalf("New state error: %v", err)
-	}
+	require.NoError(t, err)
 	validWorker := workerStub{}
 
 	type args struct {
@@ -203,22 +202,12 @@ func TestNewManager_Validation(t *testing.T) {
 				nil, // metrics
 			)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-					t.Fatalf("error %q does not contain %q", err.Error(), tt.errContains)
-				}
-				if m != nil {
-					t.Fatalf("expected nil manager on error, got non-nil")
-				}
+				require.Contains(t, err.Error(), tt.errContains)
+				require.Nil(t, m)
 				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if m == nil {
-				t.Fatalf("expected non-nil manager on success")
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, m)
 			}
 		})
 	}
@@ -244,11 +233,11 @@ func TestTryAcquireBackfill(t *testing.T) {
 			verify: func(t *testing.T, m *Manager) {
 				// After success, both semaphores should have consumed one permit.
 				if m.backfillSem.TryAcquire(1) {
-					t.Fatalf("backfillSem had spare capacity; expected consumed permit")
+					require.Fail(t, "backfillSem had spare capacity; expected consumed permit")
 				}
 				// Worker semaphore should still have one remaining permit (capacity 2 total).
 				if !m.workerSem.TryAcquire(1) {
-					t.Fatalf("workerSem expected one remaining permit after acquisition")
+					require.Fail(t, "workerSem expected one remaining permit after acquisition")
 				}
 				// release the extra permit acquired for verification
 				m.workerSem.Release(1)
@@ -263,7 +252,7 @@ func TestTryAcquireBackfill(t *testing.T) {
 			prep: func(m *Manager) {
 				// Exhaust the single backfill permit.
 				if !m.backfillSem.TryAcquire(1) {
-					t.Fatalf("failed to acquire backfill permit in prep")
+					require.Fail(t, "failed to acquire backfill permit in prep")
 				}
 			},
 			verify: func(_ *testing.T, m *Manager) {
@@ -278,13 +267,13 @@ func TestTryAcquireBackfill(t *testing.T) {
 			prep: func(m *Manager) {
 				// Exhaust all worker permits (capacity=2), leave backfill available to test release behavior.
 				if !m.workerSem.TryAcquire(2) {
-					t.Fatalf("failed to acquire worker permits in prep")
+					require.Fail(t, "failed to acquire worker permits in prep")
 				}
 			},
 			verify: func(t *testing.T, m *Manager) {
 				// Backfill should have been released by tryAcquireBackfill after worker acquire failed.
 				if !m.backfillSem.TryAcquire(1) {
-					t.Fatalf("backfillSem did not release permit on worker exhaustion")
+					require.Fail(t, "backfillSem did not release permit on worker exhaustion")
 				}
 				// Cleanup: release permits acquired during prep/verify.
 				m.backfillSem.Release(1)
@@ -297,20 +286,16 @@ func TestTryAcquireBackfill(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			state, err := NewState(0, 0)
-			if err != nil {
-				t.Fatalf("New state error: %v", err)
-			}
+			require.NoError(t, err)
 			// backfillPriority must be strictly less than concurrency now (2 > 1)
 			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1, nil)
-			if err != nil {
-				t.Fatalf("New manager error: %v", err)
-			}
+			require.NoError(t, err)
 			if tt.prep != nil {
 				tt.prep(m)
 			}
 			got := m.tryAcquireBackfill()
 			if got != tt.wantResult {
-				t.Fatalf("tryAcquireBackfill()=%t, want %t", got, tt.wantResult)
+				require.Equal(t, tt.wantResult, got)
 			}
 			if tt.verify != nil {
 				tt.verify(t, m)
@@ -339,24 +324,20 @@ func TestProcess(t *testing.T) {
 		t.Helper()
 
 		state, err := NewState(c.initialLowest, c.initialHighest)
-		if err != nil {
-			t.Fatalf("New state error: %v", err)
-		}
+		require.NoError(t, err)
 		w := workerStub{}
 		if c.workerErr {
 			w.err = assertAnError()
 		}
 		// backfillPriority must be strictly less than concurrency now (2 > 1)
 		m, err := NewManager(zap.NewNop().Sugar(), state, w, 2, 1, 1, 1, nil)
-		if err != nil {
-			t.Fatalf("New manager error: %v", err)
-		}
+		require.NoError(t, err)
 		if !m.workerSem.TryAcquire(1) {
-			t.Fatalf("failed to acquire worker permit in prep")
+			require.Fail(t, "failed to acquire worker permit in prep")
 		}
 		if c.preAcquireBackfill {
 			if !m.backfillSem.TryAcquire(1) {
-				t.Fatalf("failed to acquire backfill permit in prep")
+				require.Fail(t, "failed to acquire backfill permit in prep")
 			}
 		}
 		if !c.skipInflight {
@@ -365,11 +346,11 @@ func TestProcess(t *testing.T) {
 			// want MarkProcessed to fail (h > highest). Those will set skipInflight=true.
 			if c.h > c.initialHighest {
 				if ok := m.state.SetHighest(c.h); !ok {
-					t.Fatalf("failed to expand Highest for claim: %v", err)
+					require.Failf(t, "SetHighest", "failed to expand Highest for claim: %v", err)
 				}
 			}
 			if ok := m.state.TrySetInflight(c.h); !ok {
-				t.Fatalf("failed to set inflight for height %d", c.h)
+				require.Failf(t, "TrySetInflight", "failed to set inflight for height %d", c.h)
 			}
 		}
 
@@ -377,19 +358,19 @@ func TestProcess(t *testing.T) {
 		m.process(ctx, c.h, c.isBackfill)
 
 		if got := m.state.IsInflight(c.h); got {
-			t.Fatalf("isInflight(%d)=true, want false after process", c.h)
+			require.Failf(t, "IsInflight", "for height %d true, want false after process", c.h)
 		}
 		if !m.workerSem.TryAcquire(1) {
-			t.Fatalf("worker semaphore not released by process")
+			require.Fail(t, "worker semaphore not released by process")
 		}
 		m.workerSem.Release(1)
 		if c.preAcquireBackfill {
 			acq := m.backfillSem.TryAcquire(1)
 			if c.isBackfill && !acq {
-				t.Fatalf("backfill semaphore expected released, but not available")
+				require.Fail(t, "backfill semaphore expected released, but not available")
 			}
 			if !c.isBackfill && acq {
-				t.Fatalf("backfill semaphore should not be released on realtime path")
+				require.Fail(t, "backfill semaphore should not be released on realtime path")
 			}
 			if acq {
 				m.backfillSem.Release(1)
@@ -397,26 +378,26 @@ func TestProcess(t *testing.T) {
 		}
 		if c.expectLowest != nil {
 			if got := state.GetLowest(); got != *c.expectLowest {
-				t.Fatalf("lowest mismatch: got %d, want %d", got, *c.expectLowest)
+				require.Failf(t, "GetLowest", "lowest mismatch: got %d, want %d", got, *c.expectLowest)
 			}
 		}
 		select {
 		case v := <-m.failureChan:
 			if !c.expectFailure {
-				t.Fatalf("unexpected failure signal received: %d", v)
+				require.Failf(t, "failureChan", "unexpected failure signal received: %d", v)
 			}
 			if v != c.h {
-				t.Fatalf("failureChan value=%d, want %d", v, c.h)
+				require.Failf(t, "failureChan", "value=%d, want %d", v, c.h)
 			}
 		default:
 			if c.expectFailure {
-				t.Fatalf("expected failure signal, but none received")
+				require.Fail(t, "expected failure signal, but none received")
 			}
 		}
 		select {
 		case <-m.workReady:
 		default:
-			t.Fatalf("expected workReady signal from defer")
+			require.Fail(t, "expected workReady signal from defer")
 		}
 	}
 
@@ -497,14 +478,10 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 	t.Parallel()
 	// Window has one unprocessed height 5
 	state, err := NewState(5, 5)
-	if err != nil {
-		t.Fatalf("New state error: %v", err)
-	}
+	require.NoError(t, err)
 	// backfillPriority must be strictly less than concurrency now (2 > 1)
 	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1, nil)
-	if err != nil {
-		t.Fatalf("New manager error: %v", err)
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	errCh := make(chan error, 1)
@@ -531,16 +508,16 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 	case <-done:
 		// ok
 	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting for backfill processing")
+		require.Fail(t, "timeout waiting for backfill processing")
 	}
 	cancel()
 	select {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, context.Canceled) {
-			t.Fatalf("Run returned unexpected error: %v", err)
+			require.Failf(t, "Run", "returned unexpected error: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting for Run to exit")
+		require.Fail(t, "timeout waiting for Run to exit")
 	}
 	// no expectations on stub
 }
@@ -548,18 +525,14 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 func TestRun_RealtimeEventFlow(t *testing.T) {
 	t.Parallel()
 	state, err := NewState(0, 0)
-	if err != nil {
-		t.Fatalf("New state error: %v", err)
-	}
+	require.NoError(t, err)
 	// Ensure no backfill work is available
 	if err := state.MarkProcessed(0); err != nil {
-		t.Fatalf("MarkProcessed error: %v", err)
+		require.Failf(t, "MarkProcessed", "error: %v", err)
 	}
 	// backfillPriority must be strictly less than concurrency now (2 > 1)
 	m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, 2, 1, 1, 1, nil)
-	if err != nil {
-		t.Fatalf("New manager error: %v", err)
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	errCh := make(chan error, 1)
@@ -591,17 +564,17 @@ func TestRun_RealtimeEventFlow(t *testing.T) {
 	case <-done:
 		// ok
 	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting for realtime processing")
+		require.Fail(t, "timeout waiting for realtime processing")
 	}
 
 	cancel()
 	select {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, context.Canceled) {
-			t.Fatalf("Run returned unexpected error: %v", err)
+			require.Failf(t, "Run", "returned unexpected error: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting for Run to exit")
+		require.Fail(t, "timeout waiting for Run to exit")
 	}
 }
 
@@ -609,9 +582,7 @@ func TestRun_FailureChain(t *testing.T) {
 	t.Parallel()
 	// Window has one unprocessed height 5; worker always fails; maxFailures triggers shutdown.
 	state, err := NewState(5, 5)
-	if err != nil {
-		t.Fatalf("New state error: %v", err)
-	}
+	require.NoError(t, err)
 	maxFailures := 3
 	m, err := NewManager(
 		zap.NewNop().Sugar(),
@@ -623,9 +594,7 @@ func TestRun_FailureChain(t *testing.T) {
 		maxFailures,
 		nil, // metrics
 	)
-	if err != nil {
-		t.Fatalf("New manager error: %v", err)
-	}
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -635,18 +604,18 @@ func TestRun_FailureChain(t *testing.T) {
 	select {
 	case runErr := <-errCh:
 		if runErr == nil {
-			t.Fatalf("expected error, got nil")
+			require.Fail(t, "expected error, got nil")
 		}
 		// Validate message contains sentinel text and additional context.
 		msg := runErr.Error()
 		if !strings.Contains(msg, "max failures exceeded for block") {
-			t.Fatalf("expected sentinel error message, got: %q", msg)
+			require.Failf(t, "Run", "expected sentinel error message, got: %q", msg)
 		}
 		if !strings.Contains(msg, "block 5") || !strings.Contains(msg, "after 3 attempts") {
-			t.Fatalf("unexpected error message: %q", msg)
+			require.Failf(t, "Run", "unexpected error message: %q", msg)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatalf("timeout waiting for failure threshold to trigger")
+		require.Fail(t, "timeout waiting for failure threshold to trigger")
 	}
 }
 
@@ -738,9 +707,7 @@ func TestHandleNewHeight(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.args.initialLowest, tt.args.initialHighest)
-			if err != nil {
-				t.Fatalf("New state error: %v", err)
-			}
+			require.NoError(t, err)
 			var w worker.Worker = workerStub{}
 			var start chan uint64
 			var done chan struct{}
@@ -750,18 +717,16 @@ func TestHandleNewHeight(t *testing.T) {
 				w = blockingWorker{start: start, done: done}
 			}
 			m, err := NewManager(zap.NewNop().Sugar(), state, w, tt.args.concurrency, tt.args.backfillPri, 1, 1, nil)
-			if err != nil {
-				t.Fatalf("New manager error: %v", err)
-			}
+			require.NoError(t, err)
 
 			if tt.args.preAcquireBackfill {
 				if !m.backfillSem.TryAcquire(1) {
-					t.Fatalf("failed to pre-acquire backfill permit")
+					require.Fail(t, "failed to pre-acquire backfill permit")
 				}
 			}
 			if tt.args.exhaustWorkers > 0 {
 				if !m.workerSem.TryAcquire(int64(tt.args.exhaustWorkers)) {
-					t.Fatalf("failed to exhaust workerSem")
+					require.Fail(t, "failed to exhaust workerSem")
 				}
 				defer m.workerSem.Release(int64(tt.args.exhaustWorkers))
 			}
@@ -770,7 +735,7 @@ func TestHandleNewHeight(t *testing.T) {
 			}
 			if tt.args.markProcessedH {
 				if err := state.MarkProcessed(tt.args.height); err != nil {
-					t.Fatalf("failed to mark processed: %v", err)
+					require.Failf(t, "MarkProcessed", "failed to mark processed: %v", err)
 				}
 			}
 
@@ -784,10 +749,10 @@ func TestHandleNewHeight(t *testing.T) {
 			// If yielded, there should be no inflight and worker capacity remains available.
 			if tt.want.yieldedToBackfill {
 				if state.IsInflight(tt.args.height) {
-					t.Fatalf("expected yield: no inflight for realtime height")
+					require.Fail(t, "expected yield: no inflight for realtime height")
 				}
 				if !m.workerSem.TryAcquire(1) {
-					t.Fatalf("expected yield: worker capacity should be available")
+					require.Fail(t, "expected yield: worker capacity should be available")
 				}
 				m.workerSem.Release(1)
 				return
@@ -797,13 +762,13 @@ func TestHandleNewHeight(t *testing.T) {
 				select {
 				case got := <-start:
 					if got != tt.args.height {
-						t.Fatalf("started height=%d, want %d", got, tt.args.height)
+						require.Failf(t, "started", "height=%d, want %d", got, tt.args.height)
 					}
 				case <-time.After(500 * time.Millisecond):
-					t.Fatalf("timeout waiting for worker to start")
+					require.Fail(t, "timeout waiting for worker to start")
 				}
 				if !state.IsInflight(tt.args.height) {
-					t.Fatalf("expected height %d to be inflight", tt.args.height)
+					require.Failf(t, "IsInflight", "expected height %d to be inflight", tt.args.height)
 				}
 				// Complete worker and wait for inflight to clear
 				close(done)
@@ -815,18 +780,18 @@ func TestHandleNewHeight(t *testing.T) {
 					time.Sleep(10 * time.Millisecond)
 				}
 				if state.IsInflight(tt.args.height) {
-					t.Fatalf("inflight not cleared after worker completion")
+					require.Fail(t, "inflight not cleared after worker completion")
 				}
 				// Worker permit should be available again.
 				if !m.workerSem.TryAcquire(1) {
-					t.Fatalf("workerSem not released after worker completion")
+					require.Fail(t, "workerSem not released after worker completion")
 				}
 				m.workerSem.Release(1)
 			}
 
 			// For non-started paths, ensure inflight matches expectation
 			if !tt.want.startedRealtime && state.IsInflight(tt.args.height) != tt.want.inflightAfter {
-				t.Fatalf("isInflight(%d)=%t, want %t", tt.args.height, state.IsInflight(tt.args.height), tt.want.inflightAfter)
+				require.Failf(t, "IsInflight", "for height %d got %t, want %t", tt.args.height, state.IsInflight(tt.args.height), tt.want.inflightAfter)
 			}
 		})
 	}
@@ -897,13 +862,9 @@ func TestSubmitHeight(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.args.initialLowest, tt.args.initialHighest)
-			if err != nil {
-				t.Fatalf("New state error: %v", err)
-			}
+			require.NoError(t, err)
 			m, err := NewManager(zap.NewNop().Sugar(), state, workerStub{}, tt.args.concurrency, tt.args.backfillPri, tt.args.queueCap, 1, nil)
-			if err != nil {
-				t.Fatalf("New manager error: %v", err)
-			}
+			require.NoError(t, err)
 
 			var gotResults []bool
 			for _, h := range tt.args.submitHeights {
@@ -911,16 +872,16 @@ func TestSubmitHeight(t *testing.T) {
 			}
 			// Check results
 			if len(gotResults) != len(tt.want.results) {
-				t.Fatalf("results len=%d, want %d", len(gotResults), len(tt.want.results))
+				require.Failf(t, "SubmitHeight", "results len=%d, want %d", len(gotResults), len(tt.want.results))
 			}
 			for i := range gotResults {
 				if gotResults[i] != tt.want.results[i] {
-					t.Fatalf("result[%d]=%t, want %t", i, gotResults[i], tt.want.results[i])
+					require.Failf(t, "SubmitHeight", "result[%d]=%t, want %t", i, gotResults[i], tt.want.results[i])
 				}
 			}
 			// Check final highest
 			if got := state.GetHighest(); got != tt.want.finalHighest {
-				t.Fatalf("final highest=%d, want %d", got, tt.want.finalHighest)
+				require.Failf(t, "GetHighest", "final highest=%d, want %d", got, tt.want.finalHighest)
 			}
 			// Drain queue and compare enqueued values
 			var drained []uint64
@@ -934,11 +895,11 @@ func TestSubmitHeight(t *testing.T) {
 			}
 		compare:
 			if len(drained) != len(tt.want.queueValues) {
-				t.Fatalf("queued len=%d, want %d (values=%v)", len(drained), len(tt.want.queueValues), drained)
+				require.Failf(t, "SubmitHeight", "queued len=%d, want %d (values=%v)", len(drained), len(tt.want.queueValues), drained)
 			}
 			for i := range drained {
 				if drained[i] != tt.want.queueValues[i] {
-					t.Fatalf("queued[%d]=%d, want %d", i, drained[i], tt.want.queueValues[i])
+					require.Failf(t, "SubmitHeight", "queued[%d]=%d, want %d", i, drained[i], tt.want.queueValues[i])
 				}
 			}
 		})

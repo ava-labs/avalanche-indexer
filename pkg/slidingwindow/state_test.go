@@ -2,9 +2,11 @@ package slidingwindow
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestNewInMemorySlidingWindowRepository(t *testing.T) {
+func TestNewState(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
@@ -33,18 +35,18 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 			c, err := NewState(tt.initialLowest, tt.initialHighest)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("NewState(%d, %d) expected error", tt.initialLowest, tt.initialHighest)
+					require.Failf(t, "NewState", "for lowest %d and highest %d expected error", tt.initialLowest, tt.initialHighest)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.initialLowest, tt.initialHighest, err)
+				require.Failf(t, "NewState", "for lowest %d and highest %d unexpected error: %v", tt.initialLowest, tt.initialHighest, err)
 			}
 			if got := c.GetLowest(); got != tt.wantLowest {
-				t.Fatalf("GetLowest()=%d, want %d", got, tt.wantLowest)
+				require.Failf(t, "GetLowest", "got %d, want %d", got, tt.wantLowest)
 			}
 			if got := c.GetHighest(); got != tt.wantHighest {
-				t.Fatalf("GetHighest()=%d, want %d", got, tt.wantHighest)
+				require.Failf(t, "GetHighest", "got %d, want %d", got, tt.wantHighest)
 			}
 		})
 	}
@@ -53,14 +55,12 @@ func TestNewInMemorySlidingWindowRepository(t *testing.T) {
 func TestGetters(t *testing.T) {
 	t.Parallel()
 	c, err := NewState(7, 12)
-	if err != nil {
-		t.Fatalf("NewState(7, 12) unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	if c.GetLowest() != 7 {
-		t.Fatalf("GetLowest()=%d, want 7", c.GetLowest())
+		require.Failf(t, "GetLowest", "got %d, want 7", c.GetLowest())
 	}
 	if c.GetHighest() != 12 {
-		t.Fatalf("GetHighest()=%d, want 12", c.GetHighest())
+		require.Failf(t, "GetHighest", "got %d, want 12", c.GetHighest())
 	}
 }
 
@@ -93,21 +93,19 @@ func TestSetHighest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c, err := NewState(0, tt.initialHighest)
-			if err != nil {
-				t.Fatalf("NewState(0, %d) unexpected error: %v", tt.initialHighest, err)
-			}
+			require.NoError(t, err)
 			ok := c.SetHighest(tt.newHighest)
 			if tt.heightSet {
 				if !ok {
-					t.Fatalf("SetHighest(%d) expected true, got false", tt.newHighest)
+					require.Failf(t, "SetHighest", "for height %d expected true, got false", tt.newHighest)
 				}
 			} else {
 				if ok {
-					t.Fatalf("SetHighest(%d) expected false, got true", tt.newHighest)
+					require.Failf(t, "SetHighest", "for height %d expected false, got true", tt.newHighest)
 				}
 			}
 			if got := c.GetHighest(); got != tt.wantHighest {
-				t.Fatalf("GetHighest()=%d, want %d", got, tt.wantHighest)
+				require.Failf(t, "GetHighest", "got %d, want %d", got, tt.wantHighest)
 			}
 		})
 	}
@@ -146,34 +144,32 @@ func TestResetLowest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c, err := NewState(tt.initialLowest, tt.initialHighest)
-			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.initialLowest, tt.initialHighest, err)
-			}
+			require.NoError(t, err)
 			for _, h := range tt.mark {
 				if err := c.MarkProcessed(h); err != nil {
-					t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
+					require.Failf(t, "MarkProcessed", "for height %d unexpected error: %v", h, err)
 				}
 			}
 			err = c.ResetLowest(tt.newLowest)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("ResetLowest(%d) expected error", tt.newLowest)
+					require.Failf(t, "ResetLowest", "for height %d expected error", tt.newLowest)
 				}
 				if c.GetLowest() != tt.initialLowest {
-					t.Fatalf("Lowest changed on error: got %d, want %d", c.GetLowest(), tt.initialLowest)
+					require.Failf(t, "Lowest changed on error", "got %d, want %d", c.GetLowest(), tt.initialLowest)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("ResetLowest(%d) unexpected error: %v", tt.newLowest, err)
+				require.Failf(t, "ResetLowest", "for height %d unexpected error: %v", tt.newLowest, err)
 			}
 			if got := c.GetLowest(); got != tt.wantLowest {
-				t.Fatalf("GetLowest()=%d, want %d", got, tt.wantLowest)
+				require.Failf(t, "GetLowest", "got %d, want %d", got, tt.wantLowest)
 			}
 			// Spot-check semantics after moving forward: values below Lowest are implicitly processed.
 			if tt.newLowest > tt.initialLowest && tt.newLowest > 0 {
 				if !c.IsProcessed(tt.newLowest - 1) {
-					t.Fatalf("IsProcessed(%d) expected true for < Lowest", tt.newLowest-1)
+					require.Failf(t, "IsProcessed", "for height %d expected true for < Lowest", tt.newLowest-1)
 				}
 			}
 		})
@@ -209,22 +205,20 @@ func TestMarkProcessed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c, err := NewState(tt.initialLowest, tt.initialHighest)
-			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.initialLowest, tt.initialHighest, err)
-			}
+			require.NoError(t, err)
 			err = c.MarkProcessed(tt.h)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("MarkProcessed(%d) expected error", tt.h)
+					require.Failf(t, "MarkProcessed", "for height %d expected error", tt.h)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("MarkProcessed(%d) unexpected error: %v", tt.h, err)
+				require.Failf(t, "MarkProcessed", "for height %d unexpected error: %v", tt.h, err)
 			}
 			if tt.h >= tt.initialLowest && tt.h <= tt.initialHighest {
 				if !c.IsProcessed(tt.h) {
-					t.Fatalf("IsProcessed(%d)=false, want true after mark", tt.h)
+					require.Failf(t, "IsProcessed", "for height %d false, want true after mark", tt.h)
 				}
 			}
 		})
@@ -280,18 +274,16 @@ func TestAdvanceLowest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c, err := NewState(tt.initialLowest, tt.initialHighest)
-			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.initialLowest, tt.initialHighest, err)
-			}
+			require.NoError(t, err)
 			for _, s := range tt.steps {
 				for _, h := range s.marks {
 					if err := c.MarkProcessed(h); err != nil {
-						t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
+						require.Failf(t, "MarkProcessed", "for height %d unexpected error: %v", h, err)
 					}
 				}
 				gotLowest, changed := c.AdvanceLowest()
 				if gotLowest != s.wantLowest || changed != s.changed {
-					t.Fatalf("AdvanceLowest()=(%d,%t), want (%d,%t)", gotLowest, changed, s.wantLowest, s.changed)
+					require.Failf(t, "AdvanceLowest", "got (%d,%t), want (%d,%t)", gotLowest, changed, s.wantLowest, s.changed)
 				}
 			}
 		})
@@ -359,12 +351,10 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			state, err := NewState(tt.fields.lowest, tt.fields.highest)
-			if err != nil {
-				t.Fatalf("New state error: %v", err)
-			}
+			require.NoError(t, err)
 			for _, h := range tt.fields.processed {
 				if err := state.MarkProcessed(h); err != nil {
-					t.Fatalf("MarkProcessed(%d) error: %v", h, err)
+					require.Failf(t, "MarkProcessed", "for height %d error: %v", h, err)
 				}
 			}
 			for _, h := range tt.fields.inflight {
@@ -373,7 +363,7 @@ func TestFindNextUnclaimedBlock(t *testing.T) {
 
 			gotH, gotOK := state.FindNextUnclaimedHeight()
 			if gotH != tt.want.height || gotOK != tt.want.ok {
-				t.Fatalf("FindNextUnclaimedBlock()=(%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
+				require.Failf(t, "FindNextUnclaimedBlock", "got (%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
 			}
 		})
 	}
@@ -458,17 +448,15 @@ func TestFindAndSetNextInflight(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.fields.lowest, tt.fields.highest)
-			if err != nil {
-				t.Fatalf("New state error: %v", err)
-			}
+			require.NoError(t, err)
 			for _, h := range tt.fields.processed {
 				if err := state.MarkProcessed(h); err != nil {
-					t.Fatalf("MarkProcessed(%d) error: %v", h, err)
+					require.Failf(t, "MarkProcessed", "for height %d error: %v", h, err)
 				}
 			}
 			for _, h := range tt.fields.inflight {
 				if ok := state.TrySetInflight(h); !ok {
-					t.Fatalf("failed to seed inflight for %d", h)
+					require.Failf(t, "TrySetInflight", "failed to seed inflight for height %d", h)
 				}
 			}
 
@@ -477,24 +465,24 @@ func TestFindAndSetNextInflight(t *testing.T) {
 
 			gotH, gotOK := state.FindAndSetNextInflight()
 			if gotH != tt.want.height || gotOK != tt.want.ok {
-				t.Fatalf("FindAndSetNextInflight()=(%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
+				require.Failf(t, "FindAndSetNextInflight", "got (%d,%t), want (%d,%t)", gotH, gotOK, tt.want.height, tt.want.ok)
 			}
 
 			// Verify inflight set membership after the call
 			for _, h := range tt.want.inflight {
 				if !state.IsInflight(h) {
-					t.Fatalf("IsInflight(%d)=false, want true", h)
+					require.Failf(t, "IsInflight", "for height %d false, want true", h)
 				}
 			}
 			// Ensure no unexpected inflight when none expected
 			if tt.want.inflight == nil && gotOK {
 				if !state.IsInflight(gotH) {
-					t.Fatalf("claimed height %d should be inflight", gotH)
+					require.Failf(t, "IsInflight", "claimed height %d should be inflight", gotH)
 				}
 			}
 			// Lowest/Highest should not change
 			if state.GetLowest() != origLowest || state.GetHighest() != origHighest {
-				t.Fatalf("watermarks changed: got (lowest=%d, highest=%d), want (lowest=%d, highest=%d)",
+				require.Failf(t, "GetLowest", "watermarks changed: got (lowest=%d, highest=%d), want (lowest=%d, highest=%d)",
 					state.GetLowest(), state.GetHighest(), origLowest, origHighest)
 			}
 		})
@@ -503,28 +491,26 @@ func TestFindAndSetNextInflight(t *testing.T) {
 	t.Run("sequential claims across window", func(t *testing.T) {
 		t.Parallel()
 		state, err := NewState(5, 7)
-		if err != nil {
-			t.Fatalf("New state error: %v", err)
-		}
+		require.NoError(t, err)
 		// First claim: 5
 		if h, ok := state.FindAndSetNextInflight(); !ok || h != 5 {
-			t.Fatalf("first claim=(%d,%t), want (5,true)", h, ok)
+			require.Failf(t, "FindAndSetNextInflight", "first claim=(%d,%t), want (5,true)", h, ok)
 		}
 		// Second claim: 6
 		if h, ok := state.FindAndSetNextInflight(); !ok || h != 6 {
-			t.Fatalf("second claim=(%d,%t), want (6,true)", h, ok)
+			require.Failf(t, "FindAndSetNextInflight", "second claim=(%d,%t), want (6,true)", h, ok)
 		}
 		// Third claim: 7
 		if h, ok := state.FindAndSetNextInflight(); !ok || h != 7 {
-			t.Fatalf("third claim=(%d,%t), want (7,true)", h, ok)
+			require.Failf(t, "FindAndSetNextInflight", "third claim=(%d,%t), want (7,true)", h, ok)
 		}
 		// Fourth claim: none left
 		if h, ok := state.FindAndSetNextInflight(); ok || h != 0 {
-			t.Fatalf("fourth claim=(%d,%t), want (0,false)", h, ok)
+			require.Failf(t, "FindAndSetNextInflight", "fourth claim=(%d,%t), want (0,false)", h, ok)
 		}
 		// Watermarks unchanged
 		if state.GetLowest() != 5 || state.GetHighest() != 7 {
-			t.Fatalf("watermarks changed unexpectedly: lowest=%d highest=%d", state.GetLowest(), state.GetHighest())
+			require.Failf(t, "GetLowest", "watermarks changed unexpectedly: lowest=%d highest=%d", state.GetLowest(), state.GetHighest())
 		}
 	})
 }
@@ -614,14 +600,12 @@ func TestTrySetInflight(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use a wide window so all tested heights are in-range for TrySetInflight.
 			state, err := NewState(5, 100)
-			if err != nil {
-				t.Fatalf("New state error: %v", err)
-			}
+			require.NoError(t, err)
 			// Seed initial inflight map
 			for h, v := range tt.initial {
 				if v {
 					if ok := state.TrySetInflight(h); !ok {
-						t.Fatalf("failed to seed inflight for height %d", h)
+						require.Failf(t, "TrySetInflight", "failed to seed inflight for height %d", h)
 					}
 				} else {
 					state.UnsetInflight(h)
@@ -630,7 +614,7 @@ func TestTrySetInflight(t *testing.T) {
 
 			for _, h := range tt.processed {
 				if err := state.MarkProcessed(h); err != nil {
-					t.Fatalf("MarkProcessed(%d) error: %v", h, err)
+					require.Failf(t, "MarkProcessed", "for height %d error: %v", h, err)
 				}
 			}
 
@@ -639,14 +623,14 @@ func TestTrySetInflight(t *testing.T) {
 				if s.value {
 					ok := state.TrySetInflight(s.height)
 					if ok != s.expectOk {
-						t.Fatalf("TrySetInflight(%d) ok=%t, want %t", s.height, ok, s.expectOk)
+						require.Failf(t, "TrySetInflight", "for height %d ok=%t, want %t", s.height, ok, s.expectOk)
 					}
 				} else {
 					state.UnsetInflight(s.height)
 				}
 				got := state.IsInflight(s.height)
 				if got != s.wantInFlight {
-					t.Fatalf("after TrySetInflight/UnsetInflight(%d,%t): isInflight=%t, want %t", s.height, s.value, got, s.wantInFlight)
+					require.Failf(t, "IsInflight", "after TrySetInflight/UnsetInflight(%d,%t): isInflight=%t, want %t", s.height, s.value, got, s.wantInFlight)
 				}
 			}
 		})
@@ -689,13 +673,11 @@ func TestWindow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.lowest, tt.highest)
-			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.lowest, tt.highest, err)
-			}
+			require.NoError(t, err)
 
 			gotLowest, gotHighest := state.Window()
 			if gotLowest != tt.wantLowest || gotHighest != tt.wantHighest {
-				t.Fatalf("Window()=(%d, %d), want (%d, %d)", gotLowest, gotHighest, tt.wantLowest, tt.wantHighest)
+				require.Failf(t, "Window", "got (%d, %d), want (%d, %d)", gotLowest, gotHighest, tt.wantLowest, tt.wantHighest)
 			}
 		})
 	}
@@ -744,19 +726,17 @@ func TestProcessedCount(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.lowest, tt.highest)
-			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.lowest, tt.highest, err)
-			}
+			require.NoError(t, err)
 
 			for _, h := range tt.processed {
 				if err := state.MarkProcessed(h); err != nil {
-					t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
+					require.Failf(t, "MarkProcessed", "for height %d unexpected error: %v", h, err)
 				}
 			}
 
 			got := state.ProcessedCount()
 			if got != tt.wantCount {
-				t.Fatalf("ProcessedCount()=%d, want %d", got, tt.wantCount)
+				require.Failf(t, "ProcessedCount", "got %d, want %d", got, tt.wantCount)
 			}
 		})
 	}
@@ -806,25 +786,23 @@ func TestSnapshot(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.lowest, tt.highest)
-			if err != nil {
-				t.Fatalf("NewState(%d, %d) unexpected error: %v", tt.lowest, tt.highest, err)
-			}
+			require.NoError(t, err)
 
 			for _, h := range tt.processed {
 				if err := state.MarkProcessed(h); err != nil {
-					t.Fatalf("MarkProcessed(%d) unexpected error: %v", h, err)
+					require.Failf(t, "MarkProcessed", "for height %d unexpected error: %v", h, err)
 				}
 			}
 
 			gotLowest, gotHighest, gotCount := state.Snapshot()
 			if gotLowest != tt.wantLowest {
-				t.Fatalf("Snapshot() lowest=%d, want %d", gotLowest, tt.wantLowest)
+				require.Failf(t, "Snapshot", "lowest=%d, want %d", gotLowest, tt.wantLowest)
 			}
 			if gotHighest != tt.wantHighest {
-				t.Fatalf("Snapshot() highest=%d, want %d", gotHighest, tt.wantHighest)
+				require.Failf(t, "Snapshot", "highest=%d, want %d", gotHighest, tt.wantHighest)
 			}
 			if gotCount != tt.wantProcessedCount {
-				t.Fatalf("Snapshot() processedCount=%d, want %d", gotCount, tt.wantProcessedCount)
+				require.Failf(t, "Snapshot", "processedCount=%d, want %d", gotCount, tt.wantProcessedCount)
 			}
 		})
 	}

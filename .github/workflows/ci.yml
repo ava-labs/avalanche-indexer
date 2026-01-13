@@ -27,6 +27,28 @@ jobs:
         shell: bash
         run: make unit-test
 
+  E2E:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-go-for-project
+      - name: Start dependencies
+        shell: bash
+        run: docker compose up -d
+      - name: Wait for services
+        shell: bash
+        run: sleep 10
+      - name: Run e2e tests
+        shell: bash
+        run: make e2e-test
+      - name: Stop dependencies
+        if: always()
+        shell: bash
+        run: docker compose down
+
   Lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -55,7 +53,7 @@ func TestRepository_WriteSnapshot_Success(t *testing.T) {
 			mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "snapshots")
 	now := time.Now().Unix()
 	err := repo.WriteSnapshot(ctx, &Snapshot{ChainID: 43114, Lowest: 123, Timestamp: now})
 	require.NoError(t, err)
@@ -65,16 +63,16 @@ func TestRepository_WriteSnapshot_Success(t *testing.T) {
 func TestRepository_WriteSnapshot_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
+	execErr := errors.New("exec failed")
 	ctx := t.Context()
 	mockConn.
 		On("Exec", mock.Anything, "INSERT INTO snapshots (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)",
 			mock.Anything, mock.Anything, mock.Anything).
-		Return(errors.New("exec failed"))
+		Return(execErr)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "snapshots")
 	err := repo.WriteSnapshot(ctx, &Snapshot{ChainID: 43114, Lowest: 1, Timestamp: 2})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to write snapshot")
+	require.ErrorIs(t, err, execErr)
 	mockConn.AssertExpectations(t)
 }
 
@@ -89,7 +87,7 @@ func TestRepository_ReadSnapshot_Success(t *testing.T) {
 		On("QueryRow", mock.Anything, "SELECT * FROM snapshots FINAL WHERE chain_id = 43114").
 		Return(row)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "snapshots")
 	got, err := repo.ReadSnapshot(ctx, 43114)
 	require.NoError(t, err)
 	assert.NotNil(t, got)
@@ -122,11 +120,10 @@ func TestRepository_ReadSnapshot_Error(t *testing.T) {
 		On("QueryRow", mock.Anything, "SELECT * FROM snapshots FINAL WHERE chain_id = 43114").
 		Return(rowErrMock{err: scanErr})
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "snapshots")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "snapshots")
 	got, err := repo.ReadSnapshot(ctx, 43114)
 	assert.Nil(t, got)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "scan failed")
+	require.ErrorIs(t, err, scanErr)
 	mockConn.AssertExpectations(t)
 }
 
@@ -141,7 +138,7 @@ func TestRepository_CreateTableIfNotExists_Success(t *testing.T) {
 		})).
 		Return(nil)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "test_db.snapshots")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "test_db.snapshots")
 	err := repo.CreateTableIfNotExists(ctx)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
@@ -152,13 +149,13 @@ func TestRepository_CreateTableIfNotExists_Error(t *testing.T) {
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
 
+	createTableErr := errors.New("table creation failed")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything).
-		Return(errors.New("table creation failed"))
+		Return(createTableErr)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "test_db.snapshots")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "test_db.snapshots")
 	err := repo.CreateTableIfNotExists(ctx)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create snapshots table")
+	require.ErrorIs(t, err, createTableErr)
 	mockConn.AssertExpectations(t)
 }

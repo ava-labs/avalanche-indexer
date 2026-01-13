@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"errors"
+	"net"
 	"os"
 	"testing"
 
@@ -65,7 +66,7 @@ func TestLoad(t *testing.T) {
 	assert.GreaterOrEqual(t, cfg.MaxOpenConns, 0)
 	assert.GreaterOrEqual(t, cfg.MaxIdleConns, 0)
 	assert.GreaterOrEqual(t, cfg.ConnMaxLifetime, 0)
-	assert.GreaterOrEqual(t, cfg.BlockBufferSize, uint8(0))
+	assert.NotZero(t, cfg.BlockBufferSize)
 	assert.GreaterOrEqual(t, cfg.MaxBlockSize, 0)
 	assert.GreaterOrEqual(t, cfg.MaxCompressionBuffer, 0)
 	assert.NotEmpty(t, cfg.ClientName)
@@ -91,7 +92,9 @@ func TestNew_InvalidConfig(t *testing.T) {
 	client, err := New(cfg, testLogger(t))
 
 	// Should fail - either during Open or Ping
-	require.Error(t, err)
+	var addrErr *net.AddrError
+	require.ErrorAs(t, err, &addrErr)
+	require.Equal(t, "invalid port", addrErr.Err)
 	assert.Nil(t, client)
 
 	// Error could be from Open ("failed to open ClickHouse connection") or Ping (connection error)
@@ -117,7 +120,9 @@ func TestNew_WithDebugEnabled(t *testing.T) {
 	// The debug function is set in opts, so we verify the config is processed correctly
 	client, err := New(cfg, testLogger(t))
 
-	require.Error(t, err)
+	var addrErr *net.AddrError
+	require.ErrorAs(t, err, &addrErr)
+	require.Equal(t, "invalid port", addrErr.Err)
 	assert.Nil(t, client)
 
 	// Error could be from Open or Ping, either are valid
@@ -137,7 +142,9 @@ func TestNew_ConnectionOpenError(t *testing.T) {
 
 	client, err := New(cfg, testLogger(t))
 
-	require.Error(t, err)
+	var addrErr *net.AddrError
+	require.ErrorAs(t, err, &addrErr)
+	require.Equal(t, "invalid port", addrErr.Err)
 	assert.Nil(t, client)
 
 	// Verify the error message contains "failed to open ClickHouse connection"
@@ -163,7 +170,7 @@ func TestClickhouseConfig_Defaults(t *testing.T) {
 // TestClient_Conn tests the client's Conn method
 func TestClient_Conn(t *testing.T) {
 	mockConn := &testutils.MockConn{}
-	client := testutils.NewTestClient(mockConn, testLogger(t)).(Client)
+	client := testutils.NewTestClient(mockConn).(Client)
 
 	// Test Conn() method
 	conn := client.Conn()
@@ -176,7 +183,7 @@ func TestClient_Ping(t *testing.T) {
 	mockConn := &testutils.MockConn{}
 	mockConn.On("Ping", t.Context()).Return(nil)
 
-	client := testutils.NewTestClient(mockConn, testLogger(t)).(Client)
+	client := testutils.NewTestClient(mockConn).(Client)
 
 	// Test Ping() method
 	ctx := t.Context()
@@ -190,7 +197,7 @@ func TestClient_Close(t *testing.T) {
 	mockConn := &testutils.MockConn{}
 	mockConn.On("Close").Return(nil)
 
-	client := testutils.NewTestClient(mockConn, testLogger(t)).(Client)
+	client := testutils.NewTestClient(mockConn).(Client)
 
 	// Test Close() method
 	err := client.Close()
@@ -207,7 +214,7 @@ func TestNew_SuccessfulCreation(t *testing.T) {
 	mockConn.On("Ping", t.Context()).Return(nil)
 	mockConn.On("Close").Return(nil)
 
-	client := testutils.NewTestClient(mockConn, testLogger(t))
+	client := testutils.NewTestClient(mockConn)
 
 	// Verify client was created successfully and methods work
 	assert.NotNil(t, client, "Client should not be nil")
@@ -240,7 +247,9 @@ func TestNew_PingFailure(t *testing.T) {
 	client, err := New(cfg, testLogger(t))
 
 	// Should fail during Ping (or connection open)
-	require.Error(t, err)
+	var netErr *net.OpError
+	require.ErrorAs(t, err, &netErr)
+	require.Equal(t, "connect: connection refused", netErr.Err.Error())
 	assert.Nil(t, client)
 
 	// This exercises the non-Exception error logging path: sugar.Errorw("failed to ping ClickHouse", "error", err)
@@ -259,14 +268,13 @@ func TestClient_Ping_ExceptionError(t *testing.T) {
 	mockConn := &testutils.MockConn{}
 	mockConn.On("Ping", t.Context()).Return(exception)
 
-	client := testutils.NewTestClient(mockConn, testLogger(t))
+	client := testutils.NewTestClient(mockConn)
 
 	// Test Ping() method - should return the Exception
 	ctx := t.Context()
 	err := client.Ping(ctx)
 
 	// Verify it returns the Exception
-	require.Error(t, err)
 	assert.Equal(t, exception, err)
 
 	// Verify it's a clickhouse.Exception
@@ -312,7 +320,7 @@ func TestNew_AllConfigFields(t *testing.T) {
 	client, err := New(cfg, testLogger(t))
 
 	// Should fail to connect, but config should be processed
-	require.Error(t, err)
+	require.Contains(t, err.Error(), "connection refused")
 	assert.Nil(t, client)
 
 	// Error could be from Open, Ping, or authentication. All are valid.
