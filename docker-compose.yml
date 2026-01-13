@@ -141,12 +141,18 @@ services:
       '
     restart: "no"
 
-  # Tabix UI for ClickHouse
+  # Tabix UI for ClickHouse - pre-configured with local credentials
   tabix:
     image: spoonest/clickhouse-tabix-web-client
+    platform: linux/amd64
     container_name: tabix
     ports:
       - "8082:80"
+    environment:
+      CH_NAME: local-clickhouse
+      CH_HOST: http://localhost:8123
+      CH_LOGIN: default
+      CH_PASSWORD: ""
     depends_on:
       clickhouse:
         condition: service_healthy
