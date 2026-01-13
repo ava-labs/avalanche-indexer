@@ -151,6 +151,20 @@ func main() {
 						EnvVars: []string{"SNAPSHOT_INTERVAL"},
 						Value:   1 * time.Minute,
 					},
+					&cli.DurationFlag{
+						Name:    "gap-watchdog-interval",
+						Aliases: []string{"g"},
+						Usage:   "The interval to check the gap between the lowest and highest block heights",
+						EnvVars: []string{"GAP_WATCHDOG_INTERVAL"},
+						Value:   15 * time.Minute,
+					},
+					&cli.Uint64Flag{
+						Name:    "gap-watchdog-max-gap",
+						Aliases: []string{"G"},
+						Usage:   "The maximum gap between the lowest and highest block heights before a warning is logged",
+						EnvVars: []string{"GAP_WATCHDOG_MAX_GAP"},
+						Value:   100,
+					},
 				},
 				Action: run,
 			},
@@ -182,6 +196,8 @@ func run(c *cli.Context) error {
 	kafkaClientID := c.String("kafka-client-id")
 	snapshotTableName := c.String("snapshot-table-name")
 	snapshotInterval := c.Duration("snapshot-interval")
+	gapWatchdogInterval := c.Duration("gap-watchdog-interval")
+	gapWatchdogMaxGap := c.Uint64("gap-watchdog-max-gap")
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
@@ -354,6 +370,8 @@ func run(c *cli.Context) error {
 	g.Go(func() error {
 		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
 	})
+
+	go slidingwindow.StartGapWatchdog(gctx, sugar, s, gapWatchdogInterval, gapWatchdogMaxGap)
 
 	err = g.Wait()
 	if errors.Is(err, context.Canceled) {
