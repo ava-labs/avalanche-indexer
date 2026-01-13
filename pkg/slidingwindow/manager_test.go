@@ -51,8 +51,8 @@ func TestNewManager_Validation(t *testing.T) {
 		log               *zap.SugaredLogger
 		state             *State
 		worker            worker.Worker
-		concurrency       uint64
-		backfillPriority  uint64
+		concurrency       int64
+		backfillPriority  int64
 		heightsChCapacity int
 		maxFailures       int
 	}
@@ -190,7 +190,6 @@ func TestNewManager_Validation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m, err := NewManager(
@@ -374,7 +373,7 @@ func TestProcess(t *testing.T) {
 			}
 		}
 
-		ctx := context.Background()
+		ctx := t.Context()
 		m.process(ctx, c.h, c.isBackfill)
 
 		if got := m.state.IsInflight(c.h); got {
@@ -506,7 +505,7 @@ func TestRun_BackfillAggressiveFill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
@@ -561,7 +560,7 @@ func TestRun_RealtimeEventFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New manager error: %v", err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
@@ -628,7 +627,7 @@ func TestRun_FailureChain(t *testing.T) {
 		t.Fatalf("New manager error: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
@@ -657,8 +656,8 @@ func TestHandleNewHeight(t *testing.T) {
 	type args struct {
 		initialLowest      uint64
 		initialHighest     uint64
-		concurrency        uint64
-		backfillPri        uint64
+		concurrency        int64
+		backfillPri        int64
 		preAcquireBackfill bool
 		exhaustWorkers     int
 		height             uint64
@@ -736,7 +735,6 @@ func TestHandleNewHeight(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.args.initialLowest, tt.args.initialHighest)
@@ -781,7 +779,7 @@ func TestHandleNewHeight(t *testing.T) {
 			if hadWorkerCapacity {
 				m.workerSem.Release(1)
 			}
-			m.handleNewHeight(context.Background(), tt.args.height)
+			m.handleNewHeight(t.Context(), tt.args.height)
 
 			// If yielded, there should be no inflight and worker capacity remains available.
 			if tt.want.yieldedToBackfill {
@@ -839,8 +837,8 @@ func TestSubmitHeight(t *testing.T) {
 	type args struct {
 		initialLowest  uint64
 		initialHighest uint64
-		concurrency    uint64
-		backfillPri    uint64
+		concurrency    int64
+		backfillPri    int64
 		queueCap       int
 		submitHeights  []uint64
 	}
@@ -896,7 +894,6 @@ func TestSubmitHeight(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			state, err := NewState(tt.args.initialLowest, tt.args.initialHighest)

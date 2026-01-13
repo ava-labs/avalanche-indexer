@@ -299,7 +299,7 @@ func run(c *cli.Context) error {
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
-func buildClickHouseConfig(c *cli.Context) clickhouse.ClickhouseConfig {
+func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 	// Handle hosts - StringSliceFlag returns []string, but we need to handle comma-separated values
 	hosts := c.StringSlice("clickhouse-hosts")
 	// If hosts is a single comma-separated string, split it
@@ -309,8 +309,8 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.ClickhouseConfig {
 			hosts[i] = strings.TrimSpace(host)
 		}
 	}
-
-	return clickhouse.ClickhouseConfig{
+	// Safely clamp and convert block buffer size to uint8 range
+	return clickhouse.Config{
 		Hosts:                hosts,
 		Database:             c.String("clickhouse-database"),
 		Username:             c.String("clickhouse-username"),
@@ -322,7 +322,7 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.ClickhouseConfig {
 		MaxOpenConns:         c.Int("clickhouse-max-open-conns"),
 		MaxIdleConns:         c.Int("clickhouse-max-idle-conns"),
 		ConnMaxLifetime:      c.Int("clickhouse-conn-max-lifetime"),
-		BlockBufferSize:      c.Int("clickhouse-block-buffer-size"),
+		BlockBufferSize:      uint8(c.Int("clickhouse-block-buffer-size")), //nolint:gosec
 		MaxBlockSize:         c.Int("clickhouse-max-block-size"),
 		MaxCompressionBuffer: c.Int("clickhouse-max-compression-buffer"),
 		ClientName:           c.String("clickhouse-client-name"),

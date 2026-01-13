@@ -26,6 +26,7 @@ func (m *MockConn) ServerVersion() (*driver.ServerVersion, error) {
 }
 
 func (m *MockConn) Select(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+	_ = dest
 	callArgs := []interface{}{ctx, query}
 	callArgs = append(callArgs, args...)
 	argsResult := m.Called(callArgs...)

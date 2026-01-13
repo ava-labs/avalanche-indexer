@@ -3,6 +3,7 @@ package snapshot
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
@@ -64,7 +65,7 @@ func (r *repository) ReadSnapshot(ctx context.Context, chainID uint64) (*Snapsho
 		QueryRow(ctx, query).
 		Scan(&snapshot.ChainID, &snapshot.Lowest, &snapshot.Timestamp)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err

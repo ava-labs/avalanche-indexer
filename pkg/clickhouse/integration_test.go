@@ -91,7 +91,7 @@ func TestClientImpl_Methods(t *testing.T) {
 	// Test Ping() method
 	ctx := context.Background()
 	err := testClickHouseClient.Ping(ctx)
-	assert.NoError(t, err, "Ping() should succeed with valid connection")
+	require.NoError(t, err, "Ping() should succeed with valid connection")
 
 	// Test Close() method (create a new client for this test since we need to close it)
 	// We'll test Close by creating a temporary client with the same config
@@ -104,7 +104,7 @@ func TestClientImpl_Methods(t *testing.T) {
 	tempClient, err := New(tempCfg, sugar)
 	require.NoError(t, err, "Should be able to create a temporary client")
 	err = tempClient.Close()
-	assert.NoError(t, err, "Close() should succeed")
+	require.NoError(t, err, "Close() should succeed")
 }
 
 // TestNew_ExceptionError tests the clickhouse.Exception error path

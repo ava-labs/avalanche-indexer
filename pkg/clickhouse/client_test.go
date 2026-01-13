@@ -1,7 +1,7 @@
 package clickhouse
 
 import (
-	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -65,7 +65,7 @@ func TestLoad(t *testing.T) {
 	assert.GreaterOrEqual(t, cfg.MaxOpenConns, 0)
 	assert.GreaterOrEqual(t, cfg.MaxIdleConns, 0)
 	assert.GreaterOrEqual(t, cfg.ConnMaxLifetime, 0)
-	assert.GreaterOrEqual(t, cfg.BlockBufferSize, 0)
+	assert.GreaterOrEqual(t, cfg.BlockBufferSize, uint8(0))
 	assert.GreaterOrEqual(t, cfg.MaxBlockSize, 0)
 	assert.GreaterOrEqual(t, cfg.MaxCompressionBuffer, 0)
 	assert.NotEmpty(t, cfg.ClientName)
@@ -81,7 +81,7 @@ func TestLoad_ConfigParseError(t *testing.T) {
 }
 
 func TestNew_InvalidConfig(t *testing.T) {
-	cfg := ClickhouseConfig{
+	cfg := Config{
 		Hosts:    []string{"invalid:99999"},
 		Database: "test",
 		Username: "test",
@@ -98,7 +98,7 @@ func TestNew_InvalidConfig(t *testing.T) {
 }
 
 func TestNew_WithDebugEnabled(t *testing.T) {
-	cfg := ClickhouseConfig{
+	cfg := Config{
 		Hosts:                []string{"invalid:99999"},
 		Database:             "test",
 		Username:             "test",
@@ -127,7 +127,7 @@ func TestNew_WithDebugEnabled(t *testing.T) {
 func TestNew_ConnectionOpenError(t *testing.T) {
 	// Use an invalid host format that will fail during clickhouse.Open()
 	// This should trigger the "failed to open ClickHouse connection" error path
-	cfg := ClickhouseConfig{
+	cfg := Config{
 		Hosts:       []string{"invalid:99999"},
 		Database:    "test",
 		Username:    "test",
@@ -154,7 +154,7 @@ func TestNew_ConnectionOpenError(t *testing.T) {
 }
 
 func TestClickhouseConfig_Defaults(t *testing.T) {
-	cfg := ClickhouseConfig{}
+	cfg := Config{}
 
 	// Test that struct can be created with zero values
 	assert.NotNil(t, cfg)
@@ -174,14 +174,14 @@ func TestClient_Conn(t *testing.T) {
 // TestClient_Ping tests the client's Ping method
 func TestClient_Ping(t *testing.T) {
 	mockConn := &testutils.MockConn{}
-	mockConn.On("Ping", context.Background()).Return(nil)
+	mockConn.On("Ping", t.Context()).Return(nil)
 
 	client := testutils.NewTestClient(mockConn, testLogger(t)).(Client)
 
 	// Test Ping() method
-	ctx := context.Background()
+	ctx := t.Context()
 	err := client.Ping(ctx)
-	assert.NoError(t, err, "Ping() should succeed with mock connection")
+	require.NoError(t, err, "Ping() should succeed with mock connection")
 	mockConn.AssertExpectations(t)
 }
 
@@ -194,7 +194,7 @@ func TestClient_Close(t *testing.T) {
 
 	// Test Close() method
 	err := client.Close()
-	assert.NoError(t, err, "Close() should succeed")
+	require.NoError(t, err, "Close() should succeed")
 	mockConn.AssertExpectations(t)
 }
 
@@ -204,7 +204,7 @@ func TestClient_Close(t *testing.T) {
 // Here we verify the client structure works correctly with a mock connection
 func TestNew_SuccessfulCreation(t *testing.T) {
 	mockConn := &testutils.MockConn{}
-	mockConn.On("Ping", context.Background()).Return(nil)
+	mockConn.On("Ping", t.Context()).Return(nil)
 	mockConn.On("Close").Return(nil)
 
 	client := testutils.NewTestClient(mockConn, testLogger(t))
@@ -214,12 +214,12 @@ func TestNew_SuccessfulCreation(t *testing.T) {
 	conn := client.Conn()
 	assert.NotNil(t, conn, "Conn() should return a non-nil connection")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	err := client.Ping(ctx)
-	assert.NoError(t, err, "Ping() should succeed")
+	require.NoError(t, err, "Ping() should succeed")
 
 	err = client.Close()
-	assert.NoError(t, err, "Close() should succeed")
+	require.NoError(t, err, "Close() should succeed")
 
 	mockConn.AssertExpectations(t)
 }
@@ -229,7 +229,7 @@ func TestNew_SuccessfulCreation(t *testing.T) {
 // This tests the non-Exception error path (else branch in the error handler)
 func TestNew_PingFailure(t *testing.T) {
 	// Use an invalid host that will fail during Ping
-	cfg := ClickhouseConfig{
+	cfg := Config{
 		Hosts:       []string{"127.0.0.1:1"}, // Invalid port that will fail quickly
 		Database:    "test",
 		Username:    "test",
@@ -257,12 +257,12 @@ func TestClient_Ping_ExceptionError(t *testing.T) {
 	}
 
 	mockConn := &testutils.MockConn{}
-	mockConn.On("Ping", context.Background()).Return(exception)
+	mockConn.On("Ping", t.Context()).Return(exception)
 
 	client := testutils.NewTestClient(mockConn, testLogger(t))
 
 	// Test Ping() method - should return the Exception
-	ctx := context.Background()
+	ctx := t.Context()
 	err := client.Ping(ctx)
 
 	// Verify it returns the Exception
@@ -270,11 +270,15 @@ func TestClient_Ping_ExceptionError(t *testing.T) {
 	assert.Equal(t, exception, err)
 
 	// Verify it's a clickhouse.Exception
-	ex, ok := err.(*clickhouse.Exception)
-	require.True(t, ok, "Error should be a clickhouse.Exception")
-	assert.Equal(t, exception.Code, ex.Code)
-	assert.Equal(t, exception.Message, ex.Message)
-	assert.Equal(t, exception.StackTrace, ex.StackTrace)
+
+	var ex *clickhouse.Exception
+	if errors.As(err, &ex) {
+		assert.Equal(t, exception.Code, ex.Code)
+		assert.Equal(t, exception.Message, ex.Message)
+		assert.Equal(t, exception.StackTrace, ex.StackTrace)
+	} else {
+		require.Fail(t, "Error should be a clickhouse.Exception")
+	}
 
 	// Note: The structured logging (sugar.Errorw with error details) happens in New,
 	// not in client.Ping(). That path is tested in integration tests. This test verifies the Exception
@@ -285,7 +289,7 @@ func TestClient_Ping_ExceptionError(t *testing.T) {
 
 // TestNew_AllConfigFields tests that all config fields are properly set
 func TestNew_AllConfigFields(t *testing.T) {
-	cfg := ClickhouseConfig{
+	cfg := Config{
 		Hosts:                []string{"localhost:9000"},
 		Database:             "testdb",
 		Username:             "testuser",

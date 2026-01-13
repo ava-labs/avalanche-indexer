@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -39,7 +40,7 @@ type client struct {
 }
 
 // New creates a new ClickHouse client with the provided configuration
-func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
+func New(cfg Config, sugar *zap.SugaredLogger) (Client, error) {
 	opts := &clickhouse.Options{
 		Addr: cfg.Hosts,
 		Auth: clickhouse.Auth{
@@ -63,7 +64,7 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 		MaxIdleConns:         cfg.MaxIdleConns,
 		ConnMaxLifetime:      time.Duration(cfg.ConnMaxLifetime) * time.Minute,
 		ConnOpenStrategy:     clickhouse.ConnOpenInOrder,
-		BlockBufferSize:      uint8(cfg.BlockBufferSize),
+		BlockBufferSize:      cfg.BlockBufferSize,
 		MaxCompressionBuffer: cfg.MaxCompressionBuffer,
 		ClientInfo: clickhouse.ClientInfo{
 			Products: []struct {
@@ -97,7 +98,8 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 	defer cancel()
 
 	if err := conn.Ping(ctx); err != nil {
-		if exception, ok := err.(*clickhouse.Exception); ok {
+		var exception *clickhouse.Exception
+		if errors.As(err, &exception) {
 			if sugar != nil {
 				sugar.Errorw("failed to ping ClickHouse", "error", exception)
 			}

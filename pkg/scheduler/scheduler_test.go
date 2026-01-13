@@ -10,6 +10,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockSnapshotRepo struct {
@@ -48,7 +49,7 @@ func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 		Run(func(args mock.Arguments) {
 			s := args.Get(1).(*snapshot.Snapshot)
 			assert.Equal(t, uint64(5), s.Lowest)
-			assert.Greater(t, s.Timestamp, int64(0))
+			assert.Positive(t, s.Timestamp)
 			select {
 			case called <- struct{}{}:
 			default:
@@ -57,7 +58,7 @@ func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 		Return(nil).
 		Once()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
@@ -74,7 +75,7 @@ func TestStartSnapshotScheduler_WritesAndCancels(t *testing.T) {
 
 	select {
 	case err := <-done:
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatalf("timeout waiting for scheduler to exit")
 	}
@@ -93,10 +94,10 @@ func TestStartSnapshotScheduler_ErrorPropagates(t *testing.T) {
 		Return(errors.New("write failed")).
 		Times(4) // initial try + 3 retries
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	gotErr := Start(ctx, state, repo, 5*time.Millisecond, 43114)
-	assert.Error(t, gotErr)
+	require.Error(t, gotErr)
 	assert.Contains(t, gotErr.Error(), "failed to write snapshot")
 	repo.AssertExpectations(t)
 }
@@ -108,8 +109,8 @@ func TestStartSnapshotScheduler_ImmediateCancel(t *testing.T) {
 		t.Fatalf("state: %v", err)
 	}
 	repo := &mockSnapshotRepo{}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err = Start(ctx, state, repo, time.Second, 43114)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }

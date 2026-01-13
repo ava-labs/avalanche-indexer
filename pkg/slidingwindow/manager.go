@@ -40,7 +40,7 @@ func NewManager(
 	log *zap.SugaredLogger,
 	s *State,
 	w worker.Worker,
-	concurrency, backfillPriority uint64,
+	concurrency, backfillPriority int64,
 	heightChanCapacity, maxFailures int,
 	m *metrics.Metrics,
 ) (*Manager, error) {
@@ -77,8 +77,8 @@ func NewManager(
 		state:       s,
 		worker:      w,
 		metrics:     m,
-		workerSem:   semaphore.NewWeighted(int64(concurrency)),
-		backfillSem: semaphore.NewWeighted(int64(backfillPriority)),
+		workerSem:   semaphore.NewWeighted(concurrency),
+		backfillSem: semaphore.NewWeighted(backfillPriority),
 		heightChan:  make(chan uint64, heightChanCapacity),
 		workReady:   make(chan struct{}, 1), // buffered (size 1) to coalesce signals
 		maxFailures: maxFailures,
@@ -242,7 +242,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 		_, highest, processedCount := m.state.Snapshot()
 		if advanced {
 			// Window advanced - record committed blocks
-			blocksCommitted := int(newLowest - oldLowest)
+			blocksCommitted := newLowest - oldLowest
 			m.metrics.CommitBlocks(blocksCommitted, newLowest, highest, processedCount)
 		} else {
 			m.metrics.UpdateWindowMetrics(newLowest, highest, processedCount)
