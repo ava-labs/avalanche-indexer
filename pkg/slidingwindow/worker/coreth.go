@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
@@ -14,6 +15,8 @@ import (
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
 )
+
+var registerCustomTypesOnce sync.Once
 
 type CorethWorker struct {
 	client   *evmclient.Client
@@ -31,7 +34,9 @@ func NewCorethWorker(
 	log *zap.SugaredLogger,
 	metrics *metrics.Metrics,
 ) (*CorethWorker, error) {
-	customtypes.Register()
+	registerCustomTypesOnce.Do(func() {
+		customtypes.Register()
+	})
 
 	c, err := rpc.DialContext(ctx, url)
 	if err != nil {
