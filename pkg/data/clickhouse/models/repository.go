@@ -55,11 +55,6 @@ func (r *repository) WriteBlock(ctx context.Context, block *RawBlock) error {
 		nonceStr = string(block.Nonce[:])
 	}
 
-	extDataHashStr := string(make([]byte, 32))
-	if block.ExtDataHash != [32]byte{} {
-		extDataHashStr = string(block.ExtDataHash[:])
-	}
-
 	err := r.client.Conn().Exec(ctx, query,
 		block.ChainID,
 		block.BlockNumber,
@@ -81,13 +76,6 @@ func (r *repository) WriteBlock(ctx context.Context, block *RawBlock) error {
 		mixHashStr,
 		nonceStr,
 		sha3UnclesStr,
-		extDataHashStr,
-		block.ExtDataGasUsed,
-		mixHashStr,
-		sha3UnclesStr,
-		block.BlobGasUsed,
-		block.ExcessBlobGas,
-		block.MinDelayExcess,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %w", err)

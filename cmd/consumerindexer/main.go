@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
@@ -296,6 +295,7 @@ func run(c *cli.Context) error {
 						"error", err,
 					)
 					// Continue processing other messages even if one fails
+					// TODO: Add retry logic and DLQ logic
 					continue
 				}
 			case kafka.Error:
@@ -369,16 +369,10 @@ func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo model
 
 // processBlockMessage processes a block message from Kafka
 func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
-	// Extract chainID from the block JSON
-	// Try block level first, then transactions
-	sugar.Debugw("data", "data", string(data))
-
 	var blockJSON map[string]interface{}
 	if err := json.Unmarshal(data, &blockJSON); err != nil {
 		return fmt.Errorf("failed to unmarshal block JSON: %w", err)
 	}
-
-	sugar.Debugw("blockJSON", "blockJSON", blockJSON)
 
 	var chainID uint32
 	foundChainID := false
@@ -416,30 +410,18 @@ func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.
 			"hasChainId", blockJSON["chainId"] != nil,
 			"hasTransactions", blockJSON["transactions"] != nil,
 		)
+		// TODO: Add DLQ logic
 		return fmt.Errorf("could not extract chainID from block")
 	}
 
 	// Parse the block
 	block, err := models.ParseBlockFromJSON(data, chainID)
 	if err != nil {
+		// TODO: Add DLQ logic
 		return fmt.Errorf("failed to parse block: %w", err)
 	}
 
-	// Log data sizes for debugging HTTP size issues
-	if len(block.ExtraData) > 1000 || len(block.BlockExtraData) > 1000 {
-		sugar.Debugw("large extra_data detected",
-			"blockNumber", block.BlockNumber,
-			"extraDataSize", len(block.ExtraData),
-			"blockExtraDataSize", len(block.BlockExtraData),
-		)
-	}
-
-	// Write to ClickHouse with a timeout context
-	// Use a longer timeout for HTTP requests which can be slower
-	writeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := rawBlocksRepo.WriteBlock(writeCtx, block); err != nil {
+	if err := rawBlocksRepo.WriteBlock(ctx, block); err != nil {
 		return fmt.Errorf("failed to write block: %w", err)
 	}
 

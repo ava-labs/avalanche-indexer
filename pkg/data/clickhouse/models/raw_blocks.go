@@ -142,22 +142,9 @@ func ParseBlockFromJSON(data []byte, chainID uint32) (*RawBlock, error) {
 	}
 
 	// Optional fields
-	// Truncate extra_data to prevent HTTP request size issues
-	// ClickHouse HTTP protocol has strict limits on request body size (128MB)
-	// ExtraData in Ethereum blocks is typically very small (<1KB), so 64KB should be more than enough
-	const maxExtraDataSize = 64 * 1024 // 64KB - much smaller to prevent HTTP size issues
-	if len(kafkaBlock.ExtraData) > maxExtraDataSize {
-		block.ExtraData = kafkaBlock.ExtraData[:maxExtraDataSize]
-	} else {
-		block.ExtraData = kafkaBlock.ExtraData
-	}
+	block.ExtraData = kafkaBlock.ExtraData
 	if kafkaBlock.BlockExtraData != nil {
-		blockExtraData := *kafkaBlock.BlockExtraData
-		if len(blockExtraData) > maxExtraDataSize {
-			block.BlockExtraData = blockExtraData[:maxExtraDataSize]
-		} else {
-			block.BlockExtraData = blockExtraData
-		}
+		block.BlockExtraData = *kafkaBlock.BlockExtraData
 	}
 	if kafkaBlock.BaseFeePerGas != nil {
 		block.BaseFeePerGas = *kafkaBlock.BaseFeePerGas
