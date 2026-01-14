@@ -2,11 +2,13 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // CorethProcessor processes Kafka messages containing Coreth blocks.
@@ -20,7 +22,7 @@ func NewCorethProcessor(log *zap.SugaredLogger) *CorethProcessor {
 }
 
 // Process parses a Kafka message into a Coreth Block and processes it.
-func (p *CorethProcessor) Process(ctx context.Context, msg *confluentKafka.Message) error {
+func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -28,7 +30,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *confluentKafka.Messa
 	}
 
 	if msg == nil || msg.Value == nil {
-		return fmt.Errorf("received nil message or empty value")
+		return errors.New("received nil message or empty value")
 	}
 
 	var block coreth.Block
