@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -173,19 +174,19 @@ func (om *OffsetManager) InsertOffset(ctx context.Context, offset kafka.TopicPar
 	default:
 	}
 
-	// If the lastCommitted offset is not initialized, we set it to the offset
-	// of the actual message that has been processed to generate this offset
-	// commit (offset.Offset-1). This first picked offset does not need to be
-	// the absolute first one fetched from the broker.
-	if om.partitionStates[offset.Partition].lastCommitted < 0 {
-		om.partitionStates[offset.Partition].lastCommitted = offset.Offset - 1
-		om.log.Infof("init partition %d lastCommitted to %d", offset.Partition, offset.Offset)
-	}
-
 	state := om.partitionStates[offset.Partition]
 	if state == nil {
 		om.log.Warnf("partition %d not found in partition states, ignoring", offset.Partition)
 		return nil
+	}
+
+	// If the lastCommitted offset is not initialized, we set it to the offset
+	// of the actual message that has been processed to generate this offset
+	// commit (offset.Offset-1). This first picked offset does not need to be
+	// the absolute first one fetched from the broker.
+	if state.lastCommitted < 0 {
+		state.lastCommitted = offset.Offset - 1
+		om.log.Infof("init partition %d lastCommitted to %d", offset.Partition, offset.Offset)
 	}
 
 	window := state.window
@@ -267,7 +268,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 	case kafka.RevokedPartitions:
 		logStr := make([]string, len(ev.Partitions))
 		for i, partition := range ev.Partitions {
-			logStr[i] = fmt.Sprintf("%d", partition.Partition)
+			logStr[i] = strconv.Itoa(int(partition.Partition))
 			delete(om.partitionStates, partition.Partition)
 		}
 		om.log.Infof("rebalance event, removing state for partitions: %s\n", strings.Join(logStr, ","))

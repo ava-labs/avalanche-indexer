@@ -2,14 +2,16 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -56,7 +58,7 @@ func NewConsumer(
 	ctx context.Context,
 	log *zap.SugaredLogger,
 	cfg ConsumerConfig,
-	processor processor.Processor,
+	proc processor.Processor,
 ) (*Consumer, error) {
 	consumerConfig := cKafka.ConfigMap{
 		"bootstrap.servers":             cfg.BootstrapServers,
@@ -107,7 +109,7 @@ func NewConsumer(
 		logsDone:          make(chan struct{}),
 		errCh:             make(chan error, 1),
 		doneCh:            make(chan struct{}),
-		processor:         processor,
+		processor:         proc,
 	}, nil
 }
 
@@ -185,7 +187,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	// we can wait for all the goroutines started by dispatch but since our design
 	// will be to process at least once, we can finish early and some msgs will be reprocessed.
 
-	err := c.close(ctx)
+	err := c.close()
 	if err != nil {
 		c.log.Errorw("failed to close consumer", "error", err)
 	}
@@ -205,18 +207,22 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 	go func() {
 		defer c.sem.Release(1)
 		err := c.processor.Process(ctx, msg)
-		if err != nil {
-			if !c.cfg.IsDLQConsumer {
-				publishErr := c.publishToDLQ(ctx, msg)
-				if publishErr != nil {
-					c.log.Errorw("failed to publish to DLQ", "error", publishErr)
-					c.errCh <- publishErr
-					return
-				}
-			} else {
-				c.errCh <- err
-				return
-			}
+		if err == nil {
+			c.offsetManager.InsertOffsetWithRetry(ctx, msg)
+			return
+		}
+
+		// Processing failed - handle DLQ or propagate error
+		if c.cfg.IsDLQConsumer {
+			c.errCh <- err
+			return
+		}
+
+		publishErr := c.publishToDLQ(ctx, msg)
+		if publishErr != nil {
+			c.log.Errorw("failed to publish to DLQ", "error", publishErr)
+			c.errCh <- publishErr
+			return
 		}
 		c.offsetManager.InsertOffsetWithRetry(ctx, msg)
 	}()
@@ -225,7 +231,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 // publishToDLQ sends a failed message to the dead letter queue.
 func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error {
 	if c.cfg.DLQTopic == "" {
-		return fmt.Errorf("DLQ topic not configured")
+		return errors.New("DLQ topic not configured")
 	}
 
 	dlqMsg := Msg{
@@ -249,7 +255,7 @@ func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error 
 }
 
 // close shuts down the consumer and DLQ producer.
-func (c *Consumer) close(ctx context.Context) error {
+func (c *Consumer) close() error {
 	close(c.doneCh)
 	<-c.logsDone
 	c.dlqProducer.Close(15000) // 15 second flush timeout
