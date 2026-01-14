@@ -160,6 +160,12 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_USE_HTTP"},
 						Value:   false,
 					},
+					&cli.StringFlag{
+						Name:    "raw-blocks-table-name",
+						Usage:   "ClickHouse table name for raw blocks",
+						EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
+						Value:   "default.raw_blocks",
+					},
 				},
 				Action: run,
 			},
@@ -213,8 +219,9 @@ func run(c *cli.Context) error {
 	sugar.Info("ClickHouse client created successfully")
 
 	// Initialize raw blocks repository
-	rawBlocksRepo := models.NewRepository(chClient, models.RawBlocksTable)
-	sugar.Info("Raw blocks repository initialized")
+	tableName := c.String("raw-blocks-table-name")
+	rawBlocksRepo := models.NewRepository(chClient, tableName)
+	sugar.Info("Raw blocks repository initialized", "tableName", tableName)
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{

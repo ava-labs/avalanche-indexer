@@ -27,41 +27,40 @@ func NewRepository(client clickhouse.Client, tableName string) Repository {
 
 // WriteBlock inserts a raw block into ClickHouse
 func (r *repository) WriteBlock(ctx context.Context, block *ClickhouseBlock) error {
-	// Commenting out tail-end fields to isolate the LowCardinality issue
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			chain_id, block_number, hash, parent_hash, block_time, miner,
 			difficulty, total_difficulty, size, gas_limit, gas_used,
 			base_fee_per_gas, block_gas_cost, state_root, transactions_root, receipts_root,
-			extra_data, mix_hash, nonce, sha3_uncles
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			extra_data, block_extra_data, ext_data_hash, ext_data_gas_used,
+			mix_hash, nonce, sha3_uncles, uncles,
+			blob_gas_used, excess_blob_gas, parent_beacon_block_root, min_delay_excess
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
-	// Convert FixedString byte arrays to strings (each byte becomes a character)
-	hashStr := string(block.Hash[:])
-	parentHashStr := string(block.ParentHash[:])
-	minerStr := string(block.Miner[:])
-	stateRootStr := string(block.StateRoot[:])
-	transactionsRootStr := string(block.TransactionsRoot[:])
-	receiptsRootStr := string(block.ReceiptsRoot[:])
-	mixHashStr := string(block.MixHash[:])
-	sha3UnclesStr := string(block.Sha3Uncles[:])
-
-	// For LowCardinality(Nullable(FixedString(8))) nonce - convert to nil if all zeros
+	// For nullable nonce - convert empty string to nil
 	var nonceStr interface{}
-	if block.Nonce == [8]byte{} {
+	if block.Nonce == "" {
 		nonceStr = nil
 	} else {
-		nonceStr = string(block.Nonce[:])
+		nonceStr = block.Nonce
+	}
+
+	// For nullable parent_beacon_block_root - convert empty string to nil
+	var parentBeaconBlockRootStr interface{}
+	if block.ParentBeaconBlockRoot == "" {
+		parentBeaconBlockRootStr = nil
+	} else {
+		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
 	}
 
 	err := r.client.Conn().Exec(ctx, query,
 		block.ChainID,
 		block.BlockNumber,
-		hashStr,
-		parentHashStr,
+		block.Hash,
+		block.ParentHash,
 		block.BlockTime,
-		minerStr,
+		block.Miner,
 		block.Difficulty,
 		block.TotalDifficulty,
 		block.Size,
@@ -69,13 +68,21 @@ func (r *repository) WriteBlock(ctx context.Context, block *ClickhouseBlock) err
 		block.GasUsed,
 		block.BaseFeePerGas,
 		block.BlockGasCost,
-		stateRootStr,
-		transactionsRootStr,
-		receiptsRootStr,
+		block.StateRoot,
+		block.TransactionsRoot,
+		block.ReceiptsRoot,
 		block.ExtraData,
-		mixHashStr,
+		block.BlockExtraData,
+		block.ExtDataHash,
+		block.ExtDataGasUsed,
+		block.MixHash,
 		nonceStr,
-		sha3UnclesStr,
+		block.Sha3Uncles,
+		block.Uncles,
+		block.BlobGasUsed,
+		block.ExcessBlobGas,
+		parentBeaconBlockRootStr,
+		block.MinDelayExcess,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %w", err)
