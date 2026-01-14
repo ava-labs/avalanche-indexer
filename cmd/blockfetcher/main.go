@@ -18,13 +18,13 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
+
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const flushTimeoutOnClose = 15 * time.Second
@@ -151,6 +151,20 @@ func main() {
 						EnvVars: []string{"SNAPSHOT_INTERVAL"},
 						Value:   1 * time.Minute,
 					},
+					&cli.DurationFlag{
+						Name:    "gap-watchdog-interval",
+						Aliases: []string{"g"},
+						Usage:   "The interval to check the gap between the lowest and highest block heights",
+						EnvVars: []string{"GAP_WATCHDOG_INTERVAL"},
+						Value:   15 * time.Minute,
+					},
+					&cli.Uint64Flag{
+						Name:    "gap-watchdog-max-gap",
+						Aliases: []string{"G"},
+						Usage:   "The maximum gap between the lowest and highest block heights before a warning is logged",
+						EnvVars: []string{"GAP_WATCHDOG_MAX_GAP"},
+						Value:   100,
+					},
 				},
 				Action: run,
 			},
@@ -169,8 +183,8 @@ func run(c *cli.Context) error {
 	rpcURL := c.String("rpc-url")
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
-	concurrency := c.Uint64("concurrency")
-	backfill := c.Uint64("backfill-priority")
+	concurrency := c.Int64("concurrency")
+	backfill := c.Int64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
 	metricsHost := c.String("metrics-host")
@@ -182,6 +196,8 @@ func run(c *cli.Context) error {
 	kafkaClientID := c.String("kafka-client-id")
 	snapshotTableName := c.String("snapshot-table-name")
 	snapshotInterval := c.Duration("snapshot-interval")
+	gapWatchdogInterval := c.Duration("gap-watchdog-interval")
+	gapWatchdogMaxGap := c.Uint64("gap-watchdog-max-gap")
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
@@ -354,6 +370,8 @@ func run(c *cli.Context) error {
 	g.Go(func() error {
 		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
 	})
+
+	go slidingwindow.StartGapWatchdog(gctx, sugar, s, gapWatchdogInterval, gapWatchdogMaxGap)
 
 	err = g.Wait()
 	if errors.Is(err, context.Canceled) {

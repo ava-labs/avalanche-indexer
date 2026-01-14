@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -198,8 +199,8 @@ func (q *Producer) produceWithRetry(
 			return nil
 		}
 
-		kafkaErr, ok := err.(kafka.Error)
-		if !ok {
+		var kafkaErr kafka.Error
+		if !errors.As(err, &kafkaErr) {
 			return fmt.Errorf("failed to produce: %w", err)
 		}
 
@@ -236,7 +237,7 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 			return
 		case ev, ok := <-q.producer.Events():
 			if !ok {
-				err := fmt.Errorf("kafka producer events monitoring, event channel closed")
+				err := errors.New("kafka producer events monitoring, event channel closed")
 				select {
 				case q.errCh <- err:
 				default:
@@ -265,9 +266,9 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 						q.log.Warnf("error channel is full, should not happen: %v", err)
 					}
 					return
-				} else {
-					q.log.Warnf("ignoring unexpected kafka error: %#x, %v", e.Code(), e)
 				}
+				q.log.Warnf("ignoring unexpected kafka error: %#x, %v", e.Code(), e)
+
 			default:
 				q.log.Warnf("Unknown event: %+v", e)
 			}

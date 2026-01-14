@@ -25,15 +25,25 @@ func (m *MockConn) ServerVersion() (*driver.ServerVersion, error) {
 	return args.Get(0).(*driver.ServerVersion), args.Error(1)
 }
 
-func (m *MockConn) Select(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
-	callArgs := []interface{}{ctx, query}
+func (m *MockConn) Select(
+	ctx context.Context,
+	dest interface{},
+	query string,
+	args ...interface{},
+) error {
+	_ = dest
+
+	callArgs := make([]interface{}, 0, 2+len(args))
+	callArgs = append(callArgs, ctx, query)
 	callArgs = append(callArgs, args...)
+
 	argsResult := m.Called(callArgs...)
 	return argsResult.Error(0)
 }
 
 func (m *MockConn) Query(ctx context.Context, query string, args ...interface{}) (driver.Rows, error) {
-	callArgs := []interface{}{ctx, query}
+	callArgs := make([]interface{}, 0, 2+len(args))
+	callArgs = append(callArgs, ctx, query)
 	callArgs = append(callArgs, args...)
 	argsResult := m.Called(callArgs...)
 	if argsResult.Get(0) == nil {
@@ -43,7 +53,8 @@ func (m *MockConn) Query(ctx context.Context, query string, args ...interface{})
 }
 
 func (m *MockConn) QueryRow(ctx context.Context, query string, args ...interface{}) driver.Row {
-	callArgs := []interface{}{ctx, query}
+	callArgs := make([]interface{}, 0, 2+len(args))
+	callArgs = append(callArgs, ctx, query)
 	callArgs = append(callArgs, args...)
 	argsResult := m.Called(callArgs...)
 	if argsResult.Get(0) == nil {
@@ -53,21 +64,24 @@ func (m *MockConn) QueryRow(ctx context.Context, query string, args ...interface
 }
 
 func (m *MockConn) Exec(ctx context.Context, query string, args ...interface{}) error {
-	callArgs := []interface{}{ctx, query}
+	callArgs := make([]interface{}, 0, 2+len(args))
+	callArgs = append(callArgs, ctx, query)
 	callArgs = append(callArgs, args...)
 	argsResult := m.Called(callArgs...)
 	return argsResult.Error(0)
 }
 
 func (m *MockConn) AsyncInsert(ctx context.Context, query string, wait bool, args ...interface{}) error {
-	callArgs := []interface{}{ctx, query, wait}
+	callArgs := make([]interface{}, 0, 3+len(args))
+	callArgs = append(callArgs, ctx, query, wait)
 	callArgs = append(callArgs, args...)
 	argsResult := m.Called(callArgs...)
 	return argsResult.Error(0)
 }
 
 func (m *MockConn) PrepareBatch(ctx context.Context, query string, opts ...driver.PrepareBatchOption) (driver.Batch, error) {
-	callArgs := []interface{}{ctx, query}
+	callArgs := make([]interface{}, 0, 2+len(opts))
+	callArgs = append(callArgs, ctx, query)
 	for _, opt := range opts {
 		callArgs = append(callArgs, opt)
 	}

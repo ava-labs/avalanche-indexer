@@ -1,5 +1,5 @@
 networks:
-  kafka-network:
+  app-network:
     driver: bridge
 
 volumes:
@@ -43,7 +43,7 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
     networks:
-      - kafka-network
+      - app-network
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9093 || exit 1"]
       interval: 10s
@@ -74,7 +74,7 @@ services:
       kafka:
         condition: service_healthy
     networks:
-      - kafka-network
+      - app-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
       interval: 10s
@@ -103,6 +103,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-test
+    hostname: clickhouse
     ports:
       - "8123:8123"  # HTTP interface
       - "9000:9000"  # Native protocol
@@ -119,6 +120,8 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    networks:
+      - app-network
   
   # ClickHouse Init (create tables)
   clickhouse-init:
@@ -140,13 +143,21 @@ services:
       "
       '
     restart: "no"
+    networks:
+      - app-network
 
-  # Tabix UI for ClickHouse
+  # Tabix UI for ClickHouse - pre-configured with local credentials
   tabix:
     image: spoonest/clickhouse-tabix-web-client
+    platform: linux/amd64
     container_name: tabix
     ports:
       - "8082:80"
+    environment:
+      CH_NAME: local-clickhouse
+      CH_HOST: http://localhost:8123
+      CH_LOGIN: default
+      CH_PASSWORD: ""
     depends_on:
       clickhouse:
         condition: service_healthy
