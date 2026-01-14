@@ -55,14 +55,17 @@ docker build -t indexer:blockfetcher --build-arg APP=blockfetcher .
 Run a service (example: `blockfetcher`):
 
 ```bash
-docker run --rm \
-  -e APP=blockfetcher \
-  -e CHAIN_ID=43113 \
-  -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
-  -e START_HEIGHT=0 \
-  -e CONCURRENCY=16 \
-  -e BACKFILL_PRIORITY=4 \
-  indexer:latest --verbose
+bin/blockfetcher run \
+  --chain-id 43114 \
+  --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --start-height 0 \
+  --concurrency 16 \
+  --backfill-priority 4 \
+  --blocks-ch-capacity 200 \
+  --max-failures 5 \
+  --kafka-brokers localhost:9092 \
+  --kafka-topic blocks \
+  --verbose
 ```
 
 See each service’s README for its full flag/env reference.
