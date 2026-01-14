@@ -20,7 +20,7 @@ func TestStartWatchdog_WarnsOnLargeGap(t *testing.T) {
 	core, recorded := observer.New(zap.WarnLevel)
 	log := zap.New(core).Sugar()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// interval small to tick quickly; maxGap small to trigger warning

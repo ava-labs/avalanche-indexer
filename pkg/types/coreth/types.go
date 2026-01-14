@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"math/big"
 
-	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/libevm/common/hexutil"
+
+	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 )
 
