@@ -81,7 +81,6 @@ func getChainIDFromBlock(block *coreth.Block) (uint32, error) {
 
 // corethBlockToClickhouseBlock converts a coreth.Block to ClickhouseBlock
 func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) (*ClickhouseBlock, error) {
-
 	// Extract number from big.Int
 	var blockNumber uint32
 	if block.Number != nil {
