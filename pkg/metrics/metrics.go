@@ -122,7 +122,7 @@ func (m *Metrics) IncError(errType string) {
 }
 
 // CommitBlocks records blocks being committed when LUB advances.
-func (m *Metrics) CommitBlocks(count int, lub, hib uint64, processedSetSize int) {
+func (m *Metrics) CommitBlocks(count uint64, lub, hib uint64, processedSetSize int) {
 	if m == nil {
 		return
 	}

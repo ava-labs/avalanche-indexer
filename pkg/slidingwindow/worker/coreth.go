@@ -10,10 +10,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
-	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
+
+	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
 
 var registerCustomTypesOnce sync.Once

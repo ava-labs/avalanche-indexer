@@ -31,7 +31,6 @@ import (
 // TestE2EBlockfetcherRealTime validates that blockfetcher ingests realtime blocks
 // by producing them to Kafka. It assumes Docker Compose has started Kafka and ClickHouse.
 func TestE2EBlockfetcherRealTime(t *testing.T) {
-	t.Parallel()
 	// ---- Config (can be overridden via env to match local setup) ----
 	chainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji testnet
 	rpcURL := getEnvStr("RPC_URL", "wss://api.avax-test.network/ext/bc/C/ws")
@@ -39,8 +38,8 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_realtime")
 	kafkaClientID := getEnvStr("KAFKA_CLIENT_ID", "blockfetcher-e2e")
 	clickhouseTable := getEnvStr("SNAPSHOT_TABLE_NAME", "test_db.snapshots")
-	concurrency := uint64(3)
-	backfill := uint64(1)
+	concurrency := int64(3)
+	backfill := int64(1)
 	blocksCap := 100
 	maxFailures := 3
 	// Keep interval short to validate ClickHouse writes if desired (not asserted).
@@ -182,7 +181,6 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 // TestE2EBlockfetcherBackfill runs backfill over a small recent range and verifies
 // produced Kafka blocks match RPC responses using verifyBlocksFromRPC.
 func TestE2EBlockfetcherBackfill(t *testing.T) {
-	t.Parallel()
 	// ---- Config ----
 	chainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji by default
 	rpcURL := getEnvStr("RPC_URL", "wss://api.avax-test.network/ext/bc/C/ws")
@@ -190,8 +188,8 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_backfill")
 	kafkaClientID := "blockfetcher-e2e-backfill"
 	clickhouseTable := getEnvStr("SNAPSHOT_TABLE_NAME", "test_db.snapshots")
-	concurrency := uint64(4)
-	backfill := uint64(2)
+	concurrency := int64(4)
+	backfill := int64(2)
 	blocksCap := 50
 	maxFailures := 3
 	snapshotInterval := 2 * time.Second
