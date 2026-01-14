@@ -27,11 +27,11 @@ type Config struct {
 	MaxIdleConns         int      `env:"CLICKHOUSE_MAX_IDLE_CONNS"         envDefault:"5"`
 	ConnMaxLifetime      int      `env:"CLICKHOUSE_CONN_MAX_LIFETIME"      envDefault:"10"` // minutes
 	BlockBufferSize      uint8    `env:"CLICKHOUSE_BLOCK_BUFFER_SIZE"      envDefault:"10"`
-	MaxBlockSize         int      `env:"CLICKHOUSE_MAX_BLOCK_SIZE"         envDefault:"1000"`                          // recommended maximum number of rows in a single block
-	MaxCompressionBuffer int      `env:"CLICKHOUSE_MAX_COMPRESSION_BUFFER" envDefault:"10240"`                         // bytes
-	ClientName           string   `env:"CLICKHOUSE_CLIENT_NAME"            envDefault:"ac-client-name"`                // client name for ClickHouse ClientInfo
-	ClientVersion        string   `env:"CLICKHOUSE_CLIENT_VERSION"         envDefault:"1.0"`                           // client version for ClickHouse ClientInfo
-	UseHTTP              bool     `env:"CLICKHOUSE_USE_HTTP" 		       envTag:"CLICKHOUSE_USE_HTTP" envDefault:"false"` // use HTTP protocol instead of native
+	MaxBlockSize         int      `env:"CLICKHOUSE_MAX_BLOCK_SIZE"         envDefault:"1000"`           // recommended maximum number of rows in a single block
+	MaxCompressionBuffer int      `env:"CLICKHOUSE_MAX_COMPRESSION_BUFFER" envDefault:"10240"`          // bytes
+	ClientName           string   `env:"CLICKHOUSE_CLIENT_NAME"            envDefault:"ac-client-name"` // client name for ClickHouse ClientInfo
+	ClientVersion        string   `env:"CLICKHOUSE_CLIENT_VERSION"         envDefault:"1.0"`            // client version for ClickHouse ClientInfo
+	UseHTTP              bool     `env:"CLICKHOUSE_USE_HTTP"               envDefault:"false"`          // use HTTP protocol instead of native
 }
 
 // Load loads ClickHouse configuration from environment variables
