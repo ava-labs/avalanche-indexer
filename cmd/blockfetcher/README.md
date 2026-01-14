@@ -19,11 +19,12 @@ Fetches blocks from an RPC endpoint, processes them concurrently using a sliding
    docker compose up -d
    ```
 
-2. **Set ClickHouse environment variables**:
+2. **Optionally set environment variables**:
    ```bash
    export CLICKHOUSE_HOSTS="localhost:9000"
    export CLICKHOUSE_USERNAME="default"
    export CLICKHOUSE_PASSWORD=""
+   ...
    ```
 
 3. **Build the application**:
@@ -31,7 +32,7 @@ Fetches blocks from an RPC endpoint, processes them concurrently using a sliding
    make build-all
    ```
 
-#### Run the block fetcher
+### Run the block fetcher locally
 
 ```bash
 bin/blockfetcher run \
@@ -63,7 +64,7 @@ All flags have environment variable equivalents:
 - `--verbose` / `-v` → none (pass `--verbose`)
 
 
-### Docker
+### Run the block fetcher using Docker
 
 Build the multi-binary image (all services):
 
@@ -75,6 +76,7 @@ Run `blockfetcher` with environment variables (ENTRYPOINT selects the binary by 
 
 ```bash
 docker run --rm \
+  --network avalanche-indexer_app-network \
   -e APP=blockfetcher \
   -e CHAIN_ID=43113 \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
@@ -83,8 +85,12 @@ docker run --rm \
   -e BACKFILL_PRIORITY=4 \
   -e BLOCKS_CH_CAPACITY=200 \
   -e MAX_FAILURES=5 \
-  -e KAFKA_BROKERS=kafka:9092 \
+  -e KAFKA_BROKERS=kafka:9093 \
   -e KAFKA_TOPIC=blocks \
+  -e CLICKHOUSE_HOSTS=clickhouse:9000 \
+  -e CLICKHOUSE_DATABASE=test_db \
+  -e CLICKHOUSE_USERNAME=default \
+  -e CLICKHOUSE_PASSWORD= \
   indexer:latest run --verbose
 ```
 
@@ -94,16 +100,6 @@ Notes:
 
 ```bash
 docker build -t indexer:blockfetcher --build-arg APP=blockfetcher .
-docker run --rm \
-  -e APP=blockfetcher \
-  -e CHAIN_ID=43113 \
-  -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
-  -e START_HEIGHT=0 \
-  -e CONCURRENCY=16 \
-  -e BACKFILL_PRIORITY=4 \
-  -e KAFKA_BROKERS=kafka:9092 \
-  -e KAFKA_TOPIC=blocks \
-  indexer:blockfetcher run --verbose
 ```
 
 ### Configuration tips
