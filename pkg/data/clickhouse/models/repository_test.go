@@ -1,7 +1,6 @@
 package models
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -10,12 +9,13 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRepository_WriteBlock_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create a test block
 	block := createTestBlock()
@@ -62,14 +62,14 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 
 	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
 	err := repo.WriteBlock(ctx, block)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
 
 func TestRepository_WriteBlock_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	block := createTestBlock()
 	execErr := errors.New("exec failed")
@@ -112,7 +112,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 
 	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
 	err := repo.WriteBlock(ctx, block)
-	assert.Error(t, err)
+	require.ErrorIs(t, err, execErr)
 	assert.Contains(t, err.Error(), "failed to write block")
 	assert.Contains(t, err.Error(), "exec failed")
 	mockConn.AssertExpectations(t)

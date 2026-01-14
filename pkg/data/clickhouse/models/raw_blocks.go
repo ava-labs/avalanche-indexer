@@ -2,7 +2,9 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
@@ -98,7 +100,7 @@ func ParseBlockFromJSON(data []byte) (*RawBlock, error) {
 	}
 
 	if !foundChainID {
-		return nil, fmt.Errorf("could not extract chainID from block transactions")
+		return nil, errors.New("could not extract chainID from block transactions")
 	}
 
 	block := &RawBlock{
@@ -151,11 +153,11 @@ func ParseBlockFromJSON(data []byte) (*RawBlock, error) {
 	case string:
 		nonceStr = v
 	case float64:
-		nonceStr = fmt.Sprintf("%x", uint64(v))
+		nonceStr = strconv.FormatUint(uint64(v), 16)
 	case uint64:
-		nonceStr = fmt.Sprintf("%x", v)
+		nonceStr = strconv.FormatUint(v, 16)
 	case uint32:
-		nonceStr = fmt.Sprintf("%x", v)
+		nonceStr = strconv.FormatUint(uint64(v), 16)
 	default:
 		nonceStr = "0"
 	}
