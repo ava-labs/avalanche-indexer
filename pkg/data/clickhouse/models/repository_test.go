@@ -35,7 +35,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, RawBlocksTable)
 		}),
 			block.ChainID,         // uint32: 43113
 			block.BlockNumber,     // uint32: 1647
@@ -43,7 +43,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			parentHashStr,         // string
 			block.BlockTime,       // time.Time
 			minerStr,              // string
-			block.Difficulty,      // uint8: 1
+			block.Difficulty,      // uint64: 1
 			block.TotalDifficulty, // uint64: 1000
 			block.Size,            // uint32: 1331
 			block.GasLimit,        // uint32: 20006296
@@ -60,7 +60,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		).
 		Return(nil)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo := NewRepository(testutils.NewTestClient(mockConn), RawBlocksTable)
 	err := repo.WriteBlock(ctx, block)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
@@ -110,7 +110,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		).
 		Return(execErr)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo := NewRepository(testutils.NewTestClient(mockConn), RawBlocksTable)
 	err := repo.WriteBlock(ctx, block)
 	require.ErrorIs(t, err, execErr)
 	assert.Contains(t, err.Error(), "failed to write block")

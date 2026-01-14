@@ -213,7 +213,7 @@ func run(c *cli.Context) error {
 	sugar.Info("ClickHouse client created successfully")
 
 	// Initialize raw blocks repository
-	rawBlocksRepo := models.NewRepository(chClient, "default.raw_blocks")
+	rawBlocksRepo := models.NewRepository(chClient, models.RawBlocksTable)
 	sugar.Info("Raw blocks repository initialized")
 
 	// Create Kafka consumer
