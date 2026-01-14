@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -152,6 +156,12 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_CLIENT_VERSION"},
 						Value:   "1.0",
 					},
+					&cli.BoolFlag{
+						Name:    "clickhouse-use-http",
+						Usage:   "Use HTTP protocol instead of native protocol",
+						EnvVars: []string{"CLICKHOUSE_USE_HTTP"},
+						Value:   false,
+					},
 				},
 				Action: run,
 			},
@@ -203,6 +213,10 @@ func run(c *cli.Context) error {
 	defer chClient.Close()
 
 	sugar.Info("ClickHouse client created successfully")
+
+	// Initialize raw blocks repository
+	rawBlocksRepo := models.NewRepository(chClient, "default.raw_blocks")
+	sugar.Info("Raw blocks repository initialized")
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
@@ -274,7 +288,16 @@ func run(c *cli.Context) error {
 					"partition", e.TopicPartition.Partition,
 					"offset", e.TopicPartition.Offset,
 				)
-				// TODO: Process message here
+				if err := processMessage(ctx, e, rawBlocksRepo, sugar); err != nil {
+					sugar.Errorw("failed to process message",
+						"topic", *e.TopicPartition.Topic,
+						"partition", e.TopicPartition.Partition,
+						"offset", e.TopicPartition.Offset,
+						"error", err,
+					)
+					// Continue processing other messages even if one fails
+					continue
+				}
 			case kafka.Error:
 				if e.Code() == kafka.ErrPartitionEOF {
 					sugar.Debugw("reached end of partition", "error", e)
@@ -327,5 +350,104 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.ClickhouseConfig {
 		MaxCompressionBuffer: c.Int("clickhouse-max-compression-buffer"),
 		ClientName:           c.String("clickhouse-client-name"),
 		ClientVersion:        c.String("clickhouse-client-version"),
+		UseHTTP:              c.Bool("clickhouse-use-http"),
 	}
+}
+
+// processMessage processes a Kafka message and writes it to ClickHouse
+func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
+	topic := *msg.TopicPartition.Topic
+
+	switch topic {
+	case "blocks":
+		return processBlockMessage(ctx, msg.Value, rawBlocksRepo, sugar)
+	default:
+		sugar.Debugw("ignoring message from unknown topic", "topic", topic)
+		return nil
+	}
+}
+
+// processBlockMessage processes a block message from Kafka
+func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
+	// Extract chainID from the block JSON
+	// Try block level first, then transactions
+	sugar.Debugw("data", "data", string(data))
+
+	var blockJSON map[string]interface{}
+	if err := json.Unmarshal(data, &blockJSON); err != nil {
+		return fmt.Errorf("failed to unmarshal block JSON: %w", err)
+	}
+
+	sugar.Debugw("blockJSON", "blockJSON", blockJSON)
+
+	var chainID uint32
+	foundChainID := false
+
+	// Try to get chainID from block level first
+	if chainIDVal, ok := blockJSON["chainId"]; ok {
+		foundChainID = true
+		if v, ok := chainIDVal.(float64); ok {
+			chainID = uint32(v)
+		}
+	}
+
+	// If not found at block level, try to extract from transactions array
+	if !foundChainID {
+		if transactions, ok := blockJSON["transactions"].([]interface{}); ok && len(transactions) > 0 {
+			for _, txInterface := range transactions {
+				if tx, ok := txInterface.(map[string]interface{}); ok {
+					if chainIDVal, ok := tx["chainId"]; ok {
+						foundChainID = true
+						if v, ok := chainIDVal.(float64); ok {
+							chainID = uint32(v)
+						}
+						// Found chainID (even if it's 0), so break
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if !foundChainID {
+		// Log the block structure for debugging
+		sugar.Debugw("could not extract chainID from block, skipping",
+			"blockNumber", blockJSON["number"],
+			"hasChainId", blockJSON["chainId"] != nil,
+			"hasTransactions", blockJSON["transactions"] != nil,
+		)
+		return fmt.Errorf("could not extract chainID from block")
+	}
+
+	// Parse the block
+	block, err := models.ParseBlockFromJSON(data, chainID)
+	if err != nil {
+		return fmt.Errorf("failed to parse block: %w", err)
+	}
+
+	// Log data sizes for debugging HTTP size issues
+	if len(block.ExtraData) > 1000 || len(block.BlockExtraData) > 1000 {
+		sugar.Debugw("large extra_data detected",
+			"blockNumber", block.BlockNumber,
+			"extraDataSize", len(block.ExtraData),
+			"blockExtraDataSize", len(block.BlockExtraData),
+		)
+	}
+
+	// Write to ClickHouse with a timeout context
+	// Use a longer timeout for HTTP requests which can be slower
+	writeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := rawBlocksRepo.WriteBlock(writeCtx, block); err != nil {
+		return fmt.Errorf("failed to write block: %w", err)
+	}
+
+	sugar.Debugw("successfully wrote block",
+		"chainID", chainID,
+		"blockNumber", block.BlockNumber,
+		"nonce", block.Nonce,
+	)
+
+	return nil
 }

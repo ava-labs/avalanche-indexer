@@ -55,9 +55,16 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 			maxExecutionTime: cfg.MaxExecutionTime,
 			maxBlockSize:     cfg.MaxBlockSize,
 		},
-		Compression: &clickhouse.Compression{
-			Method: clickhouse.CompressionLZ4,
-		},
+		// Disable compression for HTTP protocol to avoid size issues
+		// HTTP protocol may have issues with compressed data exceeding size limits
+		Compression: func() *clickhouse.Compression {
+			if cfg.UseHTTP {
+				return nil // Disable compression for HTTP
+			}
+			return &clickhouse.Compression{
+				Method: clickhouse.CompressionLZ4,
+			}
+		}(),
 		DialTimeout:          time.Duration(cfg.DialTimeout) * time.Second,
 		MaxOpenConns:         cfg.MaxOpenConns,
 		MaxIdleConns:         cfg.MaxIdleConns,
@@ -77,6 +84,11 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 			//nolint:gosec // InsecureSkipVerify is configurable via environment variable for development/testing
 			InsecureSkipVerify: cfg.InsecureSkipVerify,
 		},
+	}
+
+	// Set protocol to HTTP if UseHTTP is enabled
+	if cfg.UseHTTP {
+		opts.Protocol = clickhouse.HTTP
 	}
 
 	// Set debug function if debug is enabled
