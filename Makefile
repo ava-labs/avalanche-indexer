@@ -6,6 +6,10 @@ BIN_DIR ?= bin
 unit-test:
 	go test -v -cover -race ./...
 
+.PHONY: e2e-test
+e2e-test:
+	go test -tags=e2e ./test/e2e
+
 .PHONY: lint
 lint:
 	golangci-lint run --fix

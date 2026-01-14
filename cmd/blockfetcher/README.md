@@ -8,6 +8,7 @@ Fetches blocks from an RPC endpoint, processes them concurrently using a sliding
 - Concurrency control and backfill prioritization
 - Failure thresholds and graceful shutdown
 - Kafka integration for block publishing
+- Gap watchdog that warns if the gap grows beyond the threshold (runs on schedule)
 
 ### Usage
 
