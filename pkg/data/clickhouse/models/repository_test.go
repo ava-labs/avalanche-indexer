@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -62,7 +60,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		).
 		Return(nil)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "default.raw_blocks")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
 	err := repo.WriteBlock(ctx, block)
 	assert.NoError(t, err)
 	mockConn.AssertExpectations(t)
@@ -112,7 +110,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		).
 		Return(execErr)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn, zap.NewNop().Sugar()), "default.raw_blocks")
+	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
 	err := repo.WriteBlock(ctx, block)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to write block")
