@@ -18,6 +18,8 @@ type Block struct {
 	Hash       string   `json:"hash"`
 	ParentHash string   `json:"parentHash"`
 
+	ChainID *big.Int `json:"chainId,omitempty"`
+
 	StateRoot        string `json:"stateRoot"`
 	TransactionsRoot string `json:"transactionsRoot"`
 	ReceiptsRoot     string `json:"receiptsRoot"`

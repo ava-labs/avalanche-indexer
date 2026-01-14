@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -56,7 +58,9 @@ func TestHexToBytes32(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := HexToBytes32(tt.input)
 			if tt.wantErr {
-				require.Error(t, err)
+				// Verify it's a hex decoding error using ErrorIs pattern
+				var invalidByteErr hex.InvalidByteError
+				require.True(t, errors.As(err, &invalidByteErr), "expected hex.InvalidByteError, got: %v", err)
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, got)
@@ -114,7 +118,9 @@ func TestHexToBytes20(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := HexToBytes20(tt.input)
 			if tt.wantErr {
-				require.Error(t, err)
+				// Verify it's a hex decoding error using ErrorIs pattern
+				var invalidByteErr hex.InvalidByteError
+				require.True(t, errors.As(err, &invalidByteErr), "expected hex.InvalidByteError, got: %v", err)
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, got)
@@ -172,7 +178,9 @@ func TestHexToBytes8(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := HexToBytes8(tt.input)
 			if tt.wantErr {
-				require.Error(t, err)
+				// Verify it's a hex decoding error using ErrorIs pattern
+				var invalidByteErr hex.InvalidByteError
+				require.True(t, errors.As(err, &invalidByteErr), "expected hex.InvalidByteError, got: %v", err)
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, got)

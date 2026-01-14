@@ -9,7 +9,7 @@ import (
 
 // Repository provides methods to write data to ClickHouse
 type Repository interface {
-	WriteBlock(ctx context.Context, block *RawBlock) error
+	WriteBlock(ctx context.Context, block *ClickhouseBlock) error
 }
 
 type repository struct {
@@ -26,7 +26,7 @@ func NewRepository(client clickhouse.Client, tableName string) Repository {
 }
 
 // WriteBlock inserts a raw block into ClickHouse
-func (r *repository) WriteBlock(ctx context.Context, block *RawBlock) error {
+func (r *repository) WriteBlock(ctx context.Context, block *ClickhouseBlock) error {
 	// Commenting out tail-end fields to isolate the LowCardinality issue
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
