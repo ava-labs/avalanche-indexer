@@ -73,10 +73,32 @@ type KafkaBlockJSON struct {
 }
 
 // ParseBlockFromJSON parses a JSON block from Kafka and converts it to RawBlock
-func ParseBlockFromJSON(data []byte, chainID uint32) (*RawBlock, error) {
+// It extracts chainID from the block or transactions automatically
+func ParseBlockFromJSON(data []byte) (*RawBlock, error) {
 	var kafkaBlock KafkaBlockJSON
 	if err := json.Unmarshal(data, &kafkaBlock); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal block JSON: %w", err)
+	}
+
+	// Extract chainID from transactions array (chainID is not at block level in KafkaBlockJSON)
+	var chainID uint32
+	foundChainID := false
+
+	if len(kafkaBlock.Transactions) > 0 {
+		for _, tx := range kafkaBlock.Transactions {
+			if chainIDVal, ok := tx["chainId"]; ok {
+				foundChainID = true
+				if v, ok := chainIDVal.(float64); ok {
+					chainID = uint32(v)
+				}
+				// Found chainID (even if it's 0), so break
+				break
+			}
+		}
+	}
+
+	if !foundChainID {
+		return nil, fmt.Errorf("could not extract chainID from block transactions")
 	}
 
 	block := &RawBlock{

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -369,53 +368,8 @@ func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo model
 
 // processBlockMessage processes a block message from Kafka
 func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
-	var blockJSON map[string]interface{}
-	if err := json.Unmarshal(data, &blockJSON); err != nil {
-		return fmt.Errorf("failed to unmarshal block JSON: %w", err)
-	}
-
-	var chainID uint32
-	foundChainID := false
-
-	// Try to get chainID from block level first
-	if chainIDVal, ok := blockJSON["chainId"]; ok {
-		foundChainID = true
-		if v, ok := chainIDVal.(float64); ok {
-			chainID = uint32(v)
-		}
-	}
-
-	// If not found at block level, try to extract from transactions array
-	if !foundChainID {
-		if transactions, ok := blockJSON["transactions"].([]interface{}); ok && len(transactions) > 0 {
-			for _, txInterface := range transactions {
-				if tx, ok := txInterface.(map[string]interface{}); ok {
-					if chainIDVal, ok := tx["chainId"]; ok {
-						foundChainID = true
-						if v, ok := chainIDVal.(float64); ok {
-							chainID = uint32(v)
-						}
-						// Found chainID (even if it's 0), so break
-						break
-					}
-				}
-			}
-		}
-	}
-
-	if !foundChainID {
-		// Log the block structure for debugging
-		sugar.Debugw("could not extract chainID from block, skipping",
-			"blockNumber", blockJSON["number"],
-			"hasChainId", blockJSON["chainId"] != nil,
-			"hasTransactions", blockJSON["transactions"] != nil,
-		)
-		// TODO: Add DLQ logic
-		return fmt.Errorf("could not extract chainID from block")
-	}
-
-	// Parse the block
-	block, err := models.ParseBlockFromJSON(data, chainID)
+	// Parse the block - ParseBlockFromJSON will extract chainID internally
+	block, err := models.ParseBlockFromJSON(data)
 	if err != nil {
 		// TODO: Add DLQ logic
 		return fmt.Errorf("failed to parse block: %w", err)
@@ -426,7 +380,7 @@ func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.
 	}
 
 	sugar.Debugw("successfully wrote block",
-		"chainID", chainID,
+		"chainID", block.ChainID,
 		"blockNumber", block.BlockNumber,
 		"nonce", block.Nonce,
 	)
