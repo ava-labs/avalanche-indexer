@@ -131,7 +131,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	kafkaByNumber := make(map[uint64][]byte)
 	var receivedOrder []uint64
 	for received < minMsgs {
-		ev := consumer.Poll(1000)
+		ev := consumer.Poll(2000)
 		if ev == nil {
 			if gctx.Err() != nil {
 				break
