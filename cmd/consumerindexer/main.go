@@ -184,6 +184,7 @@ func run(c *cli.Context) error {
 	groupID := c.String("group-id")
 	topicsStr := c.String("topics")
 	autoOffsetReset := c.String("auto-offset-reset")
+	rawTableName := c.String("raw-blocks-table-name")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -204,6 +205,7 @@ func run(c *cli.Context) error {
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
 		"clickhouseDebug", chCfg.Debug,
+		"rawTableName", rawTableName,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -219,9 +221,8 @@ func run(c *cli.Context) error {
 	sugar.Info("ClickHouse client created successfully")
 
 	// Initialize raw blocks repository
-	tableName := c.String("raw-blocks-table-name")
-	rawBlocksRepo := models.NewRepository(chClient, tableName)
-	sugar.Info("Raw blocks repository initialized", "tableName", tableName)
+	rawBlocksRepo := models.NewRepository(chClient, rawTableName)
+	sugar.Info("Raw blocks repository initialized", "tableName", rawTableName)
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
