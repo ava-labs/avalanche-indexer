@@ -12,6 +12,5 @@
     "schemaregistry",
     "serde",
     "Warnf"
-  ],
-  "makefile.configureOnOpen": false
+  ]
 }
