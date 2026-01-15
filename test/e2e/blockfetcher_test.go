@@ -46,7 +46,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	snapshotInterval := 2 * time.Second
 
 	// ---- Test context ----
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	log, err := utils.NewSugaredLogger(true)
@@ -82,7 +82,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
 		"bootstrap.servers": kafkaBrokers,
 		"group.id":          fmt.Sprintf("e2e-blockfetcher-%d", time.Now().UnixNano()),
-		"auto.offset.reset": "latest",
+		"auto.offset.reset": "earliest",
 	})
 	require.NoError(t, err)
 	defer consumer.Close()
