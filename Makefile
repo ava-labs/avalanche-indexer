@@ -8,7 +8,7 @@ unit-test:
 
 .PHONY: e2e-test
 e2e-test:
-	go test -tags=e2e ./test/e2e
+	go test -tags=e2e ./test/e2e -v
 
 .PHONY: lint
 lint:
