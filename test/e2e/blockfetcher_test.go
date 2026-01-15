@@ -70,9 +70,17 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	latest, err := customethclient.New(rpcClient).BlockNumber(ctx)
 	require.NoError(t, err, "failed to get latest block height")
 
+	// Start from a slightly older block to avoid "cannot query unfinalized data" errors.
+	// RPC nodes may not have the absolute latest block finalized yet.
+	const safetyMargin = 5
+	startHeight := latest
+	if latest > safetyMargin {
+		startHeight = latest - safetyMargin
+	}
+
 	seed := &snapshot.Snapshot{
 		ChainID:   chainID,
-		Lowest:    latest,
+		Lowest:    startHeight,
 		Timestamp: time.Now().Unix(),
 	}
 	err = repo.WriteSnapshot(ctx, seed)
