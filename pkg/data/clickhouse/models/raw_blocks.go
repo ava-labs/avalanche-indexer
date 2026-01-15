@@ -43,20 +43,27 @@ type ClickhouseBlock struct {
 }
 
 // ParseBlockFromJSON parses a JSON block from Kafka and converts it to ClickhouseBlock
-func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, error) {
+// Returns both the ClickhouseBlock and the transactions from the parsed block
+func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, []*coreth.Transaction, error) {
 	// Unmarshal to coreth.Block
 	var block coreth.Block
 	if err := json.Unmarshal(data, &block); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block JSON: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal block JSON: %w", err)
 	}
 
 	// Extract chainID from block (should always be set by BlockFromLibevm)
 	if block.ChainID == nil {
-		return nil, errors.New("block chainID is required but was not set")
+		return nil, nil, errors.New("block chainID is required but was not set")
 	}
 	chainID := uint32(block.ChainID.Uint64())
 
-	return corethBlockToClickhouseBlock(&block, chainID)
+	clickhouseBlock, err := corethBlockToClickhouseBlock(&block, chainID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Return the block and transactions (already unmarshaled, no need to parse again)
+	return clickhouseBlock, block.Transactions, nil
 }
 
 // corethBlockToClickhouseBlock converts a coreth.Block to ClickhouseBlock

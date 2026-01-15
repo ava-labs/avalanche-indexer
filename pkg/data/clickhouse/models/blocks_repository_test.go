@@ -73,7 +73,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		).
 		Return(nil)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo := NewBlocksRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
 	err := repo.WriteBlock(ctx, block)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
@@ -136,7 +136,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		).
 		Return(execErr)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo := NewBlocksRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
 	err := repo.WriteBlock(ctx, block)
 	require.ErrorIs(t, err, execErr)
 	assert.Contains(t, err.Error(), "failed to write block")

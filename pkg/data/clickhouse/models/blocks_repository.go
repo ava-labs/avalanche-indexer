@@ -7,26 +7,70 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// Repository provides methods to write data to ClickHouse
-type Repository interface {
+// BlocksRepository provides methods to write blocks to ClickHouse
+type BlocksRepository interface {
+	CreateTableIfNotExists(ctx context.Context) error
 	WriteBlock(ctx context.Context, block *ClickhouseBlock) error
 }
 
-type repository struct {
+type blocksRepository struct {
 	client    clickhouse.Client
 	tableName string
 }
 
-// NewRepository creates a new raw blocks repository
-func NewRepository(client clickhouse.Client, tableName string) Repository {
-	return &repository{
+// NewBlocksRepository creates a new raw blocks repository
+func NewBlocksRepository(client clickhouse.Client, tableName string) BlocksRepository {
+	return &blocksRepository{
 		client:    client,
 		tableName: tableName,
 	}
 }
 
+// CreateTableIfNotExists creates the raw_blocks table if it doesn't exist
+func (r *blocksRepository) CreateTableIfNotExists(ctx context.Context) error {
+	query := fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			chain_id UInt32,
+			block_number UInt64,
+			hash String,
+			parent_hash String,
+			block_time DateTime64(3, 'UTC'),
+			miner String,
+			difficulty UInt64,
+			total_difficulty UInt64,
+			size UInt64,
+			gas_limit UInt64,
+			gas_used UInt64,
+			base_fee_per_gas UInt64,
+			block_gas_cost UInt64,
+			state_root String,
+			transactions_root String,
+			receipts_root String,
+			extra_data String,
+			block_extra_data String,
+			ext_data_hash String,
+			ext_data_gas_used UInt32,
+			mix_hash String,
+			nonce Nullable(String),
+			sha3_uncles String,
+			uncles Array(String),
+			blob_gas_used UInt64,
+			excess_blob_gas UInt64,
+			parent_beacon_block_root Nullable(String),
+			min_delay_excess UInt64
+		)
+		ENGINE = MergeTree
+		ORDER BY (chain_id, block_time, block_number)
+		SETTINGS index_granularity = 8192
+	`, r.tableName)
+	if err := r.client.Conn().Exec(ctx, query); err != nil {
+		return fmt.Errorf("failed to create blocks table: %w", err)
+	}
+	return nil
+}
+
 // WriteBlock inserts a raw block into ClickHouse
-func (r *repository) WriteBlock(ctx context.Context, block *ClickhouseBlock) error {
+func (r *blocksRepository) WriteBlock(ctx context.Context, block *ClickhouseBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			chain_id, block_number, hash, parent_hash, block_time, miner,

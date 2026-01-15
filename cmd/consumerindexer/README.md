@@ -10,7 +10,7 @@ Run locally (from repo root after build):
 bin/consumerindexer run \
   --bootstrap-servers localhost:9092 \
   --group-id hello-avalanche-group \
-  --topics blocks,transactions \
+  --topics transactions \
   --clickhouse-hosts localhost:9000 \
   --clickhouse-username default
 ```
@@ -23,7 +23,7 @@ export CLICKHOUSE_USERNAME="default"
 bin/consumerindexer run \
   --bootstrap-servers localhost:9092 \
   --group-id hello-avalanche-group \
-  --topics blocks,transactions
+  --topics transactions
 ```
 
 All flags have environment variable equivalents:

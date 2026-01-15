@@ -166,6 +166,12 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
 						Value:   "default.raw_blocks",
 					},
+					&cli.StringFlag{
+						Name:    "raw-transactions-table-name",
+						Usage:   "ClickHouse table name for raw transactions",
+						EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
+						Value:   "default.raw_transactions",
+					},
 				},
 				Action: run,
 			},
@@ -184,7 +190,8 @@ func run(c *cli.Context) error {
 	groupID := c.String("group-id")
 	topicsStr := c.String("topics")
 	autoOffsetReset := c.String("auto-offset-reset")
-	rawTableName := c.String("raw-blocks-table-name")
+	rawBlocksTableName := c.String("raw-blocks-table-name")
+	rawTransactionsTableName := c.String("raw-transactions-table-name")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -205,7 +212,8 @@ func run(c *cli.Context) error {
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
 		"clickhouseDebug", chCfg.Debug,
-		"rawTableName", rawTableName,
+		"rawBlocksTableName", rawBlocksTableName,
+		"rawTransactionsTableName", rawTransactionsTableName,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -221,8 +229,12 @@ func run(c *cli.Context) error {
 	sugar.Info("ClickHouse client created successfully")
 
 	// Initialize raw blocks repository
-	rawBlocksRepo := models.NewRepository(chClient, rawTableName)
-	sugar.Info("Raw blocks repository initialized", "tableName", rawTableName)
+	rawBlocksRepo := models.NewBlocksRepository(chClient, rawBlocksTableName)
+	sugar.Info("Raw blocks repository initialized", "tableName", rawBlocksTableName)
+
+	// Initialize raw transactions repository
+	rawTransactionsRepo := models.NewTransactionsRepository(chClient, rawTransactionsTableName)
+	sugar.Info("Raw transactions repository initialized", "tableName", rawTransactionsTableName)
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
@@ -294,7 +306,7 @@ func run(c *cli.Context) error {
 					"partition", e.TopicPartition.Partition,
 					"offset", e.TopicPartition.Offset,
 				)
-				if err := processMessage(ctx, e, rawBlocksRepo, sugar); err != nil {
+				if err := processMessage(ctx, e, rawBlocksRepo, rawTransactionsRepo, sugar); err != nil {
 					sugar.Errorw("failed to process message",
 						"topic", *e.TopicPartition.Topic,
 						"partition", e.TopicPartition.Partition,
@@ -362,12 +374,12 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 }
 
 // processMessage processes a Kafka message and writes it to ClickHouse
-func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
+func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo models.BlocksRepository, rawTransactionsRepo models.TransactionsRepository, sugar *zap.SugaredLogger) error {
 	topic := *msg.TopicPartition.Topic
 
 	switch topic {
 	case "blocks":
-		return processBlockMessage(ctx, msg.Value, rawBlocksRepo, sugar)
+		return processBlockMessage(ctx, msg.Value, rawBlocksRepo, rawTransactionsRepo, sugar)
 	default:
 		sugar.Debugw("ignoring message from unknown topic", "topic", topic)
 		return nil
@@ -375,14 +387,15 @@ func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo model
 }
 
 // processBlockMessage processes a block message from Kafka
-func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
-	// Parse the block - ParseBlockFromJSON will extract chainID internally
-	block, err := models.ParseBlockFromJSON(data)
+func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.BlocksRepository, rawTransactionsRepo models.TransactionsRepository, sugar *zap.SugaredLogger) error {
+	// Parse the block - ParseBlockFromJSON returns both block and transactions (already unmarshaled)
+	block, transactions, err := models.ParseBlockFromJSON(data)
 	if err != nil {
 		// TODO: Add DLQ logic
 		return fmt.Errorf("failed to parse block: %w", err)
 	}
 
+	// Write the block
 	if err := rawBlocksRepo.WriteBlock(ctx, block); err != nil {
 		return fmt.Errorf("failed to write block: %w", err)
 	}
@@ -392,6 +405,28 @@ func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.
 		"blockNumber", block.BlockNumber,
 		"nonce", block.Nonce,
 	)
+
+	// Extract and write transactions if any exist
+	if len(transactions) > 0 {
+		clickhouseTxs, err := models.TransactionsFromBlock(block, transactions)
+		if err != nil {
+			return fmt.Errorf("failed to convert transactions: %w", err)
+		}
+
+		// Write each transaction
+		// TODO: Add batching (in a future PR)
+		for _, tx := range clickhouseTxs {
+			if err := rawTransactionsRepo.WriteTransaction(ctx, tx); err != nil {
+				return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
+			}
+		}
+
+		sugar.Debugw("successfully wrote transactions",
+			"chainID", block.ChainID,
+			"blockNumber", block.BlockNumber,
+			"transactionCount", len(clickhouseTxs),
+		)
+	}
 
 	return nil
 }
