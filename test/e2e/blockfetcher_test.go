@@ -16,11 +16,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
 	stream "github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	corethtypes "github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
-	corethtypes "github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
