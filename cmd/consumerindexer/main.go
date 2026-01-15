@@ -240,10 +240,17 @@ func run(c *cli.Context) error {
 		blocks:       models.NewBlocksRepository(chClient, rawBlocksTableName),
 		transactions: models.NewTransactionsRepository(chClient, rawTransactionsTableName),
 	}
-	sugar.Info("Repositories initialized",
-		"blocksTable", rawBlocksTableName,
-		"transactionsTable", rawTransactionsTableName,
-	)
+
+	// Create tables if they don't exist
+	if err := repos.blocks.CreateTableIfNotExists(ctx); err != nil {
+		return fmt.Errorf("failed to create blocks table: %w", err)
+	}
+	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
+
+	if err := repos.transactions.CreateTableIfNotExists(ctx); err != nil {
+		return fmt.Errorf("failed to create transactions table: %w", err)
+	}
+	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{

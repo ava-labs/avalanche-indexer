@@ -57,17 +57,14 @@ func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, []*coreth.Transaction, e
 	}
 	chainID := uint32(block.ChainID.Uint64())
 
-	clickhouseBlock, err := corethBlockToClickhouseBlock(&block, chainID)
-	if err != nil {
-		return nil, nil, err
-	}
+	clickhouseBlock := corethBlockToClickhouseBlock(&block, chainID)
 
 	// Return the block and transactions (already unmarshaled, no need to parse again)
 	return clickhouseBlock, block.Transactions, nil
 }
 
 // corethBlockToClickhouseBlock converts a coreth.Block to ClickhouseBlock
-func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) (*ClickhouseBlock, error) {
+func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) *ClickhouseBlock {
 	// Extract number from big.Int
 	var blockNumber uint64
 	if block.Number != nil {
@@ -120,5 +117,5 @@ func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) (*Clickho
 		clickhouseBlock.MinDelayExcess = block.MinDelayExcess
 	}
 
-	return clickhouseBlock, nil
+	return clickhouseBlock
 }
