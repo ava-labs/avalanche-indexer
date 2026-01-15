@@ -77,7 +77,8 @@ type Withdrawal struct {
 }
 
 // BlockFromLibevm converts a libevm Block to a Coreth Block.
-func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
+// chainID should be provided since blocks may not have transactions to extract it from.
+func BlockFromLibevm(block *libevmtypes.Block, chainID *big.Int) (*Block, error) {
 	transactions, err := TransactionsFromLibevm(block.Transactions())
 	if err != nil {
 		return nil, fmt.Errorf("convert transactions: %w", err)
@@ -102,6 +103,7 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
+		ChainID:               chainID,
 		GasLimit:              block.GasLimit(),
 		GasUsed:               block.GasUsed(),
 		BaseFee:               block.BaseFee(),
