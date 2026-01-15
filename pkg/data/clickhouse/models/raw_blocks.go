@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 )
 
 // ClickhouseBlock represents a block row in the raw_blocks ClickHouse table
