@@ -8,6 +8,21 @@ import (
 
 const Namespace = "indexer"
 
+// Labels holds constant labels applied to all metrics.
+// These are useful for distinguishing metrics from multiple indexer instances.
+type Labels struct {
+	Chain string // Chain identifier (e.g., "43114" for C-Chain mainnet)
+}
+
+// toPrometheusLabels converts Labels to prometheus.Labels map.
+func (l Labels) toPrometheusLabels() prometheus.Labels {
+	labels := prometheus.Labels{}
+	if l.Chain != "" {
+		labels["chain"] = l.Chain
+	}
+	return labels
+}
+
 type Metrics struct {
 	// Sliding window state
 	lowest           prometheus.Gauge
@@ -30,7 +45,25 @@ type Metrics struct {
 
 // New creates a new Metrics instance and registers all metrics with the provided registerer.
 // Returns an error if any metric registration fails.
+// For metrics with constant labels (e.g., chain), use NewWithLabels instead.
 func New(reg prometheus.Registerer) (*Metrics, error) {
+	return NewWithLabels(reg, Labels{})
+}
+
+// NewWithLabels creates a new Metrics instance with constant labels applied to all metrics.
+// This is useful when running multiple indexer instances and needing to filter by dimensions like chain.
+func NewWithLabels(reg prometheus.Registerer, labels Labels) (*Metrics, error) {
+	// Wrap the registerer with constant labels if any are provided
+	promLabels := labels.toPrometheusLabels()
+	if len(promLabels) > 0 {
+		reg = prometheus.WrapRegistererWith(promLabels, reg)
+	}
+
+	return newMetrics(reg)
+}
+
+// newMetrics is the internal constructor that creates and registers all metrics.
+func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 	m := &Metrics{
 		lowest: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
@@ -118,6 +151,9 @@ const (
 
 // IncError increments the error counter for the given error type.
 func (m *Metrics) IncError(errType string) {
+	if m == nil {
+		return
+	}
 	m.errors.WithLabelValues(errType).Inc()
 }
 

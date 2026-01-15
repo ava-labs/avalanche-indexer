@@ -7,11 +7,14 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/zap"
 )
@@ -166,6 +169,27 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
 						Value:   "default.raw_blocks",
 					},
+					// Metrics configuration flags
+					&cli.StringFlag{
+						Name:    "metrics-host",
+						Usage:   "Host for Prometheus metrics server (empty for all interfaces)",
+						EnvVars: []string{"METRICS_HOST"},
+						Value:   "",
+					},
+					&cli.IntFlag{
+						Name:    "metrics-port",
+						Aliases: []string{"m"},
+						Usage:   "Port for Prometheus metrics server",
+						EnvVars: []string{"METRICS_PORT"},
+						Value:   9090,
+					},
+					&cli.StringFlag{
+						Name:    "chain-id",
+						Aliases: []string{"C"},
+						Usage:   "Chain identifier for metrics labels (e.g., '43114' for C-Chain mainnet)",
+						EnvVars: []string{"CHAIN_ID"},
+						Value:   "",
+					},
 				},
 				Action: run,
 			},
@@ -185,6 +209,10 @@ func run(c *cli.Context) error {
 	topicsStr := c.String("topics")
 	autoOffsetReset := c.String("auto-offset-reset")
 	rawTableName := c.String("raw-blocks-table-name")
+	metricsHost := c.String("metrics-host")
+	metricsPort := c.Int("metrics-port")
+	chainID := c.String("chain-id")
+	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -206,7 +234,22 @@ func run(c *cli.Context) error {
 		"clickhouseUsername", chCfg.Username,
 		"clickhouseDebug", chCfg.Debug,
 		"rawTableName", rawTableName,
+		"metricsHost", metricsHost,
+		"metricsPort", metricsPort,
+		"chainID", chainID,
 	)
+
+	// Initialize Prometheus metrics with optional chain label
+	registry := prometheus.NewRegistry()
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{Chain: chainID})
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+
+	// Start metrics server
+	metricsServer := metrics.NewServer(metricsAddr, registry)
+	metricsErrCh := metricsServer.Start()
+	sugar.Infof("metrics server started at http://localhost%s/metrics", metricsAddr)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -273,14 +316,26 @@ func run(c *cli.Context) error {
 
 	sugar.Infow("subscribed to topics", "topics", topics)
 
-	sugar.Info("hello world from consumer indexer")
+	sugar.Info("starting consumer indexer")
 
-	// Consumer loop
+	// Consumer loop with metrics server error handling
+	var loopErr error
+consumerLoop:
 	for {
+		// Check for metrics server errors (non-blocking)
+		select {
+		case err := <-metricsErrCh:
+			if err != nil {
+				loopErr = fmt.Errorf("metrics server failed: %w", err)
+				break consumerLoop
+			}
+		default:
+		}
+
 		select {
 		case <-ctx.Done():
 			sugar.Info("shutting down consumer...")
-			return nil
+			break consumerLoop
 		default:
 			ev := consumer.Poll(100)
 			if ev == nil {
@@ -294,7 +349,7 @@ func run(c *cli.Context) error {
 					"partition", e.TopicPartition.Partition,
 					"offset", e.TopicPartition.Offset,
 				)
-				if err := processMessage(ctx, e, rawBlocksRepo, sugar); err != nil {
+				if err := processMessage(ctx, e, rawBlocksRepo, m, sugar); err != nil {
 					sugar.Errorw("failed to process message",
 						"topic", *e.TopicPartition.Topic,
 						"partition", e.TopicPartition.Partition,
@@ -312,11 +367,13 @@ func run(c *cli.Context) error {
 				}
 				if e.IsFatal() {
 					sugar.Errorw("fatal kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
-					return fmt.Errorf("fatal kafka error: %w", e)
+					loopErr = fmt.Errorf("fatal kafka error: %w", e)
+					break consumerLoop
 				}
 				if e.Code() == kafka.ErrAllBrokersDown {
 					sugar.Errorw("all brokers down", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
-					return fmt.Errorf("all brokers down: %w", e)
+					loopErr = fmt.Errorf("all brokers down: %w", e)
+					break consumerLoop
 				}
 				// Non-fatal errors are usually informational
 				sugar.Warnw("ignoring unexpected kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
@@ -326,6 +383,17 @@ func run(c *cli.Context) error {
 			}
 		}
 	}
+
+	// Gracefully shutdown metrics server
+	sugar.Info("shutting down metrics server")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		sugar.Warnw("metrics server shutdown error", "error", err)
+	}
+
+	sugar.Info("shutdown complete")
+	return loopErr
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
@@ -362,12 +430,12 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 }
 
 // processMessage processes a Kafka message and writes it to ClickHouse
-func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
+func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo models.Repository, m *metrics.Metrics, sugar *zap.SugaredLogger) error {
 	topic := *msg.TopicPartition.Topic
 
 	switch topic {
 	case "blocks":
-		return processBlockMessage(ctx, msg.Value, rawBlocksRepo, sugar)
+		return processBlockMessage(ctx, msg.Value, rawBlocksRepo, m, sugar)
 	default:
 		sugar.Debugw("ignoring message from unknown topic", "topic", topic)
 		return nil
@@ -375,17 +443,24 @@ func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo model
 }
 
 // processBlockMessage processes a block message from Kafka
-func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
+func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, m *metrics.Metrics, sugar *zap.SugaredLogger) error {
+	start := time.Now()
+
 	// Parse the block - ParseBlockFromJSON will extract chainID internally
 	block, err := models.ParseBlockFromJSON(data)
 	if err != nil {
+		m.IncError("parse_error")
 		// TODO: Add DLQ logic
 		return fmt.Errorf("failed to parse block: %w", err)
 	}
 
 	if err := rawBlocksRepo.WriteBlock(ctx, block); err != nil {
+		m.IncError("write_error")
 		return fmt.Errorf("failed to write block: %w", err)
 	}
+
+	// Record successful block processing
+	m.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 
 	sugar.Debugw("successfully wrote block",
 		"chainID", block.ChainID,
