@@ -50,32 +50,13 @@ func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, error) {
 		return nil, fmt.Errorf("failed to unmarshal block JSON: %w", err)
 	}
 
-	// Extract chainID - check block level first, then transactions
-	chainID, err := getChainIDFromBlock(&block)
-	if err != nil {
-		return nil, err
+	// Extract chainID from block (should always be set by BlockFromLibevm)
+	if block.ChainID == nil {
+		return nil, errors.New("block chainID is required but was not set")
 	}
+	chainID := uint32(block.ChainID.Uint64())
 
 	return corethBlockToClickhouseBlock(&block, chainID)
-}
-
-// getChainIDFromBlock extracts chainID from block, checking block level first, then transactions
-func getChainIDFromBlock(block *coreth.Block) (uint32, error) {
-	// Check block level first (if present in JSON)
-	if block.ChainID != nil {
-		return uint32(block.ChainID.Uint64()), nil
-	}
-
-	// If not found at block level, extract from transactions
-	if len(block.Transactions) > 0 {
-		for _, tx := range block.Transactions {
-			if tx.ChainID != nil {
-				return uint32(tx.ChainID.Uint64()), nil
-			}
-		}
-	}
-
-	return 0, errors.New("could not extract chainID from block or transactions")
 }
 
 // corethBlockToClickhouseBlock converts a coreth.Block to ClickhouseBlock
