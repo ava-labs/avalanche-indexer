@@ -235,9 +235,9 @@ func run(c *cli.Context) error {
 		sugar.Infof("end block height: %d", end)
 	}
 
-	// Initialize Prometheus metrics
+	// Initialize Prometheus metrics with chain label for multi-instance filtering
 	registry := prometheus.NewRegistry()
-	m, err := metrics.New(registry)
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{Chain: fmt.Sprintf("%d", chainID)})
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
