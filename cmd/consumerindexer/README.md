@@ -65,11 +65,13 @@ Run `consumerindexer` with environment variables (ENTRYPOINT selects the binary 
 
 ```bash
 docker run --rm \
+  --network avalanche-indexer_app-network \
   -e APP=consumerindexer \
-  -e KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
-  -e KAFKA_GROUP_ID=my-consumer-group \
-  -e KAFKA_TOPICS=blocks,transactions \
-  -e KAFKA_AUTO_OFFSET_RESET=earliest \
+  -e KAFKA_BOOTSTRAP_SERVERS=kafka:9093 \
+  -e KAFKA_GROUP_ID=hello-avalanche-group \
+  -e KAFKA_TOPICS=blocks \
+  -e CLICKHOUSE_HOSTS=clickhouse:9000 \
+  -e CLICKHOUSE_USERNAME=default \
   indexer:latest run --verbose
 ```
 
