@@ -296,3 +296,33 @@ func (om *OffsetManager) InsertOffsetWithRetry(
 		time.Sleep(200 * time.Millisecond)
 	}
 }
+
+// getPartitionState returns a copy of the partition state for testing.
+// Returns nil if the partition is not assigned.
+// This is unexported and only used by tests in the same package.
+func (om *OffsetManager) getPartitionState(partition int32) *offsetState {
+	om.mutex.Lock()
+	defer om.mutex.Unlock()
+
+	state := om.partitionStates[partition]
+	if state == nil {
+		return nil
+	}
+
+	// Return a copy to avoid race conditions
+	windowCopy := make([]kafka.TopicPartition, len(state.window))
+	copy(windowCopy, state.window)
+
+	return &offsetState{
+		window:        windowCopy,
+		lastCommitted: state.lastCommitted,
+	}
+}
+
+// getPartitionCount returns the number of assigned partitions.
+// This is unexported and only used by tests in the same package.
+func (om *OffsetManager) getPartitionCount() int {
+	om.mutex.Lock()
+	defer om.mutex.Unlock()
+	return len(om.partitionStates)
+}

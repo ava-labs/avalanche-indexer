@@ -35,9 +35,11 @@ func TestUnorderedOffsetsWithNonZeroInit(t *testing.T) {
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: partition, Offset: 2}))
 	time.Sleep(30 * time.Millisecond)
 
-	require.Equal(t, kafka.Offset(3), om.partitionStates[partition].lastCommitted)
-	require.Len(t, om.partitionStates[partition].window, 1)
-	require.Equal(t, kafka.Offset(20), om.partitionStates[partition].window[0].Offset)
+	state := om.getPartitionState(partition)
+	require.NotNil(t, state)
+	require.Equal(t, kafka.Offset(3), state.lastCommitted)
+	require.Len(t, state.window, 1)
+	require.Equal(t, kafka.Offset(20), state.window[0].Offset)
 }
 
 // Test ordered InsertOffset() calls with a time break.
@@ -61,8 +63,10 @@ func TestOrderedOffsets(t *testing.T) {
 
 	time.Sleep(30 * time.Millisecond)
 
-	require.Equal(t, kafka.Offset(4), om.partitionStates[partition].lastCommitted)
-	require.Empty(t, om.partitionStates[partition].window)
+	state := om.getPartitionState(partition)
+	require.NotNil(t, state)
+	require.Equal(t, kafka.Offset(4), state.lastCommitted)
+	require.Empty(t, state.window)
 
 	time.Sleep(30 * time.Millisecond)
 
@@ -70,8 +74,10 @@ func TestOrderedOffsets(t *testing.T) {
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: partition, Offset: 6}))
 
 	time.Sleep(30 * time.Millisecond)
-	require.Equal(t, kafka.Offset(6), om.partitionStates[partition].lastCommitted)
-	require.Empty(t, om.partitionStates[partition].window)
+	state = om.getPartitionState(partition)
+	require.NotNil(t, state)
+	require.Equal(t, kafka.Offset(6), state.lastCommitted)
+	require.Empty(t, state.window)
 }
 
 func TestGapBetweenLastCommittedAndWindow(t *testing.T) {
@@ -90,15 +96,19 @@ func TestGapBetweenLastCommittedAndWindow(t *testing.T) {
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: partition, Offset: 5}))
 	time.Sleep(30 * time.Millisecond)
 
-	require.Equal(t, kafka.Offset(0), om.partitionStates[partition].lastCommitted)
-	require.Len(t, om.partitionStates[partition].window, 3)
+	state := om.getPartitionState(partition)
+	require.NotNil(t, state)
+	require.Equal(t, kafka.Offset(0), state.lastCommitted)
+	require.Len(t, state.window, 3)
 
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: partition, Offset: 2}))
 	time.Sleep(30 * time.Millisecond)
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: partition, Offset: 1}))
 	time.Sleep(30 * time.Millisecond)
-	require.Equal(t, kafka.Offset(5), om.partitionStates[partition].lastCommitted)
-	require.Empty(t, om.partitionStates[partition].window)
+	state = om.getPartitionState(partition)
+	require.NotNil(t, state)
+	require.Equal(t, kafka.Offset(5), state.lastCommitted)
+	require.Empty(t, state.window)
 }
 
 func TestMultiplePartitions(t *testing.T) {
@@ -131,11 +141,15 @@ func TestMultiplePartitions(t *testing.T) {
 
 	time.Sleep(30 * time.Millisecond)
 
-	require.Equal(t, kafka.Offset(3), om.partitionStates[p1].lastCommitted)
-	require.Empty(t, om.partitionStates[p1].window)
+	state1 := om.getPartitionState(p1)
+	require.NotNil(t, state1)
+	require.Equal(t, kafka.Offset(3), state1.lastCommitted)
+	require.Empty(t, state1.window)
 
-	require.Equal(t, kafka.Offset(6), om.partitionStates[p2].lastCommitted)
-	require.Empty(t, om.partitionStates[p2].window)
+	state2 := om.getPartitionState(p2)
+	require.NotNil(t, state2)
+	require.Equal(t, kafka.Offset(6), state2.lastCommitted)
+	require.Empty(t, state2.window)
 }
 
 // Test rebalance events where a second partition assignment is added followed
@@ -167,8 +181,13 @@ func TestRebalanceEvent(t *testing.T) {
 	}))
 
 	// p1 state should not be affected
-	require.Equal(t, kafka.Offset(2), om.partitionStates[p1].lastCommitted)
-	require.Equal(t, initOffset2, om.partitionStates[p2].lastCommitted)
+	state1 := om.getPartitionState(p1)
+	require.NotNil(t, state1)
+	require.Equal(t, kafka.Offset(2), state1.lastCommitted)
+
+	state2 := om.getPartitionState(p2)
+	require.NotNil(t, state2)
+	require.Equal(t, initOffset2, state2.lastCommitted)
 
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: p2, Offset: 5}))
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: p2, Offset: 6}))
@@ -180,13 +199,15 @@ func TestRebalanceEvent(t *testing.T) {
 	}))
 
 	time.Sleep(30 * time.Millisecond)
-	require.Equal(t, kafka.Offset(6), om.partitionStates[p2].lastCommitted)
+	state2 = om.getPartitionState(p2)
+	require.NotNil(t, state2)
+	require.Equal(t, kafka.Offset(6), state2.lastCommitted)
 
 	// should do nothing and throw warning messages
 	require.NoError(t, om.InsertOffset(ctx, kafka.TopicPartition{Partition: p1, Offset: 8}))
 
-	require.Nil(t, om.partitionStates[p1])
-	require.Len(t, om.partitionStates, 1)
+	require.Nil(t, om.getPartitionState(p1))
+	require.Equal(t, 1, om.getPartitionCount())
 
 	// revoke the last partition, consumer would be completely unassigned
 	require.NoError(t, om.RebalanceCb(nil, kafka.RevokedPartitions{
@@ -194,7 +215,7 @@ func TestRebalanceEvent(t *testing.T) {
 			{Partition: p2},
 		},
 	}))
-	require.Nil(t, om.partitionStates[p2])
-	require.Empty(t, om.partitionStates)
+	require.Nil(t, om.getPartitionState(p2))
+	require.Equal(t, 0, om.getPartitionCount())
 	time.Sleep(30 * time.Millisecond) // managerLoop should do nothing
 }
