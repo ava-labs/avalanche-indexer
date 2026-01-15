@@ -9,9 +9,11 @@ import (
 	"syscall"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -152,6 +154,18 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_CLIENT_VERSION"},
 						Value:   "1.0",
 					},
+					&cli.BoolFlag{
+						Name:    "clickhouse-use-http",
+						Usage:   "Use HTTP protocol instead of native protocol",
+						EnvVars: []string{"CLICKHOUSE_USE_HTTP"},
+						Value:   false,
+					},
+					&cli.StringFlag{
+						Name:    "raw-blocks-table-name",
+						Usage:   "ClickHouse table name for raw blocks",
+						EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
+						Value:   "default.raw_blocks",
+					},
 				},
 				Action: run,
 			},
@@ -170,6 +184,7 @@ func run(c *cli.Context) error {
 	groupID := c.String("group-id")
 	topicsStr := c.String("topics")
 	autoOffsetReset := c.String("auto-offset-reset")
+	rawTableName := c.String("raw-blocks-table-name")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -190,6 +205,7 @@ func run(c *cli.Context) error {
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
 		"clickhouseDebug", chCfg.Debug,
+		"rawTableName", rawTableName,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -203,6 +219,10 @@ func run(c *cli.Context) error {
 	defer chClient.Close()
 
 	sugar.Info("ClickHouse client created successfully")
+
+	// Initialize raw blocks repository
+	rawBlocksRepo := models.NewRepository(chClient, rawTableName)
+	sugar.Info("Raw blocks repository initialized", "tableName", rawTableName)
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
@@ -274,7 +294,17 @@ func run(c *cli.Context) error {
 					"partition", e.TopicPartition.Partition,
 					"offset", e.TopicPartition.Offset,
 				)
-				// TODO: Process message here
+				if err := processMessage(ctx, e, rawBlocksRepo, sugar); err != nil {
+					sugar.Errorw("failed to process message",
+						"topic", *e.TopicPartition.Topic,
+						"partition", e.TopicPartition.Partition,
+						"offset", e.TopicPartition.Offset,
+						"error", err,
+					)
+					// Continue processing other messages even if one fails
+					// TODO: Add retry logic and DLQ logic
+					continue
+				}
 			case kafka.Error:
 				if e.Code() == kafka.ErrPartitionEOF {
 					sugar.Debugw("reached end of partition", "error", e)
@@ -327,5 +357,41 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 		MaxCompressionBuffer: c.Int("clickhouse-max-compression-buffer"),
 		ClientName:           c.String("clickhouse-client-name"),
 		ClientVersion:        c.String("clickhouse-client-version"),
+		UseHTTP:              c.Bool("clickhouse-use-http"),
 	}
+}
+
+// processMessage processes a Kafka message and writes it to ClickHouse
+func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
+	topic := *msg.TopicPartition.Topic
+
+	switch topic {
+	case "blocks":
+		return processBlockMessage(ctx, msg.Value, rawBlocksRepo, sugar)
+	default:
+		sugar.Debugw("ignoring message from unknown topic", "topic", topic)
+		return nil
+	}
+}
+
+// processBlockMessage processes a block message from Kafka
+func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, sugar *zap.SugaredLogger) error {
+	// Parse the block - ParseBlockFromJSON will extract chainID internally
+	block, err := models.ParseBlockFromJSON(data)
+	if err != nil {
+		// TODO: Add DLQ logic
+		return fmt.Errorf("failed to parse block: %w", err)
+	}
+
+	if err := rawBlocksRepo.WriteBlock(ctx, block); err != nil {
+		return fmt.Errorf("failed to write block: %w", err)
+	}
+
+	sugar.Debugw("successfully wrote block",
+		"chainID", block.ChainID,
+		"blockNumber", block.BlockNumber,
+		"nonce", block.Nonce,
+	)
+
+	return nil
 }
