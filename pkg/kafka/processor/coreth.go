@@ -5,30 +5,29 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"go.uber.org/zap"
 
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
-// CorethProcessor processes Kafka messages containing Coreth blocks.
+// CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
+// Safe for concurrent use.
 type CorethProcessor struct {
 	log *zap.SugaredLogger
 }
 
-// NewCorethProcessor creates a new CorethProcessor.
+// NewCorethProcessor creates a new CorethProcessor with the given logger.
 func NewCorethProcessor(log *zap.SugaredLogger) *CorethProcessor {
 	return &CorethProcessor{log: log}
 }
 
-// Process parses a Kafka message into a Coreth Block and processes it.
+// Process unmarshals msg.Value into a Coreth Block and logs its details.
+// Returns an error if msg or msg.Value is nil, or if unmarshaling fails.
+// Currently only logs block data - actual indexing/storage logic is TODO.
+//
+//nolint:revive // ctx will be used in future indexing/storage implementation
 func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
 	if msg == nil || msg.Value == nil {
 		return errors.New("received nil message or empty value")
 	}
@@ -42,6 +41,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		"number", block.Number,
 		"hash", block.Hash,
 		"txCount", len(block.Transactions),
+		"withdrawalCount", len(block.Withdrawals),
 		"timestamp", block.Timestamp,
 		"timestampMs", block.TimestampMs,
 		"minDelayExcess", block.MinDelayExcess,
@@ -69,5 +69,5 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	return nil
 }
 
-// Ensure CorethProcessor implements Processor interface.
+// Compile-time check that CorethProcessor implements Processor.
 var _ Processor = (*CorethProcessor)(nil)
