@@ -31,6 +31,7 @@ type Config struct {
 	MaxCompressionBuffer int      `env:"CLICKHOUSE_MAX_COMPRESSION_BUFFER" envDefault:"10240"`          // bytes
 	ClientName           string   `env:"CLICKHOUSE_CLIENT_NAME"            envDefault:"ac-client-name"` // client name for ClickHouse ClientInfo
 	ClientVersion        string   `env:"CLICKHOUSE_CLIENT_VERSION"         envDefault:"1.0"`            // client version for ClickHouse ClientInfo
+	UseHTTP              bool     `env:"CLICKHOUSE_USE_HTTP"               envDefault:"false"`          // use HTTP protocol instead of native
 }
 
 // Load loads ClickHouse configuration from environment variables

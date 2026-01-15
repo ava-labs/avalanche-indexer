@@ -283,7 +283,7 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, sugar, m)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, chainID, sugar, m)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
