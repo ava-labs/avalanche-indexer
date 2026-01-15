@@ -15,37 +15,48 @@ import (
 )
 
 const (
-	defaultSessionTimeout  = 240_000
-	defaultMaxPollInterval = 3_400_000
+	defaultSessionTimeout       = 240_000
+	defaultMaxPollInterval      = 3_400_000
+	defaultFlushTimeout         = 15 * time.Second
+	defaultGoroutineWaitTimeout = 30 * time.Second
 )
 
-// ConsumerConfig holds configuration for the Consumer.
+// ConsumerConfig configures a Kafka consumer with concurrency control and DLQ support.
+// MaxConcurrency limits parallel message processing. IsDLQConsumer prevents recursive DLQ writes.
 type ConsumerConfig struct {
-	DLQTopic                    string
-	Topic                       string
-	MaxConcurrency              int64
-	IsDLQConsumer               bool
-	BootstrapServers            string
-	GroupID                     string
-	AutoOffsetReset             string
-	EnableLogs                  bool
-	OffsetManagerCommitInterval time.Duration
+	DLQTopic                    string        // Dead letter queue topic for failed messages
+	Topic                       string        // Primary topic to consume from
+	MaxConcurrency              int64         // Maximum concurrent message processors
+	IsDLQConsumer               bool          // If true, failed messages are not re-sent to DLQ
+	BootstrapServers            string        // Kafka broker addresses
+	GroupID                     string        // Consumer group ID for offset management
+	AutoOffsetReset             string        // Offset reset strategy: "earliest" or "latest"
+	EnableLogs                  bool          // Enable librdkafka client logs
+	OffsetManagerCommitInterval time.Duration // Interval for committing offsets
 }
 
-// Consumer consumes Kafka messages, processes Coreth blocks, and handles failures via DLQ.
+// Consumer provides concurrent Kafka message consumption with at-least-once delivery semantics.
+// It manages partition rebalancing, offset commits via a sliding window, and DLQ publishing for failures.
+// Not safe for concurrent use of exported methods.
 type Consumer struct {
-	processor         processor.Processor
-	consumer          *cKafka.Consumer
-	dlqProducer       *Producer
-	log               *zap.SugaredLogger
+	processor     processor.Processor
+	consumer      *cKafka.Consumer
+	dlqProducer   *Producer
+	log           *zap.SugaredLogger
+	sem           *semaphore.Weighted
+	offsetManager *OffsetManager
+
 	rebalanceContexts map[int32]rebalanceCtx
-	rebalanceMutex    sync.RWMutex
-	sem               *semaphore.Weighted
-	offsetManager     *OffsetManager
-	logsDone          chan struct{}
-	doneCh            chan struct{}
-	errCh             chan error
-	cfg               ConsumerConfig
+
+	logsDone chan struct{}
+	doneCh   chan struct{}
+	errCh    chan error
+
+	cfg ConsumerConfig
+
+	rebalanceMutex sync.RWMutex
+
+	wg sync.WaitGroup
 }
 
 type rebalanceCtx struct {
@@ -53,7 +64,9 @@ type rebalanceCtx struct {
 	cancel context.CancelFunc
 }
 
-// NewConsumer creates a new Consumer.
+// NewConsumer creates a Consumer and initializes its Kafka consumer, DLQ producer, and offset manager.
+// The provided context is used for initializing resources but not for the consumer lifecycle.
+// Returns an error if Kafka client creation fails.
 func NewConsumer(
 	ctx context.Context,
 	log *zap.SugaredLogger,
@@ -107,14 +120,16 @@ func NewConsumer(
 		rebalanceContexts: make(map[int32]rebalanceCtx),
 		offsetManager:     offsetManager,
 		logsDone:          make(chan struct{}),
-		errCh:             make(chan error, 1),
+		errCh:             make(chan error, cfg.MaxConcurrency),
 		doneCh:            make(chan struct{}),
 		processor:         proc,
 	}, nil
 }
 
-// Start begins consuming messages from the specified topic.
-// It spawns a goroutine to handle results (commits and DLQ publishing).
+// Start begins consuming messages from the configured topic and blocks until ctx is cancelled,
+// a fatal error occurs, or a processing error is sent to the error channel.
+// On shutdown, waits up to 30s for in-flight messages to complete processing.
+// Returns an error if subscription fails or if consumer/producer close fails.
 func (c *Consumer) Start(ctx context.Context) error {
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -125,7 +140,6 @@ func (c *Consumer) Start(ctx context.Context) error {
 		)
 	}
 
-	// start kafka logs printing if enabled
 	if c.cfg.EnableLogs {
 		go c.printKafkaLogs(ctxWithCancel)
 	} else {
@@ -165,8 +179,6 @@ func (c *Consumer) Start(ctx context.Context) error {
 					c.rebalanceMutex.RUnlock()
 					continue
 				}
-				// if the context is cancelled during dispatch, the offset commit will fail and
-				// the msg will be reprocessed on restart
 				c.dispatch(c.rebalanceContexts[msg.TopicPartition.Partition].ctx, msg)
 				c.rebalanceMutex.RUnlock()
 			case cKafka.Error:
@@ -174,18 +186,13 @@ func (c *Consumer) Start(ctx context.Context) error {
 					c.log.Errorw("fatal kafka error", "error", msg)
 					run = false
 					continue
-				} else {
-					c.log.Warnw("kafka error (non-fatal)", "error", msg)
-					continue
 				}
+				c.log.Warnw("kafka error (non-fatal)", "error", msg)
 			default:
 				c.log.Debugw("ignoring kafka event", "event", msg)
 			}
 		}
 	}
-
-	// we can wait for all the goroutines started by dispatch but since our design
-	// will be to process at least once, we can finish early and some msgs will be reprocessed.
 
 	err := c.close()
 	if err != nil {
@@ -196,15 +203,27 @@ func (c *Consumer) Start(ctx context.Context) error {
 	return err
 }
 
-// dispatch acquires a semaphore slot and processes the message in a goroutine.
+// dispatch spawns a goroutine to process msg with concurrency control via semaphore.
+// Returns immediately after spawning (non-blocking). If context is cancelled during semaphore
+// acquisition, the message is dropped (will be reprocessed after rebalance).
+// On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
 func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
-	// Acquire semaphore (blocks if max concurrency reached)
 	if err := c.sem.Acquire(ctx, 1); err != nil {
-		c.errCh <- fmt.Errorf("failed to acquire semaphore: %w", err)
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+
+		select {
+		case c.errCh <- fmt.Errorf("failed to acquire semaphore: %w", err):
+		default:
+			c.log.Errorw("error channel full, dropping semaphore acquisition error")
+		}
 		return
 	}
 
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		defer c.sem.Release(1)
 		err := c.processor.Process(ctx, msg)
 		if err == nil {
@@ -212,23 +231,42 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			return
 		}
 
-		// Processing failed - handle DLQ or propagate error
+		if errors.Is(err, context.Canceled) {
+			c.log.Debugw("processing cancelled due to context",
+				"partition", msg.TopicPartition.Partition,
+				"offset", msg.TopicPartition.Offset,
+			)
+			return
+		}
+
 		if c.cfg.IsDLQConsumer {
-			c.errCh <- err
+			select {
+			case c.errCh <- err:
+			default:
+				c.log.Errorw("error channel full, dropping error", "error", err)
+			}
 			return
 		}
 
 		publishErr := c.publishToDLQ(ctx, msg)
 		if publishErr != nil {
+			if errors.Is(publishErr, context.Canceled) {
+				return
+			}
 			c.log.Errorw("failed to publish to DLQ", "error", publishErr)
-			c.errCh <- publishErr
+			select {
+			case c.errCh <- publishErr:
+			default:
+				c.log.Errorw("error channel full, dropping error", "error", publishErr)
+			}
 			return
 		}
 		c.offsetManager.InsertOffsetWithRetry(ctx, msg)
 	}()
 }
 
-// publishToDLQ sends a failed message to the dead letter queue.
+// publishToDLQ publishes msg to the configured DLQ topic, preserving original key and value.
+// Returns an error if DLQTopic is not configured or if production fails.
 func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error {
 	if c.cfg.DLQTopic == "" {
 		return errors.New("DLQ topic not configured")
@@ -254,15 +292,32 @@ func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error 
 	return nil
 }
 
-// close shuts down the consumer and DLQ producer.
+// close gracefully shuts down the consumer by waiting for in-flight processing goroutines
+// (with a 45s timeout), then closing the DLQ producer and Kafka consumer.
+// Returns an error from the Kafka consumer close operation.
 func (c *Consumer) close() error {
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		c.log.Info("all in-flight messages processed")
+	case <-time.After(defaultGoroutineWaitTimeout):
+		c.log.Warn("timeout waiting for in-flight messages, forcing shutdown")
+	}
+
 	close(c.doneCh)
 	<-c.logsDone
-	c.dlqProducer.Close(15000) // 15 second flush timeout
+	c.dlqProducer.Close(defaultFlushTimeout)
 	return c.consumer.Close()
 }
 
-// rebalanceCallback handles partition assignment and revocation.
+// getRebalanceCallback returns a thread-safe callback that manages partition contexts.
+// On assignment, creates a cancellable context per partition. On revocation, cancels
+// partition contexts to stop in-flight processing for revoked partitions.
 func (c *Consumer) getRebalanceCallback(ctx context.Context) cKafka.RebalanceCb {
 	return func(kc *cKafka.Consumer, event cKafka.Event) error {
 		c.rebalanceMutex.Lock()
@@ -307,7 +362,8 @@ func (c *Consumer) getRebalanceCallback(ctx context.Context) cKafka.RebalanceCb 
 	}
 }
 
-// printKafkaLogs prints kafka logs to the console.
+// printKafkaLogs drains the librdkafka logs channel and outputs to the logger.
+// Closes logsDone channel on exit to signal log printing completion.
 func (c *Consumer) printKafkaLogs(ctx context.Context) {
 	defer close(c.logsDone)
 	for {
