@@ -386,13 +386,13 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 		bn := new(big.Int).SetUint64(n)
 		lb, err := ec.BlockByNumber(ctx, bn)
 		require.NoError(t, err, "fetch rpc block %d", n)
-		chainID := got.ChainID
-		expPtr, err := corethtypes.BlockFromLibevm(lb, chainID)
+		bcID := got.BcID
+		expPtr, err := corethtypes.BlockFromLibevm(lb, bcID)
 		require.NoError(t, err, "convert rpc block %d", n)
 		exp := *expPtr
 
 		// Compare a set of critical fields for robustness
-		require.Equal(t, exp.ChainID, got.ChainID, "chainID %d", n)
+		require.Equal(t, exp.BcID, got.BcID, "bcID %d", n)
 		require.Equal(t, exp.Hash, got.Hash, "hash %d", n)
 		require.Equal(t, exp.ParentHash, got.ParentHash, "parentHash %d", n)
 		require.Equal(t, exp.Number.Uint64(), got.Number.Uint64(), "number %d", n)
