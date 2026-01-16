@@ -10,6 +10,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
 )
 
+// Sentinel errors for block parsing
+var (
+	ErrBlockChainIDRequired = errors.New("block chainID is required but was not set")
+)
+
 // BlockRow represents a block row in the database
 type BlockRow struct {
 	ChainID               uint32
@@ -53,7 +58,7 @@ func ParseBlockFromJSON(data []byte) (*BlockRow, []*coreth.Transaction, error) {
 
 	// Extract chainID from block (should always be set by BlockFromLibevm)
 	if block.ChainID == nil {
-		return nil, nil, errors.New("block chainID is required but was not set")
+		return nil, nil, ErrBlockChainIDRequired
 	}
 	chainID := uint32(block.ChainID.Uint64())
 

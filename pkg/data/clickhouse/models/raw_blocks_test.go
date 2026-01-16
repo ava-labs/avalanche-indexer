@@ -50,7 +50,8 @@ func TestParseBlockFromJSON_InvalidJSON(t *testing.T) {
 
 	assert.Nil(t, block)
 	assert.Nil(t, transactions)
-	require.NotNil(t, err)
+	var jsonErr *json.SyntaxError
+	require.ErrorAs(t, err, &jsonErr)
 	assert.Contains(t, err.Error(), "failed to unmarshal block JSON")
 }
 
@@ -71,8 +72,7 @@ func TestParseBlockFromJSON_MissingChainID(t *testing.T) {
 
 	assert.Nil(t, block)
 	assert.Nil(t, transactions)
-	require.NotNil(t, err)
-	assert.Contains(t, err.Error(), "block chainID is required but was not set")
+	require.ErrorIs(t, err, ErrBlockChainIDRequired)
 }
 
 func TestParseBlockFromJSON_NoTransactions(t *testing.T) {

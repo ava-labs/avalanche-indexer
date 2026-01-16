@@ -9,6 +9,12 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
 )
 
+// Sentinel errors for transaction parsing
+var (
+	ErrTransactionChainIDRequired = errors.New("transaction chainID is required but was not set")
+	ErrBlockChainIDRequiredForTx  = errors.New("block chainID is required")
+)
+
 // TransactionRow represents a transaction row in the database
 type TransactionRow struct {
 	ChainID          uint32
@@ -40,7 +46,7 @@ func ParseTransactionFromJSON(data []byte, blockNumber uint64, blockHash string,
 	// Extract chainID from transaction if not provided
 	if chainID == 0 {
 		if tx.ChainID == nil {
-			return nil, errors.New("transaction chainID is required but was not set")
+			return nil, ErrTransactionChainIDRequired
 		}
 		chainID = uint32(tx.ChainID.Uint64())
 	}
@@ -51,7 +57,7 @@ func ParseTransactionFromJSON(data []byte, blockNumber uint64, blockHash string,
 // TransactionsFromBlock extracts all transactions from a block and converts them to TransactionRow
 func TransactionsFromBlock(block *BlockRow, transactions []*coreth.Transaction) ([]*TransactionRow, error) {
 	if block.ChainID == 0 {
-		return nil, errors.New("block chainID is required")
+		return nil, ErrBlockChainIDRequiredForTx
 	}
 
 	result := make([]*TransactionRow, len(transactions))
