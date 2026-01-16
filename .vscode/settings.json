@@ -12,5 +12,12 @@
     "schemaregistry",
     "serde",
     "Warnf"
-  ]
+  ],
+  "golangci-lint.enable": true,
+  "golangci-lint.args": [
+    "--config",
+    ".golangci.yml"
+  ],
+  "golangci-lint.run": "onSave",
+  "golangci-lint.lint-tool": "golangci-lint"
 }

@@ -57,7 +57,7 @@ func TestParseTransactionFromJSON_InvalidJSON(t *testing.T) {
 	tx, err := ParseTransactionFromJSON(invalidJSON, blockNumber, blockHash, blockTime, chainID, txIndex)
 
 	assert.Nil(t, tx)
-	require.Error(t, err)
+	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal transaction JSON")
 }
 
@@ -84,7 +84,7 @@ func TestParseTransactionFromJSON_MissingChainID(t *testing.T) {
 	tx, err := ParseTransactionFromJSON(data, blockNumber, blockHash, blockTime, chainID, txIndex)
 
 	assert.Nil(t, tx)
-	require.Error(t, err)
+	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "transaction chainID is required but was not set")
 }
 
@@ -260,7 +260,7 @@ func TestTransactionsFromBlock_ZeroChainID(t *testing.T) {
 	txRows, err := TransactionsFromBlock(block, transactions)
 
 	assert.Nil(t, txRows)
-	require.Error(t, err)
+	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "block chainID is required")
 }
 
