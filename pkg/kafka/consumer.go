@@ -231,8 +231,10 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			return
 		}
 
+		c.log.Errorw("error processing message", "error", err, "partition", msg.TopicPartition.Partition, "offset", msg.TopicPartition.Offset)
+
 		if errors.Is(err, context.Canceled) {
-			c.log.Debugw("processing cancelled due to context",
+			c.log.Debugw("processing cancelled due to context cancellation",
 				"partition", msg.TopicPartition.Partition,
 				"offset", msg.TopicPartition.Offset,
 			)
@@ -296,6 +298,7 @@ func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error 
 // (with a 45s timeout), then closing the DLQ producer and Kafka consumer.
 // Returns an error from the Kafka consumer close operation.
 func (c *Consumer) close() error {
+	c.log.Info("closing consumer...")
 	done := make(chan struct{})
 	go func() {
 		c.wg.Wait()

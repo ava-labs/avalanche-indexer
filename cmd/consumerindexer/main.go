@@ -285,7 +285,8 @@ func run(c *cli.Context) error {
 		"maxConcurrency", maxConcurrency,
 	)
 
-	// Start consumer (blocks until shutdown)
+	// Start consumer (blocks until shutdown signal received)
+	// Consumer closes itself gracefully inside Start() before returning
 	if err := consumer.Start(ctx); err != nil {
 		return fmt.Errorf("consumer error: %w", err)
 	}
