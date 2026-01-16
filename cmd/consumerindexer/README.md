@@ -17,7 +17,7 @@ bin/consumerindexer run \
   --bootstrap-servers localhost:9092 \
   --group-id my-consumer-group \
   --topic blocks \
-  --dlq-topic blocks_dlq \
+  --dlq-topic blocks-dlq \
   --max-concurrency 10 \
   --clickhouse-hosts localhost:9000 \
   --clickhouse-username default
@@ -29,7 +29,7 @@ Or using environment variables:
 export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
 export KAFKA_GROUP_ID="my-consumer-group"
 export KAFKA_TOPIC="blocks"
-export KAFKA_DLQ_TOPIC="blocks_dlq"
+export KAFKA_DLQ_TOPIC="blocks-dlq"
 export CLICKHOUSE_HOSTS="localhost:9000"
 export CLICKHOUSE_USERNAME="default"
 bin/consumerindexer run --verbose
@@ -78,7 +78,7 @@ docker run --rm \
   -e KAFKA_BOOTSTRAP_SERVERS=kafka:9093 \
   -e KAFKA_GROUP_ID=my-consumer-group \
   -e KAFKA_TOPIC=blocks \
-  -e KAFKA_DLQ_TOPIC=blocks_dlq \
+  -e KAFKA_DLQ_TOPIC=blocks-dlq \
   -e KAFKA_MAX_CONCURRENCY=20 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
   -e CLICKHOUSE_USERNAME=default \
