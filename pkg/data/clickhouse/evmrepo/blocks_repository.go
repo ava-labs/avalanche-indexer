@@ -1,4 +1,4 @@
-package models
+package evmrepo
 
 import (
 	"context"
@@ -7,21 +7,20 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// BlocksRepository provides methods to write blocks to ClickHouse
-type BlocksRepository interface {
+// Blocks provides methods to write blocks to ClickHouse
+type Blocks interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteBlock(ctx context.Context, block *BlockRow) error
-	BlockExists(ctx context.Context, chainID uint32, blockNumber uint64, blockHash string) (bool, error)
 }
 
-type blocksRepository struct {
+type blocks struct {
 	client    clickhouse.Client
 	tableName string
 }
 
-// NewBlocksRepository creates a new raw blocks repository and initializes the table
-func NewBlocksRepository(ctx context.Context, client clickhouse.Client, tableName string) (BlocksRepository, error) {
-	repo := &blocksRepository{
+// NewBlocks creates a new raw blocks repository and initializes the table
+func NewBlocks(ctx context.Context, client clickhouse.Client, tableName string) (Blocks, error) {
+	repo := &blocks{
 		client:    client,
 		tableName: tableName,
 	}
@@ -32,10 +31,11 @@ func NewBlocksRepository(ctx context.Context, client clickhouse.Client, tableNam
 }
 
 // CreateTableIfNotExists creates the raw_blocks table if it doesn't exist
-func (r *blocksRepository) CreateTableIfNotExists(ctx context.Context) error {
+func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			chain_id UInt32,
+			bc_id UInt32,
+			evm_id UInt32,
 			block_number UInt64,
 			hash String,
 			parent_hash String,
@@ -65,7 +65,7 @@ func (r *blocksRepository) CreateTableIfNotExists(ctx context.Context) error {
 			min_delay_excess UInt64
 		)
 		ENGINE = MergeTree
-		ORDER BY (chain_id, block_time, block_number)
+		ORDER BY (bc_id, block_time, block_number)
 		SETTINGS index_granularity = 8192
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -75,16 +75,16 @@ func (r *blocksRepository) CreateTableIfNotExists(ctx context.Context) error {
 }
 
 // WriteBlock inserts a raw block into ClickHouse
-func (r *blocksRepository) WriteBlock(ctx context.Context, block *BlockRow) error {
+func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			chain_id, block_number, hash, parent_hash, block_time, miner,
+			bc_id, evm_id, block_number, hash, parent_hash, block_time, miner,
 			difficulty, total_difficulty, size, gas_limit, gas_used,
 			base_fee_per_gas, block_gas_cost, state_root, transactions_root, receipts_root,
 			extra_data, block_extra_data, ext_data_hash, ext_data_gas_used,
 			mix_hash, nonce, sha3_uncles, uncles,
 			blob_gas_used, excess_blob_gas, parent_beacon_block_root, min_delay_excess
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
 	// For nullable nonce - convert empty string to nil
@@ -103,8 +103,19 @@ func (r *blocksRepository) WriteBlock(ctx context.Context, block *BlockRow) erro
 		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
 	}
 
+	// Convert *big.Int to uint32 for ClickHouse
+	var bcID uint32
+	if block.BcID != nil {
+		bcID = uint32(block.BcID.Uint64())
+	}
+	var evmID uint32
+	if block.EvmID != nil {
+		evmID = uint32(block.EvmID.Uint64())
+	}
+
 	err := r.client.Conn().Exec(ctx, query,
-		block.ChainID,
+		bcID,
+		evmID,
 		block.BlockNumber,
 		block.Hash,
 		block.ParentHash,
@@ -137,20 +148,4 @@ func (r *blocksRepository) WriteBlock(ctx context.Context, block *BlockRow) erro
 		return fmt.Errorf("failed to write block: %w", err)
 	}
 	return nil
-}
-
-// BlockExists checks if a block already exists in the database
-func (r *blocksRepository) BlockExists(ctx context.Context, chainID uint32, blockNumber uint64, blockHash string) (bool, error) {
-	query := fmt.Sprintf(`
-		SELECT COUNT(*) 
-		FROM %s 
-		WHERE chain_id = ? AND block_number = ? AND hash = ?
-	`, r.tableName)
-
-	row := r.client.Conn().QueryRow(ctx, query, chainID, blockNumber, blockHash)
-	var count uint64
-	if err := row.Scan(&count); err != nil {
-		return false, fmt.Errorf("failed to check if block exists: %w", err)
-	}
-	return count > 0, nil
 }

@@ -1,7 +1,8 @@
-package models
+package evmrepo
 
 import (
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
@@ -35,7 +36,8 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
 		}),
-			tx.ChainID,
+			tx.BcID,
+			tx.EvmID,
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -55,7 +57,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactionsRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -81,7 +83,8 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	// Expect WriteTransaction call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
-			tx.ChainID,
+			tx.BcID,
+			tx.EvmID,
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -101,7 +104,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewTransactionsRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.ErrorIs(t, err, execErr)
@@ -132,7 +135,8 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
 		}),
-			tx.ChainID,
+			tx.BcID,
+			tx.EvmID,
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -152,7 +156,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactionsRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -169,7 +173,8 @@ func createTestTransaction() *TransactionRow {
 	maxPriority := "2000000000"
 
 	return &TransactionRow{
-		ChainID:          43113,
+		BcID:             big.NewInt(43113),
+		EvmID:            big.NewInt(0),
 		BlockNumber:      1647,
 		BlockHash:        blockHash,
 		BlockTime:        time.Unix(1604768510, 0).UTC(),

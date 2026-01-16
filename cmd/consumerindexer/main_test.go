@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,12 +19,12 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	t.Parallel()
 
 	block := createTestBlock()
-	chainID := uint32(43113)
 
-	blockRow := corethBlockToBlockRow(block, chainID)
+	blockRow := corethBlockToBlockRow(block)
 
 	require.NotNil(t, blockRow)
-	assert.Equal(t, chainID, blockRow.ChainID)
+	assert.Equal(t, block.BcID, blockRow.BcID)
+	assert.Equal(t, block.EvmID, blockRow.EvmID)
 	assert.Equal(t, uint64(1647), blockRow.BlockNumber)
 	assert.Equal(t, testBlockHash, blockRow.Hash)
 	assert.Equal(t, "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40", blockRow.ParentHash)
@@ -41,9 +41,8 @@ func TestCorethBlockToBlockRow_NilNumber(t *testing.T) {
 
 	block := createTestBlock()
 	block.Number = nil
-	chainID := uint32(43113)
 
-	blockRow := corethBlockToBlockRow(block, chainID)
+	blockRow := corethBlockToBlockRow(block)
 
 	require.NotNil(t, blockRow)
 	assert.Equal(t, uint64(0), blockRow.BlockNumber)
@@ -58,9 +57,8 @@ func TestCorethBlockToBlockRow_OptionalFields(t *testing.T) {
 	block.ExcessBlobGas = uintPtr(2000)
 	block.ParentBeaconBlockRoot = "0xbeaconroot1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	block.MinDelayExcess = 5000
-	chainID := uint32(43113)
 
-	blockRow := corethBlockToBlockRow(block, chainID)
+	blockRow := corethBlockToBlockRow(block)
 
 	require.NotNil(t, blockRow)
 	assert.Equal(t, uint64(470000000000), blockRow.BaseFeePerGas)
@@ -81,7 +79,8 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
-	assert.Equal(t, uint32(43113), txRow.ChainID)
+	assert.Equal(t, uint32(43113), txRow.BcID)
+	assert.Equal(t, uint32(0), txRow.EvmID)
 	assert.Equal(t, uint64(1647), txRow.BlockNumber)
 	assert.Equal(t, testBlockHash, txRow.BlockHash)
 	assert.Equal(t, time.Unix(1604768510, 0).UTC(), txRow.BlockTime)
@@ -160,18 +159,18 @@ func TestCorethTransactionToTransactionRow_MaxFeeFields(t *testing.T) {
 	assert.Equal(t, "2000000000", *txRow.MaxPriorityFee)
 }
 
-func TestCorethTransactionToTransactionRow_NilChainID(t *testing.T) {
+func TestCorethTransactionToTransactionRow_NilBlockchainID(t *testing.T) {
 	t.Parallel()
 
 	tx := createTestTransaction()
 	block := createTestBlock()
-	block.ChainID = nil // Nil chainID
+	block.BcID = nil // Nil blockchain ID
 	txIndex := uint64(0)
 
 	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
 
 	assert.Nil(t, txRow)
-	require.ErrorIs(t, err, models.ErrBlockChainIDRequiredForTx)
+	require.ErrorIs(t, err, evmrepo.ErrBlockChainIDRequiredForTx)
 }
 
 func TestCorethTransactionToTransactionRow_NilNumber(t *testing.T) {
@@ -209,7 +208,7 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	blockJSON := &coreth.Block{
 		Number: big.NewInt(1647),
 		Hash:   testBlockHash,
-		// ChainID is nil
+		// BcID is nil
 		Transactions: []*coreth.Transaction{},
 	}
 
@@ -221,13 +220,13 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 
 	err = processBlockMessage(t.Context(), data, repos, sugar)
 
-	require.ErrorIs(t, err, models.ErrBlockChainIDRequired)
+	require.ErrorIs(t, err, evmrepo.ErrBlockChainIDRequired)
 }
 
 // Helper function to create a test block
 func createTestBlock() *coreth.Block {
 	return &coreth.Block{
-		ChainID:          big.NewInt(43113),
+		BcID:             big.NewInt(43113),
 		Number:           big.NewInt(1647),
 		Hash:             testBlockHash,
 		ParentHash:       "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
@@ -254,7 +253,7 @@ func createTestBlock() *coreth.Block {
 				Value:    big.NewInt(1000000000000000000),
 				Gas:      21000,
 				GasPrice: big.NewInt(470000000000),
-				ChainID:  big.NewInt(43113),
+				BcID:     big.NewInt(43113),
 			},
 		},
 	}
@@ -270,7 +269,7 @@ func createTestTransaction() *coreth.Transaction {
 		Value:    big.NewInt(1000000000000000000),
 		Gas:      21000,
 		GasPrice: big.NewInt(470000000000),
-		ChainID:  big.NewInt(43113),
+		BcID:     big.NewInt(43113),
 	}
 }
 

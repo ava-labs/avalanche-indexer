@@ -1,18 +1,20 @@
-package models
+package evmrepo
 
 import (
 	"errors"
+	"math/big"
 	"time"
 )
 
 // Sentinel errors for block parsing
 var (
-	ErrBlockChainIDRequired = errors.New("block chainID is required but was not set")
+	ErrBlockChainIDRequired = errors.New("block blockchain ID is required but was not set")
 )
 
 // BlockRow represents a block row in the database
 type BlockRow struct {
-	ChainID               uint32
+	BcID                  *big.Int // Blockchain ID
+	EvmID                 *big.Int // EVM Chain ID (defaults to 0 for now)
 	BlockNumber           uint64
 	Hash                  string
 	ParentHash            string

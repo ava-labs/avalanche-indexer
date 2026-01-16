@@ -1,19 +1,21 @@
-package models
+package evmrepo
 
 import (
 	"errors"
+	"math/big"
 	"time"
 )
 
 // Sentinel errors for transaction parsing
 var (
-	ErrTransactionChainIDRequired = errors.New("transaction chainID is required but was not set")
-	ErrBlockChainIDRequiredForTx  = errors.New("block chainID is required")
+	ErrTransactionChainIDRequired = errors.New("transaction blockchain ID is required but was not set")
+	ErrBlockChainIDRequiredForTx  = errors.New("block blockchain ID is required")
 )
 
 // TransactionRow represents a transaction row in the database
 type TransactionRow struct {
-	ChainID          uint32
+	BcID             *big.Int // Blockchain ID
+	EvmID            *big.Int // EVM Chain ID (defaults to 0 for now)
 	BlockNumber      uint64
 	BlockHash        string
 	BlockTime        time.Time

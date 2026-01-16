@@ -1,7 +1,8 @@
-package models
+package evmrepo
 
 import (
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
@@ -51,7 +52,8 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
 		}),
-			block.ChainID,            // uint32: 43113
+			block.BcID,               // uint32: 43113
+			block.EvmID,              // uint32: 0
 			block.BlockNumber,        // uint64: 1647
 			block.Hash,               // string
 			block.ParentHash,         // string
@@ -83,7 +85,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewBlocksRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.NoError(t, err)
@@ -125,7 +127,8 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	// Expect WriteBlock call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
-			block.ChainID,
+			block.BcID,
+			block.EvmID,
 			block.BlockNumber,
 			block.Hash,
 			block.ParentHash,
@@ -157,7 +160,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewBlocksRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.ErrorIs(t, err, execErr)
@@ -174,7 +177,8 @@ func createTestBlock() *BlockRow {
 	nonce := "0x55565758595a5b5c"
 
 	return &BlockRow{
-		ChainID:               43113,
+		BcID:                  big.NewInt(43113),
+		EvmID:                 big.NewInt(0),
 		BlockNumber:           1647,
 		Hash:                  hash,
 		ParentHash:            parentHash,

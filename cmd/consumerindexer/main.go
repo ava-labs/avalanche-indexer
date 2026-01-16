@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"os/signal"
 	"strconv"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -27,8 +28,8 @@ const (
 
 // repositories holds all the repositories needed for processing messages
 type repositories struct {
-	blocks       models.BlocksRepository
-	transactions models.TransactionsRepository
+	blocks       evmrepo.Blocks
+	transactions evmrepo.Transactions
 }
 
 func main() {
@@ -244,13 +245,13 @@ func run(c *cli.Context) error {
 	sugar.Info("ClickHouse client created successfully")
 
 	// Initialize repositories (tables are created automatically)
-	blocksRepo, err := models.NewBlocksRepository(ctx, chClient, rawBlocksTableName)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create blocks repository: %w", err)
 	}
 	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
 
-	transactionsRepo, err := models.NewTransactionsRepository(ctx, chClient, rawTransactionsTableName)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create transactions repository: %w", err)
 	}
@@ -418,33 +419,6 @@ func processBlockMessage(ctx context.Context, data []byte, repos *repositories, 
 		return fmt.Errorf("failed to unmarshal block JSON: %w", err)
 	}
 
-	// Validate chainID
-	if block.ChainID == nil {
-		return models.ErrBlockChainIDRequired
-	}
-	chainID := uint32(block.ChainID.Uint64())
-
-	// Extract block number and hash for idempotency check
-	var blockNumber uint64
-	if block.Number != nil {
-		blockNumber = block.Number.Uint64()
-	}
-	blockHash := block.Hash
-
-	// Check if block already exists (idempotency check)
-	exists, err := repos.blocks.BlockExists(ctx, chainID, blockNumber, blockHash)
-	if err != nil {
-		return fmt.Errorf("failed to check if block exists: %w", err)
-	}
-	if exists {
-		sugar.Debugw("block already exists, skipping",
-			"chainID", chainID,
-			"blockNumber", blockNumber,
-			"blockHash", blockHash,
-		)
-		return nil
-	}
-
 	// Process the block
 	if err := processBlock(ctx, &block, repos, sugar); err != nil {
 		return err
@@ -462,14 +436,13 @@ func processBlockMessage(ctx context.Context, data []byte, repos *repositories, 
 
 // processBlock converts a coreth.Block to BlockRow and writes it to ClickHouse
 func processBlock(ctx context.Context, block *coreth.Block, repos *repositories, sugar *zap.SugaredLogger) error {
-	// Validate chainID
-	if block.ChainID == nil {
-		return models.ErrBlockChainIDRequired
+	// Validate blockchain ID
+	if block.BcID == nil {
+		return evmrepo.ErrBlockChainIDRequired
 	}
-	chainID := uint32(block.ChainID.Uint64())
 
 	// Convert to BlockRow
-	blockRow := corethBlockToBlockRow(block, chainID)
+	blockRow := corethBlockToBlockRow(block)
 
 	// Write the block
 	if err := repos.blocks.WriteBlock(ctx, blockRow); err != nil {
@@ -477,7 +450,8 @@ func processBlock(ctx context.Context, block *coreth.Block, repos *repositories,
 	}
 
 	sugar.Debugw("successfully wrote block",
-		"chainID", blockRow.ChainID,
+		"bcID", blockRow.BcID,
+		"evmID", blockRow.EvmID,
 		"blockNumber", blockRow.BlockNumber,
 		"nonce", blockRow.Nonce,
 	)
@@ -487,11 +461,10 @@ func processBlock(ctx context.Context, block *coreth.Block, repos *repositories,
 
 // processTransactions converts transactions from a coreth.Block to TransactionRow and writes them to ClickHouse
 func processTransactions(ctx context.Context, block *coreth.Block, repos *repositories, sugar *zap.SugaredLogger) error {
-	// Validate chainID
-	if block.ChainID == nil {
-		return models.ErrBlockChainIDRequiredForTx
+	// Validate blockchain ID
+	if block.BcID == nil {
+		return evmrepo.ErrBlockChainIDRequiredForTx
 	}
-	chainID := uint32(block.ChainID.Uint64())
 
 	// Convert and write each transaction
 	// TODO: Add batching (in a future PR)
@@ -512,7 +485,8 @@ func processTransactions(ctx context.Context, block *coreth.Block, repos *reposi
 	}
 
 	sugar.Debugw("successfully wrote transactions",
-		"chainID", chainID,
+		"bcID", block.BcID,
+		"evmID", block.EvmID,
 		"blockNumber", blockNumber,
 		"transactionCount", len(block.Transactions),
 	)
@@ -521,15 +495,24 @@ func processTransactions(ctx context.Context, block *coreth.Block, repos *reposi
 }
 
 // corethBlockToBlockRow converts a coreth.Block to BlockRow
-func corethBlockToBlockRow(block *coreth.Block, chainID uint32) *models.BlockRow {
+func corethBlockToBlockRow(block *coreth.Block) *evmrepo.BlockRow {
 	// Extract number from big.Int
 	var blockNumber uint64
 	if block.Number != nil {
 		blockNumber = block.Number.Uint64()
 	}
 
-	blockRow := &models.BlockRow{
-		ChainID:     chainID,
+	// Set EvmID, defaulting to 0 if nil
+	var evmID *big.Int
+	if block.EvmID != nil {
+		evmID = block.EvmID
+	} else {
+		evmID = big.NewInt(0)
+	}
+
+	blockRow := &evmrepo.BlockRow{
+		BcID:        block.BcID,
+		EvmID:       evmID,
 		BlockNumber: blockNumber,
 		Size:        block.Size,
 		GasLimit:    block.GasLimit,
@@ -578,12 +561,11 @@ func corethBlockToBlockRow(block *coreth.Block, chainID uint32) *models.BlockRow
 }
 
 // corethTransactionToTransactionRow converts a coreth.Transaction to TransactionRow
-func corethTransactionToTransactionRow(tx *coreth.Transaction, block *coreth.Block, txIndex uint64) (*models.TransactionRow, error) {
-	// Extract chainID from block
-	if block.ChainID == nil {
-		return nil, models.ErrBlockChainIDRequiredForTx
+func corethTransactionToTransactionRow(tx *coreth.Transaction, block *coreth.Block, txIndex uint64) (*evmrepo.TransactionRow, error) {
+	// Extract blockchain ID from block
+	if block.BcID == nil {
+		return nil, evmrepo.ErrBlockChainIDRequiredForTx
 	}
-	chainID := uint32(block.ChainID.Uint64())
 
 	// Extract block number
 	var blockNumber uint64
@@ -591,8 +573,17 @@ func corethTransactionToTransactionRow(tx *coreth.Transaction, block *coreth.Blo
 		blockNumber = block.Number.Uint64()
 	}
 
-	txRow := &models.TransactionRow{
-		ChainID:          chainID,
+	// Set EvmID, defaulting to 0 if nil
+	var evmID *big.Int
+	if block.EvmID != nil {
+		evmID = block.EvmID
+	} else {
+		evmID = big.NewInt(0)
+	}
+
+	txRow := &evmrepo.TransactionRow{
+		BcID:             block.BcID,
+		EvmID:            evmID,
 		BlockNumber:      blockNumber,
 		BlockHash:        block.Hash,
 		BlockTime:        time.Unix(int64(block.Timestamp), 0).UTC(),

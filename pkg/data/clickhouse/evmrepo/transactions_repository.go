@@ -1,4 +1,4 @@
-package models
+package evmrepo
 
 import (
 	"context"
@@ -7,20 +7,20 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// TransactionsRepository provides methods to write transactions to ClickHouse
-type TransactionsRepository interface {
+// Transactions provides methods to write transactions to ClickHouse
+type Transactions interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteTransaction(ctx context.Context, tx *TransactionRow) error
 }
 
-type transactionsRepository struct {
+type transactions struct {
 	client    clickhouse.Client
 	tableName string
 }
 
-// NewTransactionsRepository creates a new raw transactions repository and initializes the table
-func NewTransactionsRepository(ctx context.Context, client clickhouse.Client, tableName string) (TransactionsRepository, error) {
-	repo := &transactionsRepository{
+// NewTransactions creates a new raw transactions repository and initializes the table
+func NewTransactions(ctx context.Context, client clickhouse.Client, tableName string) (Transactions, error) {
+	repo := &transactions{
 		client:    client,
 		tableName: tableName,
 	}
@@ -31,10 +31,11 @@ func NewTransactionsRepository(ctx context.Context, client clickhouse.Client, ta
 }
 
 // CreateTableIfNotExists creates the raw_transactions table if it doesn't exist
-func (r *transactionsRepository) CreateTableIfNotExists(ctx context.Context) error {
+func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			chain_id UInt32,
+			bc_id UInt32,
+			evm_id UInt32,
 			block_number UInt64,
 			block_hash String,
 			block_time DateTime64(3, 'UTC'),
@@ -52,7 +53,7 @@ func (r *transactionsRepository) CreateTableIfNotExists(ctx context.Context) err
 			transaction_index UInt64
 		)
 		ENGINE = MergeTree
-		ORDER BY (chain_id, block_time, hash)
+		ORDER BY (bc_id, block_time, hash)
 		SETTINGS index_granularity = 8192
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -62,17 +63,28 @@ func (r *transactionsRepository) CreateTableIfNotExists(ctx context.Context) err
 }
 
 // WriteTransaction inserts a raw transaction into ClickHouse
-func (r *transactionsRepository) WriteTransaction(ctx context.Context, tx *TransactionRow) error {
+func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			chain_id, block_number, block_hash, block_time, hash,
+			bc_id, evm_id, block_number, block_hash, block_time, hash,
 			from_address, to_address, nonce, value, gas, gas_price,
 			max_fee_per_gas, max_priority_fee, input, type, transaction_index
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
+	// Convert *big.Int to uint32 for ClickHouse
+	var bcID uint32
+	if tx.BcID != nil {
+		bcID = uint32(tx.BcID.Uint64())
+	}
+	var evmID uint32
+	if tx.EvmID != nil {
+		evmID = uint32(tx.EvmID.Uint64())
+	}
+
 	err := r.client.Conn().Exec(ctx, query,
-		tx.ChainID,
+		bcID,
+		evmID,
 		tx.BlockNumber,
 		tx.BlockHash,
 		tx.BlockTime,

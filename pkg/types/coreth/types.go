@@ -18,7 +18,8 @@ type Block struct {
 	Hash       string   `json:"hash"`
 	ParentHash string   `json:"parentHash"`
 
-	ChainID *big.Int `json:"chainId,omitempty"`
+	BcID  *big.Int `json:"bcId,omitempty"`
+	EvmID *big.Int `json:"evmId,omitempty"`
 
 	StateRoot        string `json:"stateRoot"`
 	TransactionsRoot string `json:"transactionsRoot"`
@@ -66,7 +67,8 @@ type Transaction struct {
 	MaxPriorityFee *big.Int `json:"maxPriorityFeePerGas"`
 	Input          string   `json:"input"`
 	Type           uint8    `json:"type"`
-	ChainID        *big.Int `json:"chainId"`
+	BcID           *big.Int `json:"bcId"`
+	EvmID          *big.Int `json:"evmId"`
 }
 
 type Withdrawal struct {
@@ -103,7 +105,7 @@ func BlockFromLibevm(block *libevmtypes.Block, chainID *big.Int) (*Block, error)
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
-		ChainID:               chainID,
+		BcID:                  chainID,
 		GasLimit:              block.GasLimit(),
 		GasUsed:               block.GasUsed(),
 		BaseFee:               block.BaseFee(),
@@ -157,7 +159,7 @@ func TransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*Transac
 			MaxPriorityFee: tx.GasTipCap(),
 			Input:          hexutil.Encode(tx.Data()),
 			Type:           tx.Type(),
-			ChainID:        tx.ChainId(),
+			BcID:           tx.ChainId(),
 		}
 	}
 	return result, nil
