@@ -241,16 +241,10 @@ func run(c *cli.Context) error {
 		transactions: models.NewTransactionsRepository(chClient, rawTransactionsTableName),
 	}
 
-	// Create tables if they don't exist
-	if err := repos.blocks.CreateTableIfNotExists(ctx); err != nil {
-		return fmt.Errorf("failed to create blocks table: %w", err)
+	// Initialize tables
+	if err := initializeTables(ctx, repos, rawBlocksTableName, rawTransactionsTableName, sugar); err != nil {
+		return err
 	}
-	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
-
-	if err := repos.transactions.CreateTableIfNotExists(ctx); err != nil {
-		return fmt.Errorf("failed to create transactions table: %w", err)
-	}
-	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
 
 	// Create Kafka consumer
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
@@ -354,6 +348,21 @@ func run(c *cli.Context) error {
 	}
 }
 
+// initializeTables creates all required ClickHouse tables if they don't exist
+func initializeTables(ctx context.Context, repos *repositories, blocksTableName, transactionsTableName string, sugar *zap.SugaredLogger) error {
+	if err := repos.blocks.CreateTableIfNotExists(ctx); err != nil {
+		return fmt.Errorf("failed to create blocks table: %w", err)
+	}
+	sugar.Info("Blocks table ready", "tableName", blocksTableName)
+
+	if err := repos.transactions.CreateTableIfNotExists(ctx); err != nil {
+		return fmt.Errorf("failed to create transactions table: %w", err)
+	}
+	sugar.Info("Transactions table ready", "tableName", transactionsTableName)
+
+	return nil
+}
+
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
 func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 	// Handle hosts - StringSliceFlag returns []string, but we need to handle comma-separated values
@@ -431,15 +440,15 @@ func processBlockMessage(ctx context.Context, data []byte, repos *repositories, 
 }
 
 // processTransactionsFromBlock extracts and writes transactions from a block
-func processTransactionsFromBlock(ctx context.Context, block *models.ClickhouseBlock, transactions []*coreth.Transaction, repos *repositories, sugar *zap.SugaredLogger) error {
-	clickhouseTxs, err := models.TransactionsFromBlock(block, transactions)
+func processTransactionsFromBlock(ctx context.Context, block *models.BlockRow, transactions []*coreth.Transaction, repos *repositories, sugar *zap.SugaredLogger) error {
+	txRows, err := models.TransactionsFromBlock(block, transactions)
 	if err != nil {
 		return fmt.Errorf("failed to convert transactions: %w", err)
 	}
 
 	// Write each transaction
 	// TODO: Add batching (in a future PR)
-	for _, tx := range clickhouseTxs {
+	for _, tx := range txRows {
 		if err := repos.transactions.WriteTransaction(ctx, tx); err != nil {
 			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
 		}
@@ -448,7 +457,7 @@ func processTransactionsFromBlock(ctx context.Context, block *models.ClickhouseB
 	sugar.Debugw("successfully wrote transactions",
 		"chainID", block.ChainID,
 		"blockNumber", block.BlockNumber,
-		"transactionCount", len(clickhouseTxs),
+		"transactionCount", len(txRows),
 	)
 
 	return nil

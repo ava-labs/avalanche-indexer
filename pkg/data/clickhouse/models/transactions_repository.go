@@ -10,7 +10,7 @@ import (
 // TransactionsRepository provides methods to write transactions to ClickHouse
 type TransactionsRepository interface {
 	CreateTableIfNotExists(ctx context.Context) error
-	WriteTransaction(ctx context.Context, tx *ClickhouseTransaction) error
+	WriteTransaction(ctx context.Context, tx *TransactionRow) error
 }
 
 type transactionsRepository struct {
@@ -58,7 +58,7 @@ func (r *transactionsRepository) CreateTableIfNotExists(ctx context.Context) err
 }
 
 // WriteTransaction inserts a raw transaction into ClickHouse
-func (r *transactionsRepository) WriteTransaction(ctx context.Context, tx *ClickhouseTransaction) error {
+func (r *transactionsRepository) WriteTransaction(ctx context.Context, tx *TransactionRow) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			chain_id, block_number, block_hash, block_time, hash,

@@ -10,7 +10,7 @@ import (
 // BlocksRepository provides methods to write blocks to ClickHouse
 type BlocksRepository interface {
 	CreateTableIfNotExists(ctx context.Context) error
-	WriteBlock(ctx context.Context, block *ClickhouseBlock) error
+	WriteBlock(ctx context.Context, block *BlockRow) error
 }
 
 type blocksRepository struct {
@@ -70,7 +70,7 @@ func (r *blocksRepository) CreateTableIfNotExists(ctx context.Context) error {
 }
 
 // WriteBlock inserts a raw block into ClickHouse
-func (r *blocksRepository) WriteBlock(ctx context.Context, block *ClickhouseBlock) error {
+func (r *blocksRepository) WriteBlock(ctx context.Context, block *BlockRow) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			chain_id, block_number, hash, parent_hash, block_time, miner,

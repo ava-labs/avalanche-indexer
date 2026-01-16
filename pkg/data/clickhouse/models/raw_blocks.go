@@ -10,8 +10,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
 )
 
-// ClickhouseBlock represents a block row in the raw_blocks ClickHouse table
-type ClickhouseBlock struct {
+// BlockRow represents a block row in the database
+type BlockRow struct {
 	ChainID               uint32
 	BlockNumber           uint64
 	Hash                  string
@@ -42,9 +42,9 @@ type ClickhouseBlock struct {
 	MinDelayExcess        uint64
 }
 
-// ParseBlockFromJSON parses a JSON block from Kafka and converts it to ClickhouseBlock
-// Returns both the ClickhouseBlock and the transactions from the parsed block
-func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, []*coreth.Transaction, error) {
+// ParseBlockFromJSON parses a JSON block from Kafka and converts it to BlockRow
+// Returns both the BlockRow and the transactions from the parsed block
+func ParseBlockFromJSON(data []byte) (*BlockRow, []*coreth.Transaction, error) {
 	// Unmarshal to coreth.Block
 	var block coreth.Block
 	if err := json.Unmarshal(data, &block); err != nil {
@@ -57,21 +57,21 @@ func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, []*coreth.Transaction, e
 	}
 	chainID := uint32(block.ChainID.Uint64())
 
-	clickhouseBlock := corethBlockToClickhouseBlock(&block, chainID)
+	blockRow := corethBlockToBlockRow(&block, chainID)
 
 	// Return the block and transactions (already unmarshaled, no need to parse again)
-	return clickhouseBlock, block.Transactions, nil
+	return blockRow, block.Transactions, nil
 }
 
-// corethBlockToClickhouseBlock converts a coreth.Block to ClickhouseBlock
-func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) *ClickhouseBlock {
+// corethBlockToBlockRow converts a coreth.Block to BlockRow
+func corethBlockToBlockRow(block *coreth.Block, chainID uint32) *BlockRow {
 	// Extract number from big.Int
 	var blockNumber uint64
 	if block.Number != nil {
 		blockNumber = block.Number.Uint64()
 	}
 
-	clickhouseBlock := &ClickhouseBlock{
+	blockRow := &BlockRow{
 		ChainID:     chainID,
 		BlockNumber: blockNumber,
 		Size:        block.Size,
@@ -83,39 +83,39 @@ func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) *Clickhou
 
 	// Set difficulty from big.Int
 	if block.Difficulty != nil {
-		clickhouseBlock.Difficulty = block.Difficulty.Uint64()
-		clickhouseBlock.TotalDifficulty = block.Difficulty.Uint64() // Using same value for now
+		blockRow.Difficulty = block.Difficulty.Uint64()
+		blockRow.TotalDifficulty = block.Difficulty.Uint64() // Using same value for now
 	}
 
 	// Direct string assignments - no conversions needed
-	clickhouseBlock.Hash = block.Hash
-	clickhouseBlock.ParentHash = block.ParentHash
-	clickhouseBlock.StateRoot = block.StateRoot
-	clickhouseBlock.TransactionsRoot = block.TransactionsRoot
-	clickhouseBlock.ReceiptsRoot = block.ReceiptsRoot
-	clickhouseBlock.Sha3Uncles = block.UncleHash
-	clickhouseBlock.MixHash = block.MixHash
-	clickhouseBlock.Miner = block.Miner
+	blockRow.Hash = block.Hash
+	blockRow.ParentHash = block.ParentHash
+	blockRow.StateRoot = block.StateRoot
+	blockRow.TransactionsRoot = block.TransactionsRoot
+	blockRow.ReceiptsRoot = block.ReceiptsRoot
+	blockRow.Sha3Uncles = block.UncleHash
+	blockRow.MixHash = block.MixHash
+	blockRow.Miner = block.Miner
 
 	// Parse nonce - convert uint64 to hex string
-	clickhouseBlock.Nonce = strconv.FormatUint(block.Nonce, 16)
+	blockRow.Nonce = strconv.FormatUint(block.Nonce, 16)
 
 	// Optional fields
 	if block.BaseFee != nil {
-		clickhouseBlock.BaseFeePerGas = block.BaseFee.Uint64()
+		blockRow.BaseFeePerGas = block.BaseFee.Uint64()
 	}
 	if block.BlobGasUsed != nil {
-		clickhouseBlock.BlobGasUsed = *block.BlobGasUsed
+		blockRow.BlobGasUsed = *block.BlobGasUsed
 	}
 	if block.ExcessBlobGas != nil {
-		clickhouseBlock.ExcessBlobGas = *block.ExcessBlobGas
+		blockRow.ExcessBlobGas = *block.ExcessBlobGas
 	}
 	if block.ParentBeaconBlockRoot != "" {
-		clickhouseBlock.ParentBeaconBlockRoot = block.ParentBeaconBlockRoot
+		blockRow.ParentBeaconBlockRoot = block.ParentBeaconBlockRoot
 	}
 	if block.MinDelayExcess != 0 {
-		clickhouseBlock.MinDelayExcess = block.MinDelayExcess
+		blockRow.MinDelayExcess = block.MinDelayExcess
 	}
 
-	return clickhouseBlock
+	return blockRow
 }
