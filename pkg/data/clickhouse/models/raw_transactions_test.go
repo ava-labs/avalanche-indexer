@@ -19,7 +19,7 @@ func TestParseTransactionFromJSON_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	blockNumber := uint64(1647)
-	blockHash := "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	blockHash := testBlockHash
 	blockTime := time.Unix(1604768510, 0).UTC()
 	chainID := uint32(43113)
 	txIndex := uint64(0)
@@ -49,7 +49,7 @@ func TestParseTransactionFromJSON_InvalidJSON(t *testing.T) {
 
 	invalidJSON := []byte(`{invalid json}`)
 	blockNumber := uint64(1647)
-	blockHash := "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	blockHash := testBlockHash
 	blockTime := time.Unix(1604768510, 0).UTC()
 	chainID := uint32(43113)
 	txIndex := uint64(0)
@@ -57,7 +57,7 @@ func TestParseTransactionFromJSON_InvalidJSON(t *testing.T) {
 	tx, err := ParseTransactionFromJSON(invalidJSON, blockNumber, blockHash, blockTime, chainID, txIndex)
 
 	assert.Nil(t, tx)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal transaction JSON")
 }
 
@@ -76,7 +76,7 @@ func TestParseTransactionFromJSON_MissingChainID(t *testing.T) {
 	require.NoError(t, err)
 
 	blockNumber := uint64(1647)
-	blockHash := "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	blockHash := testBlockHash
 	blockTime := time.Unix(1604768510, 0).UTC()
 	chainID := uint32(0) // Zero chainID means we need to extract from transaction
 	txIndex := uint64(0)
@@ -84,7 +84,7 @@ func TestParseTransactionFromJSON_MissingChainID(t *testing.T) {
 	tx, err := ParseTransactionFromJSON(data, blockNumber, blockHash, blockTime, chainID, txIndex)
 
 	assert.Nil(t, tx)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "transaction chainID is required but was not set")
 }
 
@@ -103,7 +103,7 @@ func TestParseTransactionFromJSON_ExtractChainIDFromTransaction(t *testing.T) {
 	require.NoError(t, err)
 
 	blockNumber := uint64(1647)
-	blockHash := "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	blockHash := testBlockHash
 	blockTime := time.Unix(1604768510, 0).UTC()
 	chainID := uint32(0) // Zero means extract from transaction
 	txIndex := uint64(0)
@@ -133,7 +133,7 @@ func TestParseTransactionFromJSON_NilValue(t *testing.T) {
 	require.NoError(t, err)
 
 	blockNumber := uint64(1647)
-	blockHash := "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	blockHash := testBlockHash
 	blockTime := time.Unix(1604768510, 0).UTC()
 	chainID := uint32(43113)
 	txIndex := uint64(0)
@@ -164,7 +164,7 @@ func TestParseTransactionFromJSON_NilGasPrice(t *testing.T) {
 	require.NoError(t, err)
 
 	blockNumber := uint64(1647)
-	blockHash := "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	blockHash := testBlockHash
 	blockTime := time.Unix(1604768510, 0).UTC()
 	chainID := uint32(43113)
 	txIndex := uint64(0)
@@ -176,13 +176,14 @@ func TestParseTransactionFromJSON_NilGasPrice(t *testing.T) {
 	// GasPrice should default to "0" when nil
 	assert.Equal(t, "0", txRow.GasPrice)
 }
+
 func TestTransactionsFromBlock_Success(t *testing.T) {
 	t.Parallel()
 
 	block := &BlockRow{
 		ChainID:     43113,
 		BlockNumber: 1647,
-		Hash:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:        testBlockHash,
 		BlockTime:   time.Unix(1604768510, 0).UTC(),
 	}
 
@@ -214,7 +215,7 @@ func TestTransactionsFromBlock_Success(t *testing.T) {
 	// Verify first transaction
 	assert.Equal(t, uint32(43113), txRows[0].ChainID)
 	assert.Equal(t, uint64(1647), txRows[0].BlockNumber)
-	assert.Equal(t, "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20", txRows[0].BlockHash)
+	assert.Equal(t, testBlockHash, txRows[0].BlockHash)
 	assert.Equal(t, "0x1111111111111111111111111111111111111111111111111111111111111111", txRows[0].Hash)
 	assert.Equal(t, uint64(0), txRows[0].TransactionIndex)
 
@@ -229,7 +230,7 @@ func TestTransactionsFromBlock_EmptyTransactions(t *testing.T) {
 	block := &BlockRow{
 		ChainID:     43113,
 		BlockNumber: 1647,
-		Hash:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:        testBlockHash,
 		BlockTime:   time.Unix(1604768510, 0).UTC(),
 	}
 
@@ -244,7 +245,7 @@ func TestTransactionsFromBlock_ZeroChainID(t *testing.T) {
 	block := &BlockRow{
 		ChainID:     0, // Zero chainID
 		BlockNumber: 1647,
-		Hash:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:        testBlockHash,
 		BlockTime:   time.Unix(1604768510, 0).UTC(),
 	}
 
@@ -259,7 +260,7 @@ func TestTransactionsFromBlock_ZeroChainID(t *testing.T) {
 	txRows, err := TransactionsFromBlock(block, transactions)
 
 	assert.Nil(t, txRows)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "block chainID is required")
 }
 

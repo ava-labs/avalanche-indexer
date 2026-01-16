@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testBlockHash = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+
 func TestParseBlockFromJSON_Success(t *testing.T) {
 	t.Parallel()
 
@@ -27,7 +29,7 @@ func TestParseBlockFromJSON_Success(t *testing.T) {
 	// Verify block fields
 	assert.Equal(t, uint32(43113), blockRow.ChainID)
 	assert.Equal(t, uint64(1647), blockRow.BlockNumber)
-	assert.Equal(t, "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20", blockRow.Hash)
+	assert.Equal(t, testBlockHash, blockRow.Hash)
 	assert.Equal(t, "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40", blockRow.ParentHash)
 	assert.Equal(t, time.Unix(1604768510, 0).UTC(), blockRow.BlockTime)
 	assert.Equal(t, uint64(1331), blockRow.Size)
@@ -48,7 +50,7 @@ func TestParseBlockFromJSON_InvalidJSON(t *testing.T) {
 
 	assert.Nil(t, block)
 	assert.Nil(t, transactions)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal block JSON")
 }
 
@@ -57,7 +59,7 @@ func TestParseBlockFromJSON_MissingChainID(t *testing.T) {
 
 	blockJSON := &coreth.Block{
 		Number: big.NewInt(1647),
-		Hash:   "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:   testBlockHash,
 		// ChainID is nil
 		Transactions: []*coreth.Transaction{},
 	}
@@ -69,7 +71,7 @@ func TestParseBlockFromJSON_MissingChainID(t *testing.T) {
 
 	assert.Nil(t, block)
 	assert.Nil(t, transactions)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "block chainID is required but was not set")
 }
 
@@ -79,7 +81,7 @@ func TestParseBlockFromJSON_NoTransactions(t *testing.T) {
 	blockJSON := &coreth.Block{
 		ChainID:          big.NewInt(43113),
 		Number:           big.NewInt(1647),
-		Hash:             "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:             testBlockHash,
 		ParentHash:       "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
 		Timestamp:        1604768510,
 		Size:             1331,
@@ -88,11 +90,11 @@ func TestParseBlockFromJSON_NoTransactions(t *testing.T) {
 		Difficulty:       big.NewInt(1),
 		Nonce:            42,
 		Miner:            "0x4142434445464748494a4b4c4d4e4f5051525354",
-		StateRoot:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		TransactionsRoot: "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		ReceiptsRoot:     "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		UncleHash:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		MixHash:          "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		StateRoot:        testBlockHash,
+		TransactionsRoot: testBlockHash,
+		ReceiptsRoot:     testBlockHash,
+		UncleHash:        testBlockHash,
+		MixHash:          testBlockHash,
 		ExtraData:        "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		Transactions:     []*coreth.Transaction{}, // Empty transactions
 	}
@@ -142,7 +144,7 @@ func TestParseBlockFromJSON_OptionalFields(t *testing.T) {
 	blockJSON := &coreth.Block{
 		ChainID:               big.NewInt(43113),
 		Number:                big.NewInt(1647),
-		Hash:                  "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:                  testBlockHash,
 		ParentHash:            "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
 		Timestamp:             1604768510,
 		Size:                  1331,
@@ -151,11 +153,11 @@ func TestParseBlockFromJSON_OptionalFields(t *testing.T) {
 		Difficulty:            big.NewInt(1),
 		Nonce:                 42,
 		Miner:                 "0x4142434445464748494a4b4c4d4e4f5051525354",
-		StateRoot:             "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		TransactionsRoot:      "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		ReceiptsRoot:          "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		UncleHash:             "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		MixHash:               "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		StateRoot:             testBlockHash,
+		TransactionsRoot:      testBlockHash,
+		ReceiptsRoot:          testBlockHash,
+		UncleHash:             testBlockHash,
+		MixHash:               testBlockHash,
 		ExtraData:             "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		BaseFee:               big.NewInt(470000000000),
 		BlobGasUsed:           uintPtr(1000),
@@ -186,7 +188,7 @@ func TestParseBlockFromJSON_NilNumber(t *testing.T) {
 	blockJSON := &coreth.Block{
 		ChainID:          big.NewInt(43113),
 		Number:           nil, // nil number
-		Hash:             "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:             testBlockHash,
 		ParentHash:       "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
 		Timestamp:        1604768510,
 		Size:             1331,
@@ -195,11 +197,11 @@ func TestParseBlockFromJSON_NilNumber(t *testing.T) {
 		Difficulty:       big.NewInt(1),
 		Nonce:            42,
 		Miner:            "0x4142434445464748494a4b4c4d4e4f5051525354",
-		StateRoot:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		TransactionsRoot: "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		ReceiptsRoot:     "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		UncleHash:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		MixHash:          "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		StateRoot:        testBlockHash,
+		TransactionsRoot: testBlockHash,
+		ReceiptsRoot:     testBlockHash,
+		UncleHash:        testBlockHash,
+		MixHash:          testBlockHash,
 		ExtraData:        "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		Transactions:     []*coreth.Transaction{},
 	}
@@ -220,7 +222,7 @@ func createTestBlockJSON() *coreth.Block {
 	return &coreth.Block{
 		ChainID:          big.NewInt(43113),
 		Number:           big.NewInt(1647),
-		Hash:             "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		Hash:             testBlockHash,
 		ParentHash:       "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
 		Timestamp:        1604768510,
 		Size:             1331,
@@ -229,11 +231,11 @@ func createTestBlockJSON() *coreth.Block {
 		Difficulty:       big.NewInt(1),
 		Nonce:            42,
 		Miner:            "0x4142434445464748494a4b4c4d4e4f5051525354",
-		StateRoot:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		TransactionsRoot: "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		ReceiptsRoot:     "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		UncleHash:        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-		MixHash:          "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		StateRoot:        testBlockHash,
+		TransactionsRoot: testBlockHash,
+		ReceiptsRoot:     testBlockHash,
+		UncleHash:        testBlockHash,
+		MixHash:          testBlockHash,
 		ExtraData:        "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		BaseFee:          big.NewInt(470000000000),
 		Transactions: []*coreth.Transaction{

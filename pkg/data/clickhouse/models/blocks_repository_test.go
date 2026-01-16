@@ -146,7 +146,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 
 // Helper function to create a test block with all fields populated
 func createTestBlock() *BlockRow {
-	hash := "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	hash := testBlockHash
 	parentHash := "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
 	miner := "0x4142434445464748494a4b4c4d4e4f5051525354"
 	nonce := "0x55565758595a5b5c"
