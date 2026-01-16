@@ -198,7 +198,7 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 
 	err := processBlockMessage(t.Context(), invalidJSON, repos, sugar)
 
-	require.NotNil(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal block JSON")
 }
 
