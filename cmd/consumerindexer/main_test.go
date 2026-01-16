@@ -13,6 +13,23 @@ import (
 	"go.uber.org/zap"
 )
 
+// Helper to compare *big.Int values (handles nil cases)
+func assertBigIntEqual(t *testing.T, expected, actual *big.Int) {
+	t.Helper()
+	if expected == nil && actual == nil {
+		return
+	}
+	if expected == nil {
+		require.Nil(t, actual, "Expected nil, got %v", actual)
+		return
+	}
+	if actual == nil {
+		require.NotNil(t, actual, "Expected %v, got nil", expected)
+		return
+	}
+	assert.Equal(t, 0, expected.Cmp(actual), "Expected %s, got %s", expected.String(), actual.String())
+}
+
 const testBlockHash = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 
 func TestCorethBlockToBlockRow_Success(t *testing.T) {
@@ -23,8 +40,13 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	blockRow := corethBlockToBlockRow(block)
 
 	require.NotNil(t, blockRow)
-	assert.Equal(t, block.BcID, blockRow.BcID)
-	assert.Equal(t, block.EvmID, blockRow.EvmID)
+	assertBigIntEqual(t, block.BcID, blockRow.BcID)
+	// EvmID defaults to 0 if nil in the source block
+	if block.EvmID == nil {
+		assertBigIntEqual(t, big.NewInt(0), blockRow.EvmID)
+	} else {
+		assertBigIntEqual(t, block.EvmID, blockRow.EvmID)
+	}
 	assert.Equal(t, uint64(1647), blockRow.BlockNumber)
 	assert.Equal(t, testBlockHash, blockRow.Hash)
 	assert.Equal(t, "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40", blockRow.ParentHash)
@@ -79,8 +101,13 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
-	assert.Equal(t, uint32(43113), txRow.BcID)
-	assert.Equal(t, uint32(0), txRow.EvmID)
+	assertBigIntEqual(t, block.BcID, txRow.BcID)
+	// EvmID defaults to 0 if nil in the source block
+	if block.EvmID == nil {
+		assertBigIntEqual(t, big.NewInt(0), txRow.EvmID)
+	} else {
+		assertBigIntEqual(t, block.EvmID, txRow.EvmID)
+	}
 	assert.Equal(t, uint64(1647), txRow.BlockNumber)
 	assert.Equal(t, testBlockHash, txRow.BlockHash)
 	assert.Equal(t, time.Unix(1604768510, 0).UTC(), txRow.BlockTime)
