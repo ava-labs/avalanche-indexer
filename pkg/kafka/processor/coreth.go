@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"go.uber.org/zap"
 
@@ -12,14 +13,20 @@ import (
 )
 
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
+// If a repository is provided, persists blocks to ClickHouse.
 // Safe for concurrent use.
 type CorethProcessor struct {
-	log *zap.SugaredLogger
+	log  *zap.SugaredLogger
+	repo models.Repository
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
-func NewCorethProcessor(log *zap.SugaredLogger) *CorethProcessor {
-	return &CorethProcessor{log: log}
+// If repo is provided, blocks will be persisted to ClickHouse after processing.
+func NewCorethProcessor(log *zap.SugaredLogger, repo models.Repository) *CorethProcessor {
+	return &CorethProcessor{
+		log:  log,
+		repo: repo,
+	}
 }
 
 // Process unmarshals msg.Value into a Coreth Block and logs its details.
@@ -64,7 +71,23 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		"transactions", block.Transactions,
 	)
 
-	// TODO: Add block processing logic here (e.g., indexing, storage)
+	// Persist to ClickHouse if repository is configured
+	if p.repo != nil {
+		clickhouseBlock, err := models.ParseBlockFromJSON(msg.Value)
+		if err != nil {
+			return fmt.Errorf("failed to parse block for storage: %w", err)
+		}
+
+		if err := p.repo.WriteBlock(ctx, clickhouseBlock); err != nil {
+			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
+		}
+
+		p.log.Debugw("successfully persisted block to ClickHouse",
+			"chainID", clickhouseBlock.ChainID,
+			"blockNumber", clickhouseBlock.BlockNumber,
+			"hash", clickhouseBlock.Hash,
+		)
+	}
 
 	return nil
 }
