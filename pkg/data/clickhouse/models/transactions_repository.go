@@ -18,12 +18,16 @@ type transactionsRepository struct {
 	tableName string
 }
 
-// NewTransactionsRepository creates a new raw transactions repository
-func NewTransactionsRepository(client clickhouse.Client, tableName string) TransactionsRepository {
-	return &transactionsRepository{
+// NewTransactionsRepository creates a new raw transactions repository and initializes the table
+func NewTransactionsRepository(ctx context.Context, client clickhouse.Client, tableName string) (TransactionsRepository, error) {
+	repo := &transactionsRepository{
 		client:    client,
 		tableName: tableName,
 	}
+	if err := repo.CreateTableIfNotExists(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize transactions table: %w", err)
+	}
+	return repo, nil
 }
 
 // CreateTableIfNotExists creates the raw_transactions table if it doesn't exist

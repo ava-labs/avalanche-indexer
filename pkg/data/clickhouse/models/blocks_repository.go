@@ -11,6 +11,7 @@ import (
 type BlocksRepository interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteBlock(ctx context.Context, block *BlockRow) error
+	BlockExists(ctx context.Context, chainID uint32, blockNumber uint64, blockHash string) (bool, error)
 }
 
 type blocksRepository struct {
@@ -18,12 +19,16 @@ type blocksRepository struct {
 	tableName string
 }
 
-// NewBlocksRepository creates a new raw blocks repository
-func NewBlocksRepository(client clickhouse.Client, tableName string) BlocksRepository {
-	return &blocksRepository{
+// NewBlocksRepository creates a new raw blocks repository and initializes the table
+func NewBlocksRepository(ctx context.Context, client clickhouse.Client, tableName string) (BlocksRepository, error) {
+	repo := &blocksRepository{
 		client:    client,
 		tableName: tableName,
 	}
+	if err := repo.CreateTableIfNotExists(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize blocks table: %w", err)
+	}
+	return repo, nil
 }
 
 // CreateTableIfNotExists creates the raw_blocks table if it doesn't exist
@@ -132,4 +137,20 @@ func (r *blocksRepository) WriteBlock(ctx context.Context, block *BlockRow) erro
 		return fmt.Errorf("failed to write block: %w", err)
 	}
 	return nil
+}
+
+// BlockExists checks if a block already exists in the database
+func (r *blocksRepository) BlockExists(ctx context.Context, chainID uint32, blockNumber uint64, blockHash string) (bool, error) {
+	query := fmt.Sprintf(`
+		SELECT COUNT(*) 
+		FROM %s 
+		WHERE chain_id = ? AND block_number = ? AND hash = ?
+	`, r.tableName)
+
+	row := r.client.Conn().QueryRow(ctx, query, chainID, blockNumber, blockHash)
+	var count uint64
+	if err := row.Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to check if block exists: %w", err)
+	}
+	return count > 0, nil
 }

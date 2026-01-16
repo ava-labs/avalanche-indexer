@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
@@ -15,6 +18,11 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/zap"
+)
+
+const (
+	// KafkaTopicBlocks is the Kafka topic name for blocks
+	KafkaTopicBlocks = "blocks"
 )
 
 // repositories holds all the repositories needed for processing messages
@@ -235,15 +243,22 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	// Initialize repositories
-	repos := &repositories{
-		blocks:       models.NewBlocksRepository(chClient, rawBlocksTableName),
-		transactions: models.NewTransactionsRepository(chClient, rawTransactionsTableName),
+	// Initialize repositories (tables are created automatically)
+	blocksRepo, err := models.NewBlocksRepository(ctx, chClient, rawBlocksTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create blocks repository: %w", err)
 	}
+	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
 
-	// Initialize tables
-	if err := initializeTables(ctx, repos, rawBlocksTableName, rawTransactionsTableName, sugar); err != nil {
-		return err
+	transactionsRepo, err := models.NewTransactionsRepository(ctx, chClient, rawTransactionsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create transactions repository: %w", err)
+	}
+	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
+
+	repos := &repositories{
+		blocks:       blocksRepo,
+		transactions: transactionsRepo,
 	}
 
 	// Create Kafka consumer
@@ -348,21 +363,6 @@ func run(c *cli.Context) error {
 	}
 }
 
-// initializeTables creates all required ClickHouse tables if they don't exist
-func initializeTables(ctx context.Context, repos *repositories, blocksTableName, transactionsTableName string, sugar *zap.SugaredLogger) error {
-	if err := repos.blocks.CreateTableIfNotExists(ctx); err != nil {
-		return fmt.Errorf("failed to create blocks table: %w", err)
-	}
-	sugar.Info("Blocks table ready", "tableName", blocksTableName)
-
-	if err := repos.transactions.CreateTableIfNotExists(ctx); err != nil {
-		return fmt.Errorf("failed to create transactions table: %w", err)
-	}
-	sugar.Info("Transactions table ready", "tableName", transactionsTableName)
-
-	return nil
-}
-
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
 func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 	// Handle hosts - StringSliceFlag returns []string, but we need to handle comma-separated values
@@ -401,7 +401,7 @@ func processMessage(ctx context.Context, msg *kafka.Message, repos *repositories
 	topic := *msg.TopicPartition.Topic
 
 	switch topic {
-	case "blocks":
+	case KafkaTopicBlocks:
 		return processBlockMessage(ctx, msg.Value, repos, sugar)
 	default:
 		sugar.Debugw("ignoring message from unknown topic", "topic", topic)
@@ -411,27 +411,48 @@ func processMessage(ctx context.Context, msg *kafka.Message, repos *repositories
 
 // processBlockMessage processes a block message from Kafka
 func processBlockMessage(ctx context.Context, data []byte, repos *repositories, sugar *zap.SugaredLogger) error {
-	// Parse the block - ParseBlockFromJSON returns both block and transactions (already unmarshaled)
-	block, transactions, err := models.ParseBlockFromJSON(data)
-	if err != nil {
+	// Parse JSON payload directly to coreth.Block
+	var block coreth.Block
+	if err := json.Unmarshal(data, &block); err != nil {
 		// TODO: Add DLQ logic
-		return fmt.Errorf("failed to parse block: %w", err)
+		return fmt.Errorf("failed to unmarshal block JSON: %w", err)
 	}
 
-	// Write the block
-	if err := repos.blocks.WriteBlock(ctx, block); err != nil {
-		return fmt.Errorf("failed to write block: %w", err)
+	// Validate chainID
+	if block.ChainID == nil {
+		return models.ErrBlockChainIDRequired
+	}
+	chainID := uint32(block.ChainID.Uint64())
+
+	// Extract block number and hash for idempotency check
+	var blockNumber uint64
+	if block.Number != nil {
+		blockNumber = block.Number.Uint64()
+	}
+	blockHash := block.Hash
+
+	// Check if block already exists (idempotency check)
+	exists, err := repos.blocks.BlockExists(ctx, chainID, blockNumber, blockHash)
+	if err != nil {
+		return fmt.Errorf("failed to check if block exists: %w", err)
+	}
+	if exists {
+		sugar.Debugw("block already exists, skipping",
+			"chainID", chainID,
+			"blockNumber", blockNumber,
+			"blockHash", blockHash,
+		)
+		return nil
 	}
 
-	sugar.Debugw("successfully wrote block",
-		"chainID", block.ChainID,
-		"blockNumber", block.BlockNumber,
-		"nonce", block.Nonce,
-	)
+	// Process the block
+	if err := processBlock(ctx, &block, repos, sugar); err != nil {
+		return err
+	}
 
 	// Process transactions if any exist
-	if len(transactions) > 0 {
-		if err := processTransactionsFromBlock(ctx, block, transactions, repos, sugar); err != nil {
+	if len(block.Transactions) > 0 {
+		if err := processTransactions(ctx, &block, repos, sugar); err != nil {
 			return err
 		}
 	}
@@ -439,26 +460,180 @@ func processBlockMessage(ctx context.Context, data []byte, repos *repositories, 
 	return nil
 }
 
-// processTransactionsFromBlock extracts and writes transactions from a block
-func processTransactionsFromBlock(ctx context.Context, block *models.BlockRow, transactions []*coreth.Transaction, repos *repositories, sugar *zap.SugaredLogger) error {
-	txRows, err := models.TransactionsFromBlock(block, transactions)
-	if err != nil {
-		return fmt.Errorf("failed to convert transactions: %w", err)
+// processBlock converts a coreth.Block to BlockRow and writes it to ClickHouse
+func processBlock(ctx context.Context, block *coreth.Block, repos *repositories, sugar *zap.SugaredLogger) error {
+	// Validate chainID
+	if block.ChainID == nil {
+		return models.ErrBlockChainIDRequired
+	}
+	chainID := uint32(block.ChainID.Uint64())
+
+	// Convert to BlockRow
+	blockRow := corethBlockToBlockRow(block, chainID)
+
+	// Write the block
+	if err := repos.blocks.WriteBlock(ctx, blockRow); err != nil {
+		return fmt.Errorf("failed to write block: %w", err)
 	}
 
-	// Write each transaction
+	sugar.Debugw("successfully wrote block",
+		"chainID", blockRow.ChainID,
+		"blockNumber", blockRow.BlockNumber,
+		"nonce", blockRow.Nonce,
+	)
+
+	return nil
+}
+
+// processTransactions converts transactions from a coreth.Block to TransactionRow and writes them to ClickHouse
+func processTransactions(ctx context.Context, block *coreth.Block, repos *repositories, sugar *zap.SugaredLogger) error {
+	// Validate chainID
+	if block.ChainID == nil {
+		return models.ErrBlockChainIDRequiredForTx
+	}
+	chainID := uint32(block.ChainID.Uint64())
+
+	// Convert and write each transaction
 	// TODO: Add batching (in a future PR)
-	for _, tx := range txRows {
-		if err := repos.transactions.WriteTransaction(ctx, tx); err != nil {
+	for i, tx := range block.Transactions {
+		txRow, err := corethTransactionToTransactionRow(tx, block, uint64(i))
+		if err != nil {
+			return fmt.Errorf("failed to convert transaction %d: %w", i, err)
+		}
+
+		if err := repos.transactions.WriteTransaction(ctx, txRow); err != nil {
 			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
 		}
 	}
 
+	var blockNumber uint64
+	if block.Number != nil {
+		blockNumber = block.Number.Uint64()
+	}
+
 	sugar.Debugw("successfully wrote transactions",
-		"chainID", block.ChainID,
-		"blockNumber", block.BlockNumber,
-		"transactionCount", len(txRows),
+		"chainID", chainID,
+		"blockNumber", blockNumber,
+		"transactionCount", len(block.Transactions),
 	)
 
 	return nil
+}
+
+// corethBlockToBlockRow converts a coreth.Block to BlockRow
+func corethBlockToBlockRow(block *coreth.Block, chainID uint32) *models.BlockRow {
+	// Extract number from big.Int
+	var blockNumber uint64
+	if block.Number != nil {
+		blockNumber = block.Number.Uint64()
+	}
+
+	blockRow := &models.BlockRow{
+		ChainID:     chainID,
+		BlockNumber: blockNumber,
+		Size:        block.Size,
+		GasLimit:    block.GasLimit,
+		GasUsed:     block.GasUsed,
+		BlockTime:   time.Unix(int64(block.Timestamp), 0).UTC(),
+		ExtraData:   block.ExtraData,
+	}
+
+	// Set difficulty from big.Int
+	if block.Difficulty != nil {
+		blockRow.Difficulty = block.Difficulty.Uint64()
+		blockRow.TotalDifficulty = block.Difficulty.Uint64() // Using same value for now
+	}
+
+	// Direct string assignments - no conversions needed
+	blockRow.Hash = block.Hash
+	blockRow.ParentHash = block.ParentHash
+	blockRow.StateRoot = block.StateRoot
+	blockRow.TransactionsRoot = block.TransactionsRoot
+	blockRow.ReceiptsRoot = block.ReceiptsRoot
+	blockRow.Sha3Uncles = block.UncleHash
+	blockRow.MixHash = block.MixHash
+	blockRow.Miner = block.Miner
+
+	// Parse nonce - convert uint64 to hex string
+	blockRow.Nonce = strconv.FormatUint(block.Nonce, 16)
+
+	// Optional fields
+	if block.BaseFee != nil {
+		blockRow.BaseFeePerGas = block.BaseFee.Uint64()
+	}
+	if block.BlobGasUsed != nil {
+		blockRow.BlobGasUsed = *block.BlobGasUsed
+	}
+	if block.ExcessBlobGas != nil {
+		blockRow.ExcessBlobGas = *block.ExcessBlobGas
+	}
+	if block.ParentBeaconBlockRoot != "" {
+		blockRow.ParentBeaconBlockRoot = block.ParentBeaconBlockRoot
+	}
+	if block.MinDelayExcess != 0 {
+		blockRow.MinDelayExcess = block.MinDelayExcess
+	}
+
+	return blockRow
+}
+
+// corethTransactionToTransactionRow converts a coreth.Transaction to TransactionRow
+func corethTransactionToTransactionRow(tx *coreth.Transaction, block *coreth.Block, txIndex uint64) (*models.TransactionRow, error) {
+	// Extract chainID from block
+	if block.ChainID == nil {
+		return nil, models.ErrBlockChainIDRequiredForTx
+	}
+	chainID := uint32(block.ChainID.Uint64())
+
+	// Extract block number
+	var blockNumber uint64
+	if block.Number != nil {
+		blockNumber = block.Number.Uint64()
+	}
+
+	txRow := &models.TransactionRow{
+		ChainID:          chainID,
+		BlockNumber:      blockNumber,
+		BlockHash:        block.Hash,
+		BlockTime:        time.Unix(int64(block.Timestamp), 0).UTC(),
+		Hash:             tx.Hash,
+		From:             tx.From,
+		Nonce:            tx.Nonce,
+		Gas:              tx.Gas,
+		Input:            tx.Input,
+		Type:             tx.Type,
+		TransactionIndex: txIndex,
+	}
+
+	// Handle nullable To field
+	if tx.To != "" {
+		txRow.To = &tx.To
+	}
+
+	// Convert big.Int values to string
+	if tx.Value != nil {
+		txRow.Value = tx.Value.String()
+	} else {
+		txRow.Value = "0"
+	}
+
+	if tx.GasPrice != nil {
+		txRow.GasPrice = tx.GasPrice.String()
+	} else {
+		txRow.GasPrice = "0"
+	}
+
+	// Handle nullable MaxFeePerGas
+	if tx.MaxFeePerGas != nil {
+		maxFeeStr := tx.MaxFeePerGas.String()
+		txRow.MaxFeePerGas = &maxFeeStr
+	}
+
+	// Handle nullable MaxPriorityFee
+	if tx.MaxPriorityFee != nil {
+		maxPriorityStr := tx.MaxPriorityFee.String()
+		txRow.MaxPriorityFee = &maxPriorityStr
+	}
+
+	return txRow, nil
 }

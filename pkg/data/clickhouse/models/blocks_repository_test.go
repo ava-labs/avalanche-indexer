@@ -37,6 +37,15 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
 	}
 
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect WriteBlock call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
@@ -71,10 +80,12 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			parentBeaconBlockRootStr, // string or nil
 			block.MinDelayExcess,     // uint64
 		).
-		Return(nil)
+		Return(nil).
+		Once()
 
-	repo := NewBlocksRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
-	err := repo.WriteBlock(ctx, block)
+	repo, err := NewBlocksRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	require.NoError(t, err)
+	err = repo.WriteBlock(ctx, block)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
@@ -103,6 +114,15 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
 	}
 
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect WriteBlock call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			block.ChainID,
@@ -134,10 +154,12 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			parentBeaconBlockRootStr,
 			block.MinDelayExcess,
 		).
-		Return(execErr)
+		Return(execErr).
+		Once()
 
-	repo := NewBlocksRepository(testutils.NewTestClient(mockConn), "default.raw_blocks")
-	err := repo.WriteBlock(ctx, block)
+	repo, err := NewBlocksRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	require.NoError(t, err)
+	err = repo.WriteBlock(ctx, block)
 	require.ErrorIs(t, err, execErr)
 	assert.Contains(t, err.Error(), "failed to write block")
 	assert.Contains(t, err.Error(), "exec failed")

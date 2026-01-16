@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testBlockHash = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+
 func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
@@ -19,7 +21,15 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	// Create a test transaction
 	tx := createTestTransaction()
 
-	// Expect Exec with query and all transaction fields
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect WriteTransaction call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
@@ -42,10 +52,12 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.Type,
 			tx.TransactionIndex,
 		).
-		Return(nil)
+		Return(nil).
+		Once()
 
-	repo := NewTransactionsRepository(testutils.NewTestClient(mockConn), "default.raw_transactions")
-	err := repo.WriteTransaction(ctx, tx)
+	repo, err := NewTransactionsRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	require.NoError(t, err)
+	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
@@ -58,6 +70,15 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	tx := createTestTransaction()
 	execErr := errors.New("exec failed")
 
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect WriteTransaction call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			tx.ChainID,
@@ -77,10 +98,12 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.Type,
 			tx.TransactionIndex,
 		).
-		Return(execErr)
+		Return(execErr).
+		Once()
 
-	repo := NewTransactionsRepository(testutils.NewTestClient(mockConn), "default.raw_transactions")
-	err := repo.WriteTransaction(ctx, tx)
+	repo, err := NewTransactionsRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	require.NoError(t, err)
+	err = repo.WriteTransaction(ctx, tx)
 	require.ErrorIs(t, err, execErr)
 	assert.Contains(t, err.Error(), "failed to write transaction")
 	assert.Contains(t, err.Error(), "exec failed")
@@ -96,6 +119,15 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	tx := createTestTransaction()
 	tx.To = nil
 
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect WriteTransaction call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
@@ -117,10 +149,12 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.Type,
 			tx.TransactionIndex,
 		).
-		Return(nil)
+		Return(nil).
+		Once()
 
-	repo := NewTransactionsRepository(testutils.NewTestClient(mockConn), "default.raw_transactions")
-	err := repo.WriteTransaction(ctx, tx)
+	repo, err := NewTransactionsRepository(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	require.NoError(t, err)
+	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
