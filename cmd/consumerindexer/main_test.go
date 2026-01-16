@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"math/big"
 	"testing"
@@ -197,9 +196,9 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 	repos := &repositories{} // Empty repos for this test
 	sugar := zap.NewNop().Sugar()
 
-	err := processBlockMessage(context.TODO(), invalidJSON, repos, sugar)
+	err := processBlockMessage(t.Context(), invalidJSON, repos, sugar)
 
-	require.Error(t, err)
+	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal block JSON")
 }
 
@@ -219,10 +218,9 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	repos := &repositories{} // Empty repos for this test
 	sugar := zap.NewNop().Sugar()
 
-	err = processBlockMessage(context.TODO(), data, repos, sugar)
+	err = processBlockMessage(t.Context(), data, repos, sugar)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "block chainID is required")
+	require.ErrorIs(t, err, models.ErrBlockChainIDRequired)
 }
 
 // Helper function to create a test block
