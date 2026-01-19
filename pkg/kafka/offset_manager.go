@@ -81,6 +81,7 @@ func (om *OffsetManager) run(
 	dryRun bool,
 ) {
 	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
