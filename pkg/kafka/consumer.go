@@ -23,12 +23,11 @@ const (
 // It manages partition rebalancing, offset commits via a sliding window, and DLQ publishing for failures.
 // Not safe for concurrent use of exported methods.
 type Consumer struct {
-	processor     processor.Processor
-	consumer      *cKafka.Consumer
-	dlqProducer   *Producer
-	log           *zap.SugaredLogger
-	sem           *semaphore.Weighted
-	offsetManager *OffsetManager
+	processor   processor.Processor
+	consumer    *cKafka.Consumer
+	dlqProducer *Producer
+	log         *zap.SugaredLogger
+	sem         *semaphore.Weighted
 
 	rebalanceContexts map[int32]rebalanceCtx
 
@@ -89,15 +88,6 @@ func NewConsumer(
 		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
 	}
 
-	offsetManager := NewOffsetManager(
-		ctx,
-		consumer,
-		cfg.OffsetManagerCommitInterval,
-		cfg.AutoOffsetReset,
-		false,
-		log,
-	)
-
 	if !cfg.IsDLQConsumer && cfg.DLQTopic == "" {
 		return nil, errors.New("DLQ topic not configured")
 	}
@@ -109,7 +99,6 @@ func NewConsumer(
 		cfg:               cfg,
 		sem:               semaphore.NewWeighted(cfg.Concurrency),
 		rebalanceContexts: make(map[int32]rebalanceCtx),
-		offsetManager:     offsetManager,
 		logsDone:          make(chan struct{}),
 		errCh:             make(chan error, cfg.Concurrency),
 		doneCh:            make(chan struct{}),
@@ -209,7 +198,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 		defer c.sem.Release(1)
 		err := c.processor.Process(ctx, msg)
 		if err == nil {
-			c.offsetManager.InsertOffsetWithRetry(ctx, msg)
+			// TODO: commit offset
 			return
 		}
 
@@ -245,7 +234,8 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			}
 			return
 		}
-		c.offsetManager.InsertOffsetWithRetry(ctx, msg)
+
+		// TODO: commit offset
 	}()
 }
 
@@ -339,7 +329,8 @@ func (c *Consumer) getRebalanceCallback(ctx context.Context) cKafka.RebalanceCb 
 		default:
 			c.log.Warnw("unexpected rebalance event", "event", event)
 		}
-		return c.offsetManager.RebalanceCb(kc, event)
+		// TODO: handle rebalance for offset manager
+		return nil
 	}
 }
 
