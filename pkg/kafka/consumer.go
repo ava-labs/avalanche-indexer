@@ -15,25 +15,9 @@ import (
 )
 
 const (
-	defaultSessionTimeout       = 240_000
-	defaultMaxPollInterval      = 3_400_000
-	defaultFlushTimeout         = 15 * time.Second
-	defaultGoroutineWaitTimeout = 30 * time.Second
+	defaultPollInterval                = 100 * time.Millisecond
+	defaultPartitionAssignmentStrategy = "roundrobin"
 )
-
-// ConsumerConfig configures a Kafka consumer with concurrency control and DLQ support.
-// MaxConcurrency limits parallel message processing. IsDLQConsumer prevents recursive DLQ writes.
-type ConsumerConfig struct {
-	DLQTopic                    string        // Dead letter queue topic for failed messages
-	Topic                       string        // Primary topic to consume from
-	MaxConcurrency              int64         // Maximum concurrent message processors
-	IsDLQConsumer               bool          // If true, failed messages are not re-sent to DLQ
-	BootstrapServers            string        // Kafka broker addresses
-	GroupID                     string        // Consumer group ID for offset management
-	AutoOffsetReset             string        // Offset reset strategy: "earliest" or "latest"
-	EnableLogs                  bool          // Enable librdkafka client logs
-	OffsetManagerCommitInterval time.Duration // Interval for committing offsets
-}
 
 // Consumer provides concurrent Kafka message consumption with at-least-once delivery semantics.
 // It manages partition rebalancing, offset commits via a sliding window, and DLQ publishing for failures.
@@ -73,14 +57,17 @@ func NewConsumer(
 	cfg ConsumerConfig,
 	proc processor.Processor,
 ) (*Consumer, error) {
+	// Apply defaults to config
+	cfg = cfg.WithDefaults()
+
 	consumerConfig := cKafka.ConfigMap{
 		"bootstrap.servers":             cfg.BootstrapServers,
 		"group.id":                      cfg.GroupID,
 		"auto.offset.reset":             cfg.AutoOffsetReset,
 		"enable.auto.commit":            false,
-		"session.timeout.ms":            defaultSessionTimeout,
-		"max.poll.interval.ms":          defaultMaxPollInterval,
-		"partition.assignment.strategy": "roundrobin",
+		"session.timeout.ms":            int(cfg.SessionTimeout.Milliseconds()),
+		"max.poll.interval.ms":          int(cfg.MaxPollInterval.Milliseconds()),
+		"partition.assignment.strategy": defaultPartitionAssignmentStrategy,
 		"go.logs.channel.enable":        cfg.EnableLogs,
 	}
 	consumer, err := cKafka.NewConsumer(&consumerConfig)
@@ -111,16 +98,20 @@ func NewConsumer(
 		log,
 	)
 
+	if !cfg.IsDLQConsumer && cfg.DLQTopic == "" {
+		return nil, errors.New("DLQ topic not configured")
+	}
+
 	return &Consumer{
 		consumer:          consumer,
 		dlqProducer:       dlqProducer,
 		log:               log,
 		cfg:               cfg,
-		sem:               semaphore.NewWeighted(cfg.MaxConcurrency),
+		sem:               semaphore.NewWeighted(cfg.Concurrency),
 		rebalanceContexts: make(map[int32]rebalanceCtx),
 		offsetManager:     offsetManager,
 		logsDone:          make(chan struct{}),
-		errCh:             make(chan error, cfg.MaxConcurrency),
+		errCh:             make(chan error, cfg.Concurrency),
 		doneCh:            make(chan struct{}),
 		processor:         proc,
 	}, nil
@@ -166,7 +157,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 			run = false
 			continue
 		default:
-			ev := c.consumer.Poll(100)
+			ev := c.consumer.Poll(int(defaultPollInterval.Milliseconds()))
 			if ev == nil {
 				continue
 			}
@@ -209,15 +200,6 @@ func (c *Consumer) Start(ctx context.Context) error {
 // On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
 func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 	if err := c.sem.Acquire(ctx, 1); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-
-		select {
-		case c.errCh <- fmt.Errorf("failed to acquire semaphore: %w", err):
-		default:
-			c.log.Errorw("error channel full, dropping semaphore acquisition error")
-		}
 		return
 	}
 
@@ -270,10 +252,6 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 // publishToDLQ publishes msg to the configured DLQ topic, preserving original key and value.
 // Returns an error if DLQTopic is not configured or if production fails.
 func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error {
-	if c.cfg.DLQTopic == "" {
-		return errors.New("DLQ topic not configured")
-	}
-
 	dlqMsg := Msg{
 		Topic: c.cfg.DLQTopic,
 		Key:   msg.Key,
@@ -295,7 +273,7 @@ func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error 
 }
 
 // close gracefully shuts down the consumer by waiting for in-flight processing goroutines
-// (with a 45s timeout), then closing the DLQ producer and Kafka consumer.
+// (with a configurable timeout), then closing the DLQ producer and Kafka consumer.
 // Returns an error from the Kafka consumer close operation.
 func (c *Consumer) close() error {
 	c.log.Info("closing consumer...")
@@ -308,13 +286,13 @@ func (c *Consumer) close() error {
 	select {
 	case <-done:
 		c.log.Info("all in-flight messages processed")
-	case <-time.After(defaultGoroutineWaitTimeout):
+	case <-time.After(*c.cfg.GoroutineWaitTimeout):
 		c.log.Warn("timeout waiting for in-flight messages, forcing shutdown")
 	}
 
 	close(c.doneCh)
 	<-c.logsDone
-	c.dlqProducer.Close(defaultFlushTimeout)
+	c.dlqProducer.Close(*c.cfg.FlushTimeout)
 	return c.consumer.Close()
 }
 

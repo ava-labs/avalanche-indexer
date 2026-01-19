@@ -71,11 +71,11 @@ func NewOffsetManager(
 		dryRun:          dryRun,
 		log:             log,
 	}
-	go om.managerLoop(ctx, interval, dryRun)
+	go om.run(ctx, interval, dryRun)
 	return om
 }
 
-func (om *OffsetManager) managerLoop(
+func (om *OffsetManager) run(
 	ctx context.Context,
 	interval time.Duration,
 	dryRun bool,

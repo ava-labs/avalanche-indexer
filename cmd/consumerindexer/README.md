@@ -18,7 +18,7 @@ bin/consumerindexer run \
   --group-id my-consumer-group \
   --topic blocks \
   --dlq-topic blocks-dlq \
-  --max-concurrency 10 \
+  --concurrency 10 \
   --clickhouse-hosts localhost:9000 \
   --clickhouse-username default
 ```
@@ -45,9 +45,13 @@ All flags have environment variable equivalents:
 - `--topic` / `-t` → `KAFKA_TOPIC` (required, single topic)
 - `--dlq-topic` → `KAFKA_DLQ_TOPIC` (optional, dead letter queue topic)
 - `--auto-offset-reset` / `-o` → `KAFKA_AUTO_OFFSET_RESET` (default: "earliest")
-- `--max-concurrency` → `KAFKA_MAX_CONCURRENCY` (default: 10, concurrent processors)
+- `--concurrency` → `KAFKA_CONCURRENCY` (default: 10, concurrent processors)
 - `--offset-commit-interval` → `KAFKA_OFFSET_COMMIT_INTERVAL` (default: 10s)
 - `--enable-kafka-logs` → `KAFKA_ENABLE_LOGS` (default: false, enable librdkafka logs)
+- `--session-timeout` → `KAFKA_SESSION_TIMEOUT` (default: 240s, session timeout)
+- `--max-poll-interval` → `KAFKA_MAX_POLL_INTERVAL` (default: 3400s, max poll interval)
+- `--flush-timeout` → `KAFKA_FLUSH_TIMEOUT` (default: 15s, producer flush timeout on close)
+- `--goroutine-wait-timeout` → `KAFKA_GOROUTINE_WAIT_TIMEOUT` (default: 30s, wait timeout for in-flight messages)
 - `--verbose` / `-v` → none (enable verbose application logging)
 
 **ClickHouse flags:**
@@ -79,7 +83,7 @@ docker run --rm \
   -e KAFKA_GROUP_ID=my-consumer-group \
   -e KAFKA_TOPIC=blocks \
   -e KAFKA_DLQ_TOPIC=blocks-dlq \
-  -e KAFKA_MAX_CONCURRENCY=20 \
+  -e KAFKA_CONCURRENCY=20 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
   -e CLICKHOUSE_USERNAME=default \
   indexer:latest run --verbose
@@ -88,7 +92,7 @@ docker run --rm \
 ### Configuration Tips
 
 **Concurrency:**
-- `--max-concurrency` controls parallel message processing
+- `--concurrency` controls parallel message processing
 - Higher values increase throughput but use more resources
 - Recommended: 10-50 depending on workload and resources
 
@@ -109,8 +113,8 @@ docker run --rm \
 
 ### Exit Behavior
 - Gracefully handles `SIGTERM`/`SIGINT`
-- Waits up to 30s for in-flight messages to complete
+- Waits up to `--goroutine-wait-timeout` (default: 30s) for in-flight messages to complete
+- DLQ producer flushes pending messages with `--flush-timeout` (default: 15s) before shutdown
 - Returns non-zero exit code on fatal errors
-- DLQ producer flushes pending messages before shutdown
 
 

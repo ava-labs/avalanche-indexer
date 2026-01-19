@@ -66,9 +66,9 @@ func main() {
 						Value:   "earliest",
 					},
 					&cli.Int64Flag{
-						Name:    "max-concurrency",
-						Usage:   "Maximum concurrent message processors",
-						EnvVars: []string{"KAFKA_MAX_CONCURRENCY"},
+						Name:    "concurrency",
+						Usage:   "Concurrent message processors",
+						EnvVars: []string{"KAFKA_CONCURRENCY"},
 						Value:   10,
 					},
 					&cli.DurationFlag{
@@ -82,6 +82,30 @@ func main() {
 						Usage:   "Enable librdkafka client logs",
 						EnvVars: []string{"KAFKA_ENABLE_LOGS"},
 						Value:   false,
+					},
+					&cli.DurationFlag{
+						Name:    "session-timeout",
+						Usage:   "Kafka consumer session timeout",
+						EnvVars: []string{"KAFKA_SESSION_TIMEOUT"},
+						Value:   240 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "max-poll-interval",
+						Usage:   "Kafka consumer max poll interval",
+						EnvVars: []string{"KAFKA_MAX_POLL_INTERVAL"},
+						Value:   3400 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "flush-timeout",
+						Usage:   "Kafka dlq producer flush timeout when closing",
+						EnvVars: []string{"KAFKA_FLUSH_TIMEOUT"},
+						Value:   15 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "goroutine-wait-timeout",
+						Usage:   "Timeout for waiting in-flight goroutines on shutdown",
+						EnvVars: []string{"KAFKA_GOROUTINE_WAIT_TIMEOUT"},
+						Value:   30 * time.Second,
 					},
 					// ClickHouse configuration flags
 					&cli.StringSliceFlag{
@@ -210,9 +234,13 @@ func run(c *cli.Context) error {
 	topic := c.String("topic")
 	dlqTopic := c.String("dlq-topic")
 	autoOffsetReset := c.String("auto-offset-reset")
-	maxConcurrency := c.Int64("max-concurrency")
+	concurrency := c.Int64("concurrency")
 	offsetCommitInterval := c.Duration("offset-commit-interval")
 	enableKafkaLogs := c.Bool("enable-kafka-logs")
+	sessionTimeout := c.Duration("session-timeout")
+	maxPollInterval := c.Duration("max-poll-interval")
+	flushTimeout := c.Duration("flush-timeout")
+	goroutineWaitTimeout := c.Duration("goroutine-wait-timeout")
 	rawTableName := c.String("raw-blocks-table-name")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
@@ -231,9 +259,13 @@ func run(c *cli.Context) error {
 		"topic", topic,
 		"dlqTopic", dlqTopic,
 		"autoOffsetReset", autoOffsetReset,
-		"maxConcurrency", maxConcurrency,
+		"maxConcurrency", concurrency,
 		"offsetCommitInterval", offsetCommitInterval,
 		"enableKafkaLogs", enableKafkaLogs,
+		"sessionTimeout", sessionTimeout,
+		"maxPollInterval", maxPollInterval,
+		"flushTimeout", flushTimeout,
+		"goroutineWaitTimeout", goroutineWaitTimeout,
 		"clickhouseHosts", chCfg.Hosts,
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
@@ -264,13 +296,17 @@ func run(c *cli.Context) error {
 	consumerCfg := kafka.ConsumerConfig{
 		DLQTopic:                    dlqTopic,
 		Topic:                       topic,
-		MaxConcurrency:              maxConcurrency,
+		Concurrency:                 concurrency,
 		IsDLQConsumer:               false,
 		BootstrapServers:            bootstrapServers,
 		GroupID:                     groupID,
 		AutoOffsetReset:             autoOffsetReset,
 		EnableLogs:                  enableKafkaLogs,
 		OffsetManagerCommitInterval: offsetCommitInterval,
+		SessionTimeout:              &sessionTimeout,
+		MaxPollInterval:             &maxPollInterval,
+		FlushTimeout:                &flushTimeout,
+		GoroutineWaitTimeout:        &goroutineWaitTimeout,
 	}
 
 	// Create consumer
@@ -282,7 +318,7 @@ func run(c *cli.Context) error {
 	sugar.Infow("consumer created, starting consumption",
 		"topic", topic,
 		"groupID", groupID,
-		"maxConcurrency", maxConcurrency,
+		"concurrency", concurrency,
 	)
 
 	// Start consumer (blocks until shutdown signal received)
