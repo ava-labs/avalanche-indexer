@@ -19,7 +19,9 @@ const (
 	OffsetManagerCommitInterval  = 5 * time.Second
 	OffsetManagerAutoOffsetReset = "latest"
 
-	WindowLengthWarningThreshold = 10000
+	WindowLengthWarningThreshold  = 10000
+	DefaultOffsetCommitTimeout    = 5000
+	DefaultInsertOffsetRetryDelay = 200 * time.Millisecond
 )
 
 type offsetState struct {
@@ -220,7 +222,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 		if om.dryRun {
 			committedOffsets = ev.Partitions
 		} else {
-			committedOffsets, err = consumer.Committed(ev.Partitions, 5000)
+			committedOffsets, err = consumer.Committed(ev.Partitions, DefaultOffsetCommitTimeout)
 		}
 
 		if err != nil {
@@ -290,11 +292,16 @@ func (om *OffsetManager) InsertOffsetWithRetry(
 			Offset:    msg.TopicPartition.Offset + 1,
 		})
 		if err == nil || ctx.Err() != nil {
+			if ctx.Err() != nil {
+				om.log.Warnf("context cancelled, returning: %v", ctx.Err())
+			} else {
+				om.log.Infof("InsertOffset successful, returning")
+			}
 			return
 		}
 
 		om.log.Error("retrying InsertOffset. err ", err)
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(DefaultInsertOffsetRetryDelay)
 	}
 }
 
