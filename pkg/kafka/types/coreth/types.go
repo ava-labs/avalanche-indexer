@@ -18,7 +18,8 @@ type Block struct {
 	Hash       string   `json:"hash"`
 	ParentHash string   `json:"parentHash"`
 
-	ChainID *big.Int `json:"chainId,omitempty"`
+	EVMChainID   *big.Int `json:"evmChainId,omitempty"`
+	BlockchainID *string  `json:"blockchainId,omitempty"`
 
 	StateRoot        string `json:"stateRoot"`
 	TransactionsRoot string `json:"transactionsRoot"`
@@ -66,7 +67,6 @@ type Transaction struct {
 	MaxPriorityFee *big.Int `json:"maxPriorityFeePerGas"`
 	Input          string   `json:"input"`
 	Type           uint8    `json:"type"`
-	ChainID        *big.Int `json:"chainId"`
 }
 
 type Withdrawal struct {
@@ -78,7 +78,7 @@ type Withdrawal struct {
 
 // BlockFromLibevm converts a libevm Block to a Coreth Block.
 // chainID should be provided since blocks may not have transactions to extract it from.
-func BlockFromLibevm(block *libevmtypes.Block, chainID *big.Int) (*Block, error) {
+func BlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, bcID *string) (*Block, error) {
 	transactions, err := TransactionsFromLibevm(block.Transactions())
 	if err != nil {
 		return nil, fmt.Errorf("convert transactions: %w", err)
@@ -103,7 +103,8 @@ func BlockFromLibevm(block *libevmtypes.Block, chainID *big.Int) (*Block, error)
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
-		ChainID:               chainID,
+		EVMChainID:            evmChainID,
+		BlockchainID:          bcID,
 		GasLimit:              block.GasLimit(),
 		GasUsed:               block.GasUsed(),
 		BaseFee:               block.BaseFee(),
@@ -157,7 +158,6 @@ func TransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*Transac
 			MaxPriorityFee: tx.GasTipCap(),
 			Input:          hexutil.Encode(tx.Data()),
 			Type:           tx.Type(),
-			ChainID:        tx.ChainId(),
 		}
 	}
 	return result, nil

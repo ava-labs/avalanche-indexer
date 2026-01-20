@@ -20,12 +20,13 @@ import (
 var registerCustomTypesOnce sync.Once
 
 type CorethWorker struct {
-	client   *evmclient.Client
-	producer *kafka.Producer
-	topic    string
-	chainID  *big.Int
-	log      *zap.SugaredLogger
-	metrics  *metrics.Metrics
+	client     *evmclient.Client
+	producer   *kafka.Producer
+	topic      string
+	evmChainID *big.Int
+	bcID       *string
+	log        *zap.SugaredLogger
+	metrics    *metrics.Metrics
 }
 
 func NewCorethWorker(
@@ -33,7 +34,8 @@ func NewCorethWorker(
 	url string,
 	producer *kafka.Producer,
 	topic string,
-	chainID uint64,
+	evmChainID uint64,
+	bcID string,
 	log *zap.SugaredLogger,
 	metrics *metrics.Metrics,
 ) (*CorethWorker, error) {
@@ -46,12 +48,13 @@ func NewCorethWorker(
 		return nil, fmt.Errorf("dial coreth rpc: %w", err)
 	}
 	return &CorethWorker{
-		client:   evmclient.New(c),
-		producer: producer,
-		topic:    topic,
-		chainID:  new(big.Int).SetUint64(chainID),
-		log:      log,
-		metrics:  metrics,
+		client:     evmclient.New(c),
+		producer:   producer,
+		topic:      topic,
+		evmChainID: new(big.Int).SetUint64(evmChainID),
+		bcID:       &bcID,
+		log:        log,
+		metrics:    metrics,
 	}, nil
 }
 
@@ -75,7 +78,7 @@ func (w *CorethWorker) Process(ctx context.Context, height uint64) error {
 		return fmt.Errorf("fetch block %d: %w", height, err)
 	}
 
-	corethBlock, err := coreth.BlockFromLibevm(block, w.chainID)
+	corethBlock, err := coreth.BlockFromLibevm(block, w.evmChainID, w.bcID)
 	if err != nil {
 		return fmt.Errorf("convert block %d: %w", height, err)
 	}

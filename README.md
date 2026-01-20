@@ -56,7 +56,8 @@ Run a service (example: `blockfetcher`):
 
 ```bash
 bin/blockfetcher run \
-  --chain-id 43114 \
+  --evm-chain-id 43114 \
+  --bc-id "11111111111111111111111111111111LpoYY" \
   --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
   --start-height 0 \
   --concurrency 16 \

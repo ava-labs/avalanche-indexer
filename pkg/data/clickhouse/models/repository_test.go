@@ -2,6 +2,7 @@ package models
 
 import (
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
@@ -42,7 +43,8 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
 		}),
-			block.ChainID,            // uint32: 43113
+			block.EVMChainID,         // *big.Int: 43113
+			block.BlockchainID,       // *string: "11111111111111111111111111111111LpoYY"
 			block.BlockNumber,        // uint64: 1647
 			block.Hash,               // string
 			block.ParentHash,         // string
@@ -105,7 +107,8 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
-			block.ChainID,
+			block.EVMChainID,
+			block.BlockchainID,
 			block.BlockNumber,
 			block.Hash,
 			block.ParentHash,
@@ -150,9 +153,11 @@ func createTestBlock() *ClickhouseBlock {
 	parentHash := "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
 	miner := "0x4142434445464748494a4b4c4d4e4f5051525354"
 	nonce := "0x55565758595a5b5c"
+	blockchainID := "11111111111111111111111111111111LpoYY"
 
 	return &ClickhouseBlock{
-		ChainID:               43113,
+		EVMChainID:            big.NewInt(43113),
+		BlockchainID:          &blockchainID,
 		BlockNumber:           1647,
 		Hash:                  hash,
 		ParentHash:            parentHash,
