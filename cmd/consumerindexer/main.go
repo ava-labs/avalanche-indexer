@@ -11,12 +11,12 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -48,11 +48,17 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "topics",
+						Name:     "topic",
 						Aliases:  []string{"t"},
-						Usage:    "Kafka topics to consume from (comma-separated)",
-						EnvVars:  []string{"KAFKA_TOPICS"},
+						Usage:    "Kafka topic to consume from",
+						EnvVars:  []string{"KAFKA_TOPIC"},
 						Required: true,
+					},
+					&cli.StringFlag{
+						Name:    "dlq-topic",
+						Usage:   "Dead letter queue topic for failed messages",
+						EnvVars: []string{"KAFKA_DLQ_TOPIC"},
+						Value:   "",
 					},
 					&cli.StringFlag{
 						Name:    "auto-offset-reset",
@@ -60,6 +66,54 @@ func main() {
 						Usage:   "Kafka auto offset reset policy (earliest, latest, none)",
 						EnvVars: []string{"KAFKA_AUTO_OFFSET_RESET"},
 						Value:   "earliest",
+					},
+					&cli.Int64Flag{
+						Name:    "concurrency",
+						Usage:   "Concurrent message processors",
+						EnvVars: []string{"KAFKA_CONCURRENCY"},
+						Value:   10,
+					},
+					&cli.DurationFlag{
+						Name:    "offset-commit-interval",
+						Usage:   "Interval for committing offsets",
+						EnvVars: []string{"KAFKA_OFFSET_COMMIT_INTERVAL"},
+						Value:   10 * time.Second,
+					},
+					&cli.BoolFlag{
+						Name:    "enable-kafka-logs",
+						Usage:   "Enable librdkafka client logs",
+						EnvVars: []string{"KAFKA_ENABLE_LOGS"},
+						Value:   false,
+					},
+					&cli.DurationFlag{
+						Name:    "session-timeout",
+						Usage:   "Kafka consumer session timeout",
+						EnvVars: []string{"KAFKA_SESSION_TIMEOUT"},
+						Value:   240 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "max-poll-interval",
+						Usage:   "Kafka consumer max poll interval",
+						EnvVars: []string{"KAFKA_MAX_POLL_INTERVAL"},
+						Value:   3400 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "flush-timeout",
+						Usage:   "Kafka dlq producer flush timeout when closing",
+						EnvVars: []string{"KAFKA_FLUSH_TIMEOUT"},
+						Value:   15 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "goroutine-wait-timeout",
+						Usage:   "Timeout for waiting in-flight goroutines on shutdown",
+						EnvVars: []string{"KAFKA_GOROUTINE_WAIT_TIMEOUT"},
+						Value:   30 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "poll-interval",
+						Usage:   "Poll interval for Kafka consumer",
+						EnvVars: []string{"KAFKA_POLL_INTERVAL"},
+						Value:   100 * time.Millisecond,
 					},
 					// ClickHouse configuration flags
 					&cli.StringSliceFlag{
@@ -206,8 +260,17 @@ func run(c *cli.Context) error {
 	verbose := c.Bool("verbose")
 	bootstrapServers := c.String("bootstrap-servers")
 	groupID := c.String("group-id")
-	topicsStr := c.String("topics")
+	topic := c.String("topic")
+	dlqTopic := c.String("dlq-topic")
 	autoOffsetReset := c.String("auto-offset-reset")
+	concurrency := c.Int64("concurrency")
+	offsetCommitInterval := c.Duration("offset-commit-interval")
+	enableKafkaLogs := c.Bool("enable-kafka-logs")
+	sessionTimeout := c.Duration("session-timeout")
+	maxPollInterval := c.Duration("max-poll-interval")
+	flushTimeout := c.Duration("flush-timeout")
+	goroutineWaitTimeout := c.Duration("goroutine-wait-timeout")
+	pollInterval := c.Duration("poll-interval")
 	rawTableName := c.String("raw-blocks-table-name")
 	metricsHost := c.String("metrics-host")
 	metricsPort := c.Int("metrics-port")
@@ -227,8 +290,17 @@ func run(c *cli.Context) error {
 		"verbose", verbose,
 		"bootstrapServers", bootstrapServers,
 		"groupID", groupID,
-		"topics", topicsStr,
+		"topic", topic,
+		"dlqTopic", dlqTopic,
 		"autoOffsetReset", autoOffsetReset,
+		"maxConcurrency", concurrency,
+		"offsetCommitInterval", offsetCommitInterval,
+		"enableKafkaLogs", enableKafkaLogs,
+		"sessionTimeout", sessionTimeout,
+		"maxPollInterval", maxPollInterval,
+		"flushTimeout", flushTimeout,
+		"goroutineWaitTimeout", goroutineWaitTimeout,
+		"pollInterval", pollInterval,
 		"clickhouseHosts", chCfg.Hosts,
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
@@ -267,122 +339,64 @@ func run(c *cli.Context) error {
 	rawBlocksRepo := models.NewRepository(chClient, rawTableName)
 	sugar.Info("Raw blocks repository initialized", "tableName", rawTableName)
 
-	// Create Kafka consumer
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": bootstrapServers,
-		"group.id":          groupID,
-		"auto.offset.reset": autoOffsetReset,
-	})
+	// Create CorethProcessor with ClickHouse persistence and metrics
+	proc := processor.NewCorethProcessor(sugar, rawBlocksRepo, m)
+
+	// Configure consumer
+	consumerCfg := kafka.ConsumerConfig{
+		DLQTopic:                    dlqTopic,
+		Topic:                       topic,
+		Concurrency:                 concurrency,
+		IsDLQConsumer:               false,
+		BootstrapServers:            bootstrapServers,
+		GroupID:                     groupID,
+		AutoOffsetReset:             autoOffsetReset,
+		EnableLogs:                  enableKafkaLogs,
+		OffsetManagerCommitInterval: offsetCommitInterval,
+		SessionTimeout:              &sessionTimeout,
+		MaxPollInterval:             &maxPollInterval,
+		FlushTimeout:                &flushTimeout,
+		GoroutineWaitTimeout:        &goroutineWaitTimeout,
+		PollInterval:                &pollInterval,
+	}
+
+	// Create consumer
+	consumer, err := kafka.NewConsumer(ctx, sugar, consumerCfg, proc)
 	if err != nil {
-		return fmt.Errorf("failed to create Kafka consumer: %w", err)
-	}
-	defer consumer.Close()
-
-	sugar.Info("Kafka consumer created successfully")
-
-	// Parse topics
-	topics := strings.Split(topicsStr, ",")
-	for i, topic := range topics {
-		topics[i] = strings.TrimSpace(topic)
+		return fmt.Errorf("failed to create consumer: %w", err)
 	}
 
-	// Rebalance callback to handle partition assignment/revocation
-	rebalanceCallback := func(c *kafka.Consumer, event kafka.Event) error {
-		switch e := event.(type) {
-		case kafka.AssignedPartitions:
-			partitions := make([]string, len(e.Partitions))
-			for i, p := range e.Partitions {
-				partitions[i] = fmt.Sprintf("%s[%d]", *p.Topic, p.Partition)
-			}
-			sugar.Infow("partitions assigned", "partitions", partitions)
-			return c.Assign(e.Partitions)
-		case kafka.RevokedPartitions:
-			partitions := make([]string, len(e.Partitions))
-			for i, p := range e.Partitions {
-				partitions[i] = fmt.Sprintf("%s[%d]", *p.Topic, p.Partition)
-			}
-			sugar.Infow("partitions revoked", "partitions", partitions)
-			return c.Unassign()
-		default:
-			return nil
+	sugar.Infow("consumer created, starting consumption",
+		"topic", topic,
+		"groupID", groupID,
+		"concurrency", concurrency,
+	)
+
+	// Run consumer and metrics server error handling concurrently
+	errCh := make(chan error, 2)
+
+	go func() {
+		// Consumer.Start blocks until shutdown
+		if err := consumer.Start(ctx); err != nil {
+			errCh <- fmt.Errorf("consumer error: %w", err)
+			return
 		}
-	}
+		errCh <- nil
+	}()
 
-	// Subscribe to topics
-	err = consumer.SubscribeTopics(topics, rebalanceCallback)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to topics: %w", err)
-	}
-
-	sugar.Infow("subscribed to topics", "topics", topics)
-
-	sugar.Info("starting consumer indexer")
-
-	// Consumer loop with metrics server error handling
-	var loopErr error
-consumerLoop:
-	for {
-		// Check for metrics server errors (non-blocking)
-		select {
-		case err := <-metricsErrCh:
-			if err != nil {
-				loopErr = fmt.Errorf("metrics server failed: %w", err)
-				break consumerLoop
-			}
-		default:
-		}
-
+	go func() {
 		select {
 		case <-ctx.Done():
-			sugar.Info("shutting down consumer...")
-			break consumerLoop
-		default:
-			ev := consumer.Poll(100)
-			if ev == nil {
-				continue
-			}
-
-			switch e := ev.(type) {
-			case *kafka.Message:
-				sugar.Debugw("received message",
-					"topic", *e.TopicPartition.Topic,
-					"partition", e.TopicPartition.Partition,
-					"offset", e.TopicPartition.Offset,
-				)
-				if err := processMessage(ctx, e, rawBlocksRepo, m, sugar); err != nil {
-					sugar.Errorw("failed to process message",
-						"topic", *e.TopicPartition.Topic,
-						"partition", e.TopicPartition.Partition,
-						"offset", e.TopicPartition.Offset,
-						"error", err,
-					)
-					// Continue processing other messages even if one fails
-					// TODO: Add retry logic and DLQ logic
-					continue
-				}
-			case kafka.Error:
-				if e.Code() == kafka.ErrPartitionEOF {
-					sugar.Debugw("reached end of partition", "error", e)
-					continue
-				}
-				if e.IsFatal() {
-					sugar.Errorw("fatal kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
-					loopErr = fmt.Errorf("fatal kafka error: %w", e)
-					break consumerLoop
-				}
-				if e.Code() == kafka.ErrAllBrokersDown {
-					sugar.Errorw("all brokers down", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
-					loopErr = fmt.Errorf("all brokers down: %w", e)
-					break consumerLoop
-				}
-				// Non-fatal errors are usually informational
-				sugar.Warnw("ignoring unexpected kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
-				continue
-			default:
-				sugar.Debugw("ignored event", "type", fmt.Sprintf("%T", e))
+			return
+		case err := <-metricsErrCh:
+			if err != nil {
+				errCh <- fmt.Errorf("metrics server error: %w", err)
 			}
 		}
-	}
+	}()
+
+	// Wait for first error or completion
+	consumerErr := <-errCh
 
 	// Gracefully shutdown metrics server
 	sugar.Info("shutting down metrics server")
@@ -393,7 +407,7 @@ consumerLoop:
 	}
 
 	sugar.Info("shutdown complete")
-	return loopErr
+	return consumerErr
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
@@ -427,46 +441,4 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 		ClientVersion:        c.String("clickhouse-client-version"),
 		UseHTTP:              c.Bool("clickhouse-use-http"),
 	}
-}
-
-// processMessage processes a Kafka message and writes it to ClickHouse
-func processMessage(ctx context.Context, msg *kafka.Message, rawBlocksRepo models.Repository, m *metrics.Metrics, sugar *zap.SugaredLogger) error {
-	topic := *msg.TopicPartition.Topic
-
-	switch topic {
-	case "blocks":
-		return processBlockMessage(ctx, msg.Value, rawBlocksRepo, m, sugar)
-	default:
-		sugar.Debugw("ignoring message from unknown topic", "topic", topic)
-		return nil
-	}
-}
-
-// processBlockMessage processes a block message from Kafka
-func processBlockMessage(ctx context.Context, data []byte, rawBlocksRepo models.Repository, m *metrics.Metrics, sugar *zap.SugaredLogger) error {
-	start := time.Now()
-
-	// Parse the block - ParseBlockFromJSON will extract chainID internally
-	block, err := models.ParseBlockFromJSON(data)
-	if err != nil {
-		m.IncError("parse_error")
-		// TODO: Add DLQ logic
-		return fmt.Errorf("failed to parse block: %w", err)
-	}
-
-	if err := rawBlocksRepo.WriteBlock(ctx, block); err != nil {
-		m.IncError("write_error")
-		return fmt.Errorf("failed to write block: %w", err)
-	}
-
-	// Record successful block processing
-	m.ObserveBlockProcessingDuration(time.Since(start).Seconds())
-
-	sugar.Debugw("successfully wrote block",
-		"chainID", block.ChainID,
-		"blockNumber", block.BlockNumber,
-		"nonce", block.Nonce,
-	)
-
-	return nil
 }
