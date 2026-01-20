@@ -72,6 +72,85 @@ histogram_quantile(0.95, sum by (method, le) (rate(indexer_rpc_duration_seconds_
 2. Add Prometheus data source: `http://prometheus:9090`
 3. Create dashboards using the metrics above
 
+## Kubernetes Deployment
+
+### Prometheus Scraping Annotations
+
+Add annotations to your pod spec based on your monitoring infrastructure. In Helm, these would be conditioned on a values flag like `prometheus.type: "standard"` or `prometheus.type: "grafana-cloud"`.
+
+#### Self-Hosted / Cloud-Managed Prometheus
+
+For self-hosted Prometheus or cloud-managed Prometheus (AWS Managed Prometheus, GCP Managed Prometheus, etc.):
+
+```yaml
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"      # Must match --metrics-port flag
+    prometheus.io/path: "/metrics"
+```
+
+#### Grafana Cloud (Alloy)
+
+For Grafana Cloud using Alloy:
+
+```yaml
+metadata:
+  annotations:
+    k8s.grafana.com/scrape: "true"
+    k8s.grafana.com/port: "9090"           # Must match --metrics-port flag
+    k8s.grafana.com/metrics_path: "/metrics"
+```
+
+#### Both
+
+If your infrastructure supports both then include all annotations for maximum compatibility:
+
+```yaml
+metadata:
+  annotations:
+    # Standard Prometheus
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+    # Grafana Cloud (Alloy)
+    k8s.grafana.com/scrape: "true"
+    k8s.grafana.com/port: "9090"
+    k8s.grafana.com/metrics_path: "/metrics"
+```
+
+### Configuration Flags
+
+Both `blockfetcher` and `consumerindexer` support:
+
+| Flag | Env Var | Default | Description |
+|------|---------|---------|-------------|
+| `--metrics-host` | `METRICS_HOST` | `""` (all interfaces) | Host to bind metrics server |
+| `--metrics-port` | `METRICS_PORT` | `9090` | Port for metrics server |
+| `--chain-id` | `CHAIN_ID` | `""` | Chain identifier for metrics labels |
+
+### Chain Label for Multi-Instance Filtering
+
+When running multiple indexer instances (e.g., different chains), set `--chain-id` to add a constant `chain` label to all metrics:
+
+```bash
+# Blockfetcher (chain-id is required, used for both data and metrics)
+blockfetcher run --chain-id 43114 ...
+
+# Consumerindexer (chain-id is optional, for metrics labeling only)
+consumerindexer run --chain-id 43114 ...
+```
+
+This enables Grafana queries filtered by chain:
+
+```promql
+# Processing rate for C-Chain mainnet only
+rate(indexer_blocks_processed_total{chain="43114"}[5m])
+
+# Compare error rates across chains
+sum by (chain) (rate(indexer_errors_total[5m]))
+```
+
 ## Extending Metrics
 
 To add new metrics:
