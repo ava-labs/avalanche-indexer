@@ -2,3 +2,4 @@ avalanche-indexer
 .DS_Store
 .env
 /bin
+coverage.out
