@@ -105,12 +105,6 @@ func CorethBlockToBlockRow(block *coreth.Block) (*evmrepo.BlockRow, error) {
 		return nil, evmrepo.ErrBlockChainIDRequired
 	}
 
-	// Extract number from big.Int
-	var blockNumber uint64
-	if block.Number != nil {
-		blockNumber = block.Number.Uint64()
-	}
-
 	// Set BlockchainID and EVMChainID (default EVMChainID to 0 if not set)
 	blockchainID := block.BlockchainID
 	evmChainID := block.EVMChainID
