@@ -184,8 +184,13 @@ func (b *Block) Marshal() ([]byte, error) {
 
 	// Create a map and manually convert big.Int to strings
 	result := make(map[string]interface{})
-	data, _ := json.Marshal(alias)
-	json.Unmarshal(data, &result)
+	data, err := json.Marshal(alias)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
 
 	// Convert big.Int fields to strings
 	if b.EVMChainID != nil {
