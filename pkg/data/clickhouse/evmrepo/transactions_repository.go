@@ -35,7 +35,7 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			blockchain_id String,
-			evm_chain_id UInt32,
+			evm_chain_id UInt256,
 			block_number UInt64,
 			block_hash String,
 			block_time DateTime64(3, 'UTC'),
@@ -79,9 +79,11 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	} else {
 		blockchainID = ""
 	}
-	var evmChainID uint32
+	// Convert *big.Int to string for ClickHouse UInt256 fields
+	// ClickHouse accepts UInt256 as string representation
+	evmChainIDStr := "0"
 	if tx.EVMChainID != nil {
-		evmChainID = uint32(tx.EVMChainID.Uint64())
+		evmChainIDStr = tx.EVMChainID.String()
 	}
 
 	// Convert *big.Int to string for ClickHouse UInt256 fields
@@ -109,7 +111,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 
 	err := r.client.Conn().Exec(ctx, query,
 		blockchainID,
-		evmChainID,
+		evmChainIDStr,
 		tx.BlockNumber,
 		tx.BlockHash,
 		tx.BlockTime,

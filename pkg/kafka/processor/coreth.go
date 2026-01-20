@@ -121,7 +121,7 @@ func CorethBlockToBlockRow(block *coreth.Block) (*evmrepo.BlockRow, error) {
 	blockRow := &evmrepo.BlockRow{
 		BlockchainID:    blockchainID,
 		EVMChainID:      evmChainID,
-		BlockNumber:     blockNumber,
+		BlockNumber:     block.Number,
 		Hash:            block.Hash,
 		ParentHash:      block.ParentHash,
 		BlockTime:       time.Unix(int64(block.Timestamp), 0).UTC(),

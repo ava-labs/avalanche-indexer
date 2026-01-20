@@ -13,9 +13,9 @@ var (
 
 // BlockRow represents a block row in the database
 type BlockRow struct {
-	BlockchainID          *string  // Blockchain ID
-	EVMChainID            *big.Int // EVM Chain ID (defaults to 0 for now)
-	BlockNumber           uint64
+	BlockchainID          *string
+	EVMChainID            *big.Int // UInt256 in ClickHouse
+	BlockNumber           *big.Int // UInt64 in ClickHouse
 	Hash                  string
 	ParentHash            string
 	BlockTime             time.Time

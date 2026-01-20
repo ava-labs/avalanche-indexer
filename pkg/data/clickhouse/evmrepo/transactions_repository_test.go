@@ -36,8 +36,8 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
 		}),
-			*tx.BlockchainID,               // string: blockchain ID
-			uint32(tx.EVMChainID.Uint64()), // uint32: converted from *big.Int
+			*tx.BlockchainID,       // string: blockchain ID
+			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -83,8 +83,8 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	// Expect WriteTransaction call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
-			*tx.BlockchainID,               // string: blockchain ID
-			uint32(tx.EVMChainID.Uint64()), // uint32: converted from *big.Int
+			*tx.BlockchainID,       // string: blockchain ID
+			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -135,8 +135,8 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
 		}),
-			*tx.BlockchainID,               // string: blockchain ID
-			uint32(tx.EVMChainID.Uint64()), // uint32: converted from *big.Int
+			*tx.BlockchainID,       // string: blockchain ID
+			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
