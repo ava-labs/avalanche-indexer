@@ -3,3 +3,5 @@ avalanche-indexer
 .env
 /bin
 coverage.out
+blockfetcher
+consumerindexer
