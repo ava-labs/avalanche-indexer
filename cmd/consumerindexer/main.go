@@ -244,6 +244,20 @@ func main() {
 						EnvVars: []string{"CHAIN_ID"},
 						Value:   "",
 					},
+					&cli.StringFlag{
+						Name:    "environment",
+						Aliases: []string{"E"},
+						Usage:   "Deployment environment for metrics labels (e.g., 'production', 'staging')",
+						EnvVars: []string{"ENVIRONMENT"},
+						Value:   "",
+					},
+					&cli.StringFlag{
+						Name:    "region",
+						Aliases: []string{"R"},
+						Usage:   "Cloud region for metrics labels (e.g., 'us-east-1')",
+						EnvVars: []string{"REGION"},
+						Value:   "",
+					},
 				},
 				Action: run,
 			},
@@ -275,6 +289,8 @@ func run(c *cli.Context) error {
 	metricsHost := c.String("metrics-host")
 	metricsPort := c.Int("metrics-port")
 	chainID := c.String("chain-id")
+	environment := c.String("environment")
+	region := c.String("region")
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 
 	sugar, err := utils.NewSugaredLogger(verbose)
@@ -309,11 +325,17 @@ func run(c *cli.Context) error {
 		"metricsHost", metricsHost,
 		"metricsPort", metricsPort,
 		"chainID", chainID,
+		"environment", environment,
+		"region", region,
 	)
 
-	// Initialize Prometheus metrics with optional chain label
+	// Initialize Prometheus metrics with labels for multi-instance filtering
 	registry := prometheus.NewRegistry()
-	m, err := metrics.NewWithLabels(registry, metrics.Labels{Chain: chainID})
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		Chain:       chainID,
+		Environment: environment,
+		Region:      region,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}

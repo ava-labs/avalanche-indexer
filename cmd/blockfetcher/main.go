@@ -111,6 +111,20 @@ func main() {
 						Value:   9090,
 					},
 					&cli.StringFlag{
+						Name:    "environment",
+						Aliases: []string{"E"},
+						Usage:   "Deployment environment for metrics labels (e.g., 'production', 'staging')",
+						EnvVars: []string{"ENVIRONMENT"},
+						Value:   "",
+					},
+					&cli.StringFlag{
+						Name:    "region",
+						Aliases: []string{"R"},
+						Usage:   "Cloud region for metrics labels (e.g., 'us-east-1')",
+						EnvVars: []string{"REGION"},
+						Value:   "",
+					},
+					&cli.StringFlag{
 						Name:     "kafka-brokers",
 						Usage:    "The Kafka brokers to use (comma-separated list)",
 						EnvVars:  []string{"KAFKA_BROKERS"},
@@ -190,6 +204,8 @@ func run(c *cli.Context) error {
 	metricsHost := c.String("metrics-host")
 	metricsPort := c.Int("metrics-port")
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
+	environment := c.String("environment")
+	region := c.String("region")
 	kafkaBrokers := c.String("kafka-brokers")
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
@@ -215,6 +231,8 @@ func run(c *cli.Context) error {
 		"maxFailures", maxFailures,
 		"metricsHost", metricsHost,
 		"metricsPort", metricsPort,
+		"environment", environment,
+		"region", region,
 		"snapshotTableName", snapshotTableName,
 		"snapshotInterval", snapshotInterval,
 	)
@@ -235,9 +253,13 @@ func run(c *cli.Context) error {
 		sugar.Infof("end block height: %d", end)
 	}
 
-	// Initialize Prometheus metrics with chain label for multi-instance filtering
+	// Initialize Prometheus metrics with labels for multi-instance filtering
 	registry := prometheus.NewRegistry()
-	m, err := metrics.NewWithLabels(registry, metrics.Labels{Chain: fmt.Sprintf("%d", chainID)})
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		Chain:       fmt.Sprintf("%d", chainID),
+		Environment: environment,
+		Region:      region,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
