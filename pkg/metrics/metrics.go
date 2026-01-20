@@ -11,14 +11,23 @@ const Namespace = "indexer"
 // Labels holds constant labels applied to all metrics.
 // These are useful for distinguishing metrics from multiple indexer instances.
 type Labels struct {
-	Chain string // Chain identifier (e.g., "43114" for C-Chain mainnet)
+	Chain       string // Chain identifier (e.g., "43114" for C-Chain mainnet)
+	Environment string // Deployment environment (e.g., "production", "staging", "development")
+	Region      string // Cloud region (e.g., "us-east-1", "eu-west-1")
 }
 
 // toPrometheusLabels converts Labels to prometheus.Labels map.
+// Only non-empty labels are included to avoid empty label values.
 func (l Labels) toPrometheusLabels() prometheus.Labels {
 	labels := prometheus.Labels{}
 	if l.Chain != "" {
 		labels["chain"] = l.Chain
+	}
+	if l.Environment != "" {
+		labels["environment"] = l.Environment
+	}
+	if l.Region != "" {
+		labels["region"] = l.Region
 	}
 	return labels
 }

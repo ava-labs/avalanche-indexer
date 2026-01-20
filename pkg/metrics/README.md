@@ -128,27 +128,43 @@ Both `blockfetcher` and `consumerindexer` support:
 | `--metrics-host` | `METRICS_HOST` | `""` (all interfaces) | Host to bind metrics server |
 | `--metrics-port` | `METRICS_PORT` | `9090` | Port for metrics server |
 | `--chain-id` | `CHAIN_ID` | `""` | Chain identifier for metrics labels |
+| `--environment` | `ENVIRONMENT` | `""` | Deployment environment (e.g., `production`, `staging`) |
+| `--region` | `REGION` | `""` | Cloud region (e.g., `us-east-1`) |
 
-### Chain Label for Multi-Instance Filtering
+### Metrics Labels for Multi-Instance Filtering
 
-When running multiple indexer instances (e.g., different chains), set `--chain-id` to add a constant `chain` label to all metrics:
+When running multiple indexer instances, use these flags to add constant labels to all metrics:
 
 ```bash
-# Blockfetcher (chain-id is required, used for both data and metrics)
-blockfetcher run --chain-id 43114 ...
+# Blockfetcher with all labels
+blockfetcher run \
+  --chain-id 43114 \
+  --environment production \
+  --region us-east-1 \
+  ...
 
-# Consumerindexer (chain-id is optional, for metrics labeling only)
-consumerindexer run --chain-id 43114 ...
+# Consumerindexer with all labels
+consumerindexer run \
+  --chain-id 43114 \
+  --environment production \
+  --region us-east-1 \
+  ...
 ```
 
-This enables Grafana queries filtered by chain:
+This enables Grafana queries across the pipeline:
 
 ```promql
-# Processing rate for C-Chain mainnet only
-rate(indexer_blocks_processed_total{chain="43114"}[5m])
+# Processing rate for C-Chain mainnet in production
+rate(indexer_blocks_processed_total{chain="43114", environment="production"}[5m])
 
-# Compare error rates across chains
-sum by (chain) (rate(indexer_errors_total[5m]))
+# Compare error rates across regions
+sum by (region) (rate(indexer_errors_total{environment="production"}[5m]))
+
+# Pipeline backlog by chain and environment
+(indexer_highest - indexer_lowest)
+
+# Cross-service throughput comparison (fetcher vs consumer)
+sum by (job, chain) (rate(indexer_blocks_processed_total{environment="production"}[5m]))
 ```
 
 ## Extending Metrics
