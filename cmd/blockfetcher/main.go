@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -256,7 +257,7 @@ func run(c *cli.Context) error {
 	// Initialize Prometheus metrics with labels for multi-instance filtering
 	registry := prometheus.NewRegistry()
 	m, err := metrics.NewWithLabels(registry, metrics.Labels{
-		Chain:       fmt.Sprintf("%d", chainID),
+		Chain:       strconv.FormatUint(chainID, 10),
 		Environment: environment,
 		Region:      region,
 	})
