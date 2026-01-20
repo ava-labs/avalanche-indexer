@@ -2,35 +2,20 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"math/big"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
-	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
-	"go.uber.org/zap"
 )
-
-const (
-	// KafkaTopicBlocks is the Kafka topic name for blocks
-	KafkaTopicBlocks = "blocks"
-)
-
-// repositories holds all the repositories needed for processing messages
-type repositories struct {
-	blocks       evmrepo.Blocks
-	transactions evmrepo.Transactions
-}
 
 func main() {
 	app := &cli.App{
@@ -61,11 +46,17 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "topics",
+						Name:     "topic",
 						Aliases:  []string{"t"},
-						Usage:    "Kafka topics to consume from (comma-separated)",
-						EnvVars:  []string{"KAFKA_TOPICS"},
+						Usage:    "Kafka topic to consume from",
+						EnvVars:  []string{"KAFKA_TOPIC"},
 						Required: true,
+					},
+					&cli.StringFlag{
+						Name:    "dlq-topic",
+						Usage:   "Dead letter queue topic for failed messages",
+						EnvVars: []string{"KAFKA_DLQ_TOPIC"},
+						Value:   "",
 					},
 					&cli.StringFlag{
 						Name:    "auto-offset-reset",
@@ -73,6 +64,54 @@ func main() {
 						Usage:   "Kafka auto offset reset policy (earliest, latest, none)",
 						EnvVars: []string{"KAFKA_AUTO_OFFSET_RESET"},
 						Value:   "earliest",
+					},
+					&cli.Int64Flag{
+						Name:    "concurrency",
+						Usage:   "Concurrent message processors",
+						EnvVars: []string{"KAFKA_CONCURRENCY"},
+						Value:   10,
+					},
+					&cli.DurationFlag{
+						Name:    "offset-commit-interval",
+						Usage:   "Interval for committing offsets",
+						EnvVars: []string{"KAFKA_OFFSET_COMMIT_INTERVAL"},
+						Value:   10 * time.Second,
+					},
+					&cli.BoolFlag{
+						Name:    "enable-kafka-logs",
+						Usage:   "Enable librdkafka client logs",
+						EnvVars: []string{"KAFKA_ENABLE_LOGS"},
+						Value:   false,
+					},
+					&cli.DurationFlag{
+						Name:    "session-timeout",
+						Usage:   "Kafka consumer session timeout",
+						EnvVars: []string{"KAFKA_SESSION_TIMEOUT"},
+						Value:   240 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "max-poll-interval",
+						Usage:   "Kafka consumer max poll interval",
+						EnvVars: []string{"KAFKA_MAX_POLL_INTERVAL"},
+						Value:   3400 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "flush-timeout",
+						Usage:   "Kafka dlq producer flush timeout when closing",
+						EnvVars: []string{"KAFKA_FLUSH_TIMEOUT"},
+						Value:   15 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "goroutine-wait-timeout",
+						Usage:   "Timeout for waiting in-flight goroutines on shutdown",
+						EnvVars: []string{"KAFKA_GOROUTINE_WAIT_TIMEOUT"},
+						Value:   30 * time.Second,
+					},
+					&cli.DurationFlag{
+						Name:    "poll-interval",
+						Usage:   "Poll interval for Kafka consumer",
+						EnvVars: []string{"KAFKA_POLL_INTERVAL"},
+						Value:   100 * time.Millisecond,
 					},
 					// ClickHouse configuration flags
 					&cli.StringSliceFlag{
@@ -204,8 +243,17 @@ func run(c *cli.Context) error {
 	verbose := c.Bool("verbose")
 	bootstrapServers := c.String("bootstrap-servers")
 	groupID := c.String("group-id")
-	topicsStr := c.String("topics")
+	topic := c.String("topic")
+	dlqTopic := c.String("dlq-topic")
 	autoOffsetReset := c.String("auto-offset-reset")
+	concurrency := c.Int64("concurrency")
+	offsetCommitInterval := c.Duration("offset-commit-interval")
+	enableKafkaLogs := c.Bool("enable-kafka-logs")
+	sessionTimeout := c.Duration("session-timeout")
+	maxPollInterval := c.Duration("max-poll-interval")
+	flushTimeout := c.Duration("flush-timeout")
+	goroutineWaitTimeout := c.Duration("goroutine-wait-timeout")
+	pollInterval := c.Duration("poll-interval")
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
 
@@ -222,8 +270,17 @@ func run(c *cli.Context) error {
 		"verbose", verbose,
 		"bootstrapServers", bootstrapServers,
 		"groupID", groupID,
-		"topics", topicsStr,
+		"topic", topic,
+		"dlqTopic", dlqTopic,
 		"autoOffsetReset", autoOffsetReset,
+		"maxConcurrency", concurrency,
+		"offsetCommitInterval", offsetCommitInterval,
+		"enableKafkaLogs", enableKafkaLogs,
+		"sessionTimeout", sessionTimeout,
+		"maxPollInterval", maxPollInterval,
+		"flushTimeout", flushTimeout,
+		"goroutineWaitTimeout", goroutineWaitTimeout,
+		"pollInterval", pollInterval,
 		"clickhouseHosts", chCfg.Hosts,
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
@@ -257,115 +314,47 @@ func run(c *cli.Context) error {
 	}
 	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
 
-	repos := &repositories{
-		blocks:       blocksRepo,
-		transactions: transactionsRepo,
+	// Create CorethProcessor with ClickHouse persistence
+	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo)
+
+	// Configure consumer
+	consumerCfg := kafka.ConsumerConfig{
+		DLQTopic:                    dlqTopic,
+		Topic:                       topic,
+		Concurrency:                 concurrency,
+		IsDLQConsumer:               false,
+		BootstrapServers:            bootstrapServers,
+		GroupID:                     groupID,
+		AutoOffsetReset:             autoOffsetReset,
+		EnableLogs:                  enableKafkaLogs,
+		OffsetManagerCommitInterval: offsetCommitInterval,
+		SessionTimeout:              &sessionTimeout,
+		MaxPollInterval:             &maxPollInterval,
+		FlushTimeout:                &flushTimeout,
+		GoroutineWaitTimeout:        &goroutineWaitTimeout,
+		PollInterval:                &pollInterval,
 	}
 
-	// Create Kafka consumer
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": bootstrapServers,
-		"group.id":          groupID,
-		"auto.offset.reset": autoOffsetReset,
-	})
+	// Create consumer
+	consumer, err := kafka.NewConsumer(ctx, sugar, consumerCfg, proc)
 	if err != nil {
-		return fmt.Errorf("failed to create Kafka consumer: %w", err)
-	}
-	defer consumer.Close()
-
-	sugar.Info("Kafka consumer created successfully")
-
-	// Parse topics
-	topics := strings.Split(topicsStr, ",")
-	for i, topic := range topics {
-		topics[i] = strings.TrimSpace(topic)
+		return fmt.Errorf("failed to create consumer: %w", err)
 	}
 
-	// Rebalance callback to handle partition assignment/revocation
-	rebalanceCallback := func(c *kafka.Consumer, event kafka.Event) error {
-		switch e := event.(type) {
-		case kafka.AssignedPartitions:
-			partitions := make([]string, len(e.Partitions))
-			for i, p := range e.Partitions {
-				partitions[i] = fmt.Sprintf("%s[%d]", *p.Topic, p.Partition)
-			}
-			sugar.Infow("partitions assigned", "partitions", partitions)
-			return c.Assign(e.Partitions)
-		case kafka.RevokedPartitions:
-			partitions := make([]string, len(e.Partitions))
-			for i, p := range e.Partitions {
-				partitions[i] = fmt.Sprintf("%s[%d]", *p.Topic, p.Partition)
-			}
-			sugar.Infow("partitions revoked", "partitions", partitions)
-			return c.Unassign()
-		default:
-			return nil
-		}
+	sugar.Infow("consumer created, starting consumption",
+		"topic", topic,
+		"groupID", groupID,
+		"concurrency", concurrency,
+	)
+
+	// Start consumer (blocks until shutdown signal received)
+	// Consumer closes itself gracefully inside Start() before returning
+	if err := consumer.Start(ctx); err != nil {
+		return fmt.Errorf("consumer error: %w", err)
 	}
 
-	// Subscribe to topics
-	err = consumer.SubscribeTopics(topics, rebalanceCallback)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to topics: %w", err)
-	}
-
-	sugar.Infow("subscribed to topics", "topics", topics)
-
-	// Consumer loop
-	for {
-		select {
-		case <-ctx.Done():
-			sugar.Info("shutting down consumer...")
-			return nil
-		default:
-			ev := consumer.Poll(100)
-			if ev == nil {
-				continue
-			}
-
-			switch e := ev.(type) {
-			case *kafka.Message:
-				sugar.Debugw("received message",
-					"topic", *e.TopicPartition.Topic,
-					"partition", e.TopicPartition.Partition,
-					"offset", e.TopicPartition.Offset,
-				)
-				if err := processMessage(ctx, e, repos, sugar); err != nil {
-					sugar.Errorw("failed to process message",
-						"topic", *e.TopicPartition.Topic,
-						"partition", e.TopicPartition.Partition,
-						"offset", e.TopicPartition.Offset,
-						"error", err,
-					)
-					// Continue processing other messages even if one fails
-					// TODO: Add retry logic and DLQ logic
-					continue
-				}
-			case kafka.Error:
-				if e.Code() == kafka.ErrPartitionEOF {
-					sugar.Debugw("reached end of partition", "error", e)
-					continue
-				}
-				if e.IsFatal() {
-					sugar.Errorw("fatal kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
-					return fmt.Errorf("fatal kafka error: %w", e)
-				}
-				if e.Code() == kafka.ErrAllBrokersDown {
-					sugar.Errorw("all brokers down", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
-					return fmt.Errorf("all brokers down: %w", e)
-				}
-				// Non-fatal errors are usually informational
-				sugar.Warnw(
-					"ignoring unexpected kafka error",
-					"code", fmt.Sprintf("%#x", e.Code()),
-					"error", e,
-				)
-				continue
-			default:
-				sugar.Debugw("ignored event", "type", fmt.Sprintf("%T", e))
-			}
-		}
-	}
+	sugar.Info("consumer shutdown complete")
+	return nil
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
@@ -399,267 +388,4 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 		ClientVersion:        c.String("clickhouse-client-version"),
 		UseHTTP:              c.Bool("clickhouse-use-http"),
 	}
-}
-
-// processMessage processes a Kafka message and writes it to ClickHouse
-func processMessage(
-	ctx context.Context,
-	msg *kafka.Message,
-	repos *repositories,
-	sugar *zap.SugaredLogger,
-) error {
-	topic := *msg.TopicPartition.Topic
-
-	switch topic {
-	case KafkaTopicBlocks:
-		return processBlockMessage(ctx, msg.Value, repos, sugar)
-	default:
-		sugar.Debugw("ignoring message from unknown topic", "topic", topic)
-		return nil
-	}
-}
-
-// processBlockMessage processes a block message from Kafka
-func processBlockMessage(
-	ctx context.Context,
-	data []byte,
-	repos *repositories,
-	sugar *zap.SugaredLogger,
-) error {
-	// Parse JSON payload directly to coreth.Block
-	var block coreth.Block
-	if err := json.Unmarshal(data, &block); err != nil {
-		// TODO: Add DLQ logic
-		return fmt.Errorf("failed to unmarshal block JSON: %w", err)
-	}
-
-	// Process the block
-	if err := processBlock(ctx, &block, repos, sugar); err != nil {
-		return err
-	}
-
-	// Process transactions if any exist
-	if len(block.Transactions) > 0 {
-		if err := processTransactions(ctx, &block, repos, sugar); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// processBlock converts a coreth.Block to BlockRow and writes it to ClickHouse
-func processBlock(
-	ctx context.Context,
-	block *coreth.Block,
-	repos *repositories,
-	sugar *zap.SugaredLogger,
-) error {
-	// Validate blockchain ID
-	if block.BcID == nil {
-		return evmrepo.ErrBlockChainIDRequired
-	}
-
-	// Convert to BlockRow
-	blockRow := corethBlockToBlockRow(block)
-
-	// Write the block
-	if err := repos.blocks.WriteBlock(ctx, blockRow); err != nil {
-		return fmt.Errorf("failed to write block: %w", err)
-	}
-
-	sugar.Debugw("successfully wrote block",
-		"bcID", blockRow.BcID,
-		"evmID", blockRow.EvmID,
-		"blockNumber", blockRow.BlockNumber,
-		"nonce", blockRow.Nonce,
-	)
-
-	return nil
-}
-
-// processTransactions converts transactions from a coreth.Block to TransactionRow and writes
-// them to ClickHouse
-func processTransactions(
-	ctx context.Context,
-	block *coreth.Block,
-	repos *repositories,
-	sugar *zap.SugaredLogger,
-) error {
-	// Validate blockchain ID
-	if block.BcID == nil {
-		return evmrepo.ErrBlockChainIDRequiredForTx
-	}
-
-	// Convert and write each transaction
-	// TODO: Add batching (in a future PR)
-	for i, tx := range block.Transactions {
-		txRow, err := corethTransactionToTransactionRow(tx, block, uint64(i))
-		if err != nil {
-			return fmt.Errorf("failed to convert transaction %d: %w", i, err)
-		}
-
-		if err := repos.transactions.WriteTransaction(ctx, txRow); err != nil {
-			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
-		}
-	}
-
-	var blockNumber uint64
-	if block.Number != nil {
-		blockNumber = block.Number.Uint64()
-	}
-
-	sugar.Debugw("successfully wrote transactions",
-		"bcID", block.BcID,
-		"evmID", block.EvmID,
-		"blockNumber", blockNumber,
-		"transactionCount", len(block.Transactions),
-	)
-
-	return nil
-}
-
-// corethBlockToBlockRow converts a coreth.Block to BlockRow
-func corethBlockToBlockRow(block *coreth.Block) *evmrepo.BlockRow {
-	// Extract number from big.Int
-	var blockNumber uint64
-	if block.Number != nil {
-		blockNumber = block.Number.Uint64()
-	}
-
-	// Set EvmID, defaulting to 0 if nil
-	var evmID *big.Int
-	if block.EvmID != nil {
-		evmID = block.EvmID
-	} else {
-		evmID = big.NewInt(0)
-	}
-
-	blockRow := &evmrepo.BlockRow{
-		BcID:        block.BcID,
-		EvmID:       evmID,
-		BlockNumber: blockNumber,
-		Size:        block.Size,
-		GasLimit:    block.GasLimit,
-		GasUsed:     block.GasUsed,
-		BlockTime:   time.Unix(int64(block.Timestamp), 0).UTC(),
-		ExtraData:   block.ExtraData,
-	}
-
-	// Set difficulty from big.Int (keep as *big.Int)
-	if block.Difficulty != nil {
-		blockRow.Difficulty = block.Difficulty
-		// TotalDifficulty: for now use Difficulty, but this should be cumulative in production
-		blockRow.TotalDifficulty = new(big.Int).Set(block.Difficulty)
-	} else {
-		blockRow.Difficulty = big.NewInt(0)
-		blockRow.TotalDifficulty = big.NewInt(0)
-	}
-
-	// Direct string assignments - no conversions needed
-	blockRow.Hash = block.Hash
-	blockRow.ParentHash = block.ParentHash
-	blockRow.StateRoot = block.StateRoot
-	blockRow.TransactionsRoot = block.TransactionsRoot
-	blockRow.ReceiptsRoot = block.ReceiptsRoot
-	blockRow.Sha3Uncles = block.UncleHash
-	blockRow.MixHash = block.MixHash
-	blockRow.Miner = block.Miner
-
-	// Parse nonce - convert uint64 to hex string
-	blockRow.Nonce = strconv.FormatUint(block.Nonce, 16)
-
-	// Optional fields - keep as *big.Int
-	if block.BaseFee != nil {
-		blockRow.BaseFeePerGas = block.BaseFee
-	} else {
-		blockRow.BaseFeePerGas = big.NewInt(0)
-	}
-	// BlockGasCost defaults to 0 for now (not in coreth.Block yet)
-	blockRow.BlockGasCost = big.NewInt(0)
-	if block.BlobGasUsed != nil {
-		blockRow.BlobGasUsed = *block.BlobGasUsed
-	}
-	if block.ExcessBlobGas != nil {
-		blockRow.ExcessBlobGas = *block.ExcessBlobGas
-	}
-	if block.ParentBeaconBlockRoot != "" {
-		blockRow.ParentBeaconBlockRoot = block.ParentBeaconBlockRoot
-	}
-	if block.MinDelayExcess != 0 {
-		blockRow.MinDelayExcess = block.MinDelayExcess
-	}
-
-	return blockRow
-}
-
-// corethTransactionToTransactionRow converts a coreth.Transaction to TransactionRow
-func corethTransactionToTransactionRow(
-	tx *coreth.Transaction,
-	block *coreth.Block,
-	txIndex uint64,
-) (*evmrepo.TransactionRow, error) {
-	// Extract blockchain ID from block
-	if block.BcID == nil {
-		return nil, evmrepo.ErrBlockChainIDRequiredForTx
-	}
-
-	// Extract block number
-	var blockNumber uint64
-	if block.Number != nil {
-		blockNumber = block.Number.Uint64()
-	}
-
-	// Set EvmID, defaulting to 0 if nil
-	var evmID *big.Int
-	if block.EvmID != nil {
-		evmID = block.EvmID
-	} else {
-		evmID = big.NewInt(0)
-	}
-
-	txRow := &evmrepo.TransactionRow{
-		BcID:             block.BcID,
-		EvmID:            evmID,
-		BlockNumber:      blockNumber,
-		BlockHash:        block.Hash,
-		BlockTime:        time.Unix(int64(block.Timestamp), 0).UTC(),
-		Hash:             tx.Hash,
-		From:             tx.From,
-		Nonce:            tx.Nonce,
-		Gas:              tx.Gas,
-		Input:            tx.Input,
-		Type:             tx.Type,
-		TransactionIndex: txIndex,
-	}
-
-	// Handle nullable To field
-	if tx.To != "" {
-		txRow.To = &tx.To
-	}
-
-	// Set big.Int values directly (keep as *big.Int)
-	if tx.Value != nil {
-		txRow.Value = tx.Value
-	} else {
-		txRow.Value = big.NewInt(0)
-	}
-
-	if tx.GasPrice != nil {
-		txRow.GasPrice = tx.GasPrice
-	} else {
-		txRow.GasPrice = big.NewInt(0)
-	}
-
-	// Handle nullable MaxFeePerGas
-	if tx.MaxFeePerGas != nil {
-		txRow.MaxFeePerGas = tx.MaxFeePerGas
-	}
-
-	// Handle nullable MaxPriorityFee
-	if tx.MaxPriorityFee != nil {
-		txRow.MaxPriorityFee = tx.MaxPriorityFee
-	}
-
-	return txRow, nil
 }

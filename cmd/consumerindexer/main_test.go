@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
-	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Helper to compare *big.Int values (handles nil cases)
@@ -37,7 +40,8 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 
 	block := createTestBlock()
 
-	blockRow := corethBlockToBlockRow(block)
+	blockRow, err := processor.CorethBlockToBlockRow(block)
+	require.NoError(t, err)
 
 	require.NotNil(t, blockRow)
 	assertBigIntEqual(t, block.BcID, blockRow.BcID)
@@ -64,7 +68,8 @@ func TestCorethBlockToBlockRow_NilNumber(t *testing.T) {
 	block := createTestBlock()
 	block.Number = nil
 
-	blockRow := corethBlockToBlockRow(block)
+	blockRow, err := processor.CorethBlockToBlockRow(block)
+	require.NoError(t, err)
 
 	require.NotNil(t, blockRow)
 	assert.Equal(t, uint64(0), blockRow.BlockNumber)
@@ -80,7 +85,8 @@ func TestCorethBlockToBlockRow_OptionalFields(t *testing.T) {
 	block.ParentBeaconBlockRoot = "0xbeaconroot1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	block.MinDelayExcess = 5000
 
-	blockRow := corethBlockToBlockRow(block)
+	blockRow, err := processor.CorethBlockToBlockRow(block)
+	require.NoError(t, err)
 
 	require.NotNil(t, blockRow)
 	assertBigIntEqual(t, big.NewInt(470000000000), blockRow.BaseFeePerGas)
@@ -97,7 +103,7 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 	block := createTestBlock()
 	txIndex := uint64(0)
 
-	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
+	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
@@ -130,7 +136,7 @@ func TestCorethTransactionToTransactionRow_NilTo(t *testing.T) {
 	block := createTestBlock()
 	txIndex := uint64(0)
 
-	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
+	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
@@ -145,7 +151,7 @@ func TestCorethTransactionToTransactionRow_NilValue(t *testing.T) {
 	block := createTestBlock()
 	txIndex := uint64(0)
 
-	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
+	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
@@ -160,7 +166,7 @@ func TestCorethTransactionToTransactionRow_NilGasPrice(t *testing.T) {
 	block := createTestBlock()
 	txIndex := uint64(0)
 
-	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
+	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
@@ -176,7 +182,7 @@ func TestCorethTransactionToTransactionRow_MaxFeeFields(t *testing.T) {
 	block := createTestBlock()
 	txIndex := uint64(0)
 
-	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
+	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
@@ -194,7 +200,7 @@ func TestCorethTransactionToTransactionRow_NilBlockchainID(t *testing.T) {
 	block.BcID = nil // Nil blockchain ID
 	txIndex := uint64(0)
 
-	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
+	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
 
 	assert.Nil(t, txRow)
 	require.ErrorIs(t, err, evmrepo.ErrBlockChainIDRequiredForTx)
@@ -208,7 +214,7 @@ func TestCorethTransactionToTransactionRow_NilNumber(t *testing.T) {
 	block.Number = nil // Nil number
 	txIndex := uint64(0)
 
-	txRow, err := corethTransactionToTransactionRow(tx, block, txIndex)
+	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
@@ -219,14 +225,17 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	invalidJSON := []byte(`{invalid json}`)
-	repos := &repositories{} // Empty repos for this test
 	sugar := zap.NewNop().Sugar()
+	proc := processor.NewCorethProcessor(sugar, nil, nil)
 
-	err := processBlockMessage(t.Context(), invalidJSON, repos, sugar)
+	msg := &cKafka.Message{
+		Value: invalidJSON,
+	}
 
-	var jsonErr *json.SyntaxError
-	require.ErrorAs(t, err, &jsonErr)
-	assert.Contains(t, err.Error(), "failed to unmarshal block JSON")
+	err := proc.Process(t.Context(), msg)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to unmarshal coreth block")
 }
 
 func TestProcessBlockMessage_MissingChainID(t *testing.T) {
@@ -242,10 +251,14 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	data, err := json.Marshal(blockJSON)
 	require.NoError(t, err)
 
-	repos := &repositories{} // Empty repos for this test
 	sugar := zap.NewNop().Sugar()
+	proc := processor.NewCorethProcessor(sugar, nil, nil)
 
-	err = processBlockMessage(t.Context(), data, repos, sugar)
+	msg := &cKafka.Message{
+		Value: data,
+	}
+
+	err = proc.Process(t.Context(), msg)
 
 	require.ErrorIs(t, err, evmrepo.ErrBlockChainIDRequired)
 }

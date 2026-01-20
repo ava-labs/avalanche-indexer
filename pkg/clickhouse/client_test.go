@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -319,9 +320,30 @@ func TestNew_AllConfigFields(t *testing.T) {
 	// This will fail to connect (auth error or connection error), but we're testing config processing
 	client, err := New(cfg, testLogger(t))
 
-	// Should fail to connect, but config should be processed
-	require.Contains(t, err.Error(), "connection refused")
-	assert.Nil(t, client)
+	// Should fail to connect or authenticate, but config should be processed
+	require.Nil(t, client)
 
 	// Error could be from Open, Ping, or authentication. All are valid.
+	// Accept either connection error or authentication error
+	if err == nil {
+		require.Fail(t, "Expected an error but got nil")
+	}
+
+	errMsg := err.Error()
+	validErrors := []string{
+		"connection refused",
+		"Authentication failed",
+		"password is incorrect",
+		"no user with such name",
+	}
+
+	hasValidError := false
+	for _, validErr := range validErrors {
+		if strings.Contains(errMsg, validErr) {
+			hasValidError = true
+			break
+		}
+	}
+
+	require.True(t, hasValidError, "Expected connection or authentication error, got: %s", errMsg)
 }
