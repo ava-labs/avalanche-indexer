@@ -56,6 +56,11 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		blockNumber = block.Number.Uint64()
 	}
 
+	// Validate block (BcID is required) - do this even if not persisting
+	if block.BcID == nil {
+		return evmrepo.ErrBlockChainIDRequired
+	}
+
 	p.log.Debugw("processing coreth block",
 		"bcID", block.BcID,
 		"evmID", block.EvmID,
