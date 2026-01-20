@@ -107,6 +107,12 @@ func main() {
 						EnvVars: []string{"KAFKA_GOROUTINE_WAIT_TIMEOUT"},
 						Value:   30 * time.Second,
 					},
+					&cli.DurationFlag{
+						Name:    "poll-interval",
+						Usage:   "Poll interval for Kafka consumer",
+						EnvVars: []string{"KAFKA_POLL_INTERVAL"},
+						Value:   100 * time.Millisecond,
+					},
 					// ClickHouse configuration flags
 					&cli.StringSliceFlag{
 						Name:    "clickhouse-hosts",
@@ -241,6 +247,7 @@ func run(c *cli.Context) error {
 	maxPollInterval := c.Duration("max-poll-interval")
 	flushTimeout := c.Duration("flush-timeout")
 	goroutineWaitTimeout := c.Duration("goroutine-wait-timeout")
+	pollInterval := c.Duration("poll-interval")
 	rawTableName := c.String("raw-blocks-table-name")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
@@ -266,6 +273,7 @@ func run(c *cli.Context) error {
 		"maxPollInterval", maxPollInterval,
 		"flushTimeout", flushTimeout,
 		"goroutineWaitTimeout", goroutineWaitTimeout,
+		"pollInterval", pollInterval,
 		"clickhouseHosts", chCfg.Hosts,
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
@@ -307,6 +315,7 @@ func run(c *cli.Context) error {
 		MaxPollInterval:             &maxPollInterval,
 		FlushTimeout:                &flushTimeout,
 		GoroutineWaitTimeout:        &goroutineWaitTimeout,
+		PollInterval:                &pollInterval,
 	}
 
 	// Create consumer
