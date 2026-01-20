@@ -132,7 +132,7 @@ services:
     entrypoint: >
       bash -lc '
       clickhouse-client --host clickhouse --query "
-      CREATE TABLE IF NOT EXISTS test_db.snapshots
+      CREATE TABLE IF NOT EXISTS test_db.checkpoints
       (
         chain_id UInt64,
         lowest_unprocessed_block UInt64,

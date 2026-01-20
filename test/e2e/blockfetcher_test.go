@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	stream "github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	corethtypes "github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
@@ -37,13 +37,13 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_realtime")
 	kafkaClientID := getEnvStr("KAFKA_CLIENT_ID", "blockfetcher-e2e")
-	clickhouseTable := getEnvStr("SNAPSHOT_TABLE_NAME", "test_db.snapshots")
+	clickhouseTable := getEnvStr("CHECKPOINT_TABLE_NAME", "test_db.checkpoints")
 	concurrency := int64(3)
 	backfill := int64(1)
 	blocksCap := 100
 	maxFailures := 10
 	// Keep interval short to validate ClickHouse writes if desired (not asserted).
-	snapshotInterval := 2 * time.Second
+	checkpointInterval := 2 * time.Second
 
 	// ---- Test context ----
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -53,17 +53,17 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, err)
 	defer log.Desugar().Sync() //nolint:errcheck
 
-	// ---- Prepare ClickHouse (create DB/table if needed, seed snapshot at latest height) ----
+	// ---- Prepare ClickHouse (create DB/table if needed, seed checkpoint at latest height) ----
 	chCfg := clickhouse.Load()
 	chClient, err := clickhouse.New(chCfg, log)
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	repo := snapshot.NewRepository(chClient, clickhouseTable)
+	repo := checkpoint.NewRepository(chClient, clickhouseTable)
 	err = repo.CreateTableIfNotExists(ctx)
-	require.NoError(t, err, "failed to check existence or create snapshots table")
+	require.NoError(t, err, "failed to check existence or create checkpoints table")
 
-	// Get latest block height from RPC to seed snapshot.
+	// Get latest block height from RPC to seed checkpoint.
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
 	defer rpcClient.Close()
@@ -78,13 +78,13 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 		startHeight = latest - safetyMargin
 	}
 
-	seed := &snapshot.Snapshot{
+	seed := &checkpoint.Checkpoint{
 		ChainID:   chainID,
 		Lowest:    startHeight,
 		Timestamp: time.Now().Unix(),
 	}
-	err = repo.WriteSnapshot(ctx, seed)
-	require.NoError(t, err, "failed to seed snapshot row")
+	err = repo.WriteCheckpoint(ctx, seed)
+	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Kafka consumer to observe realtime blocks ----
 	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
@@ -132,7 +132,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, snapshotInterval, chainID) })
+	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, chainID) })
 
 	minMsgs := 5
 	received := 0
@@ -184,8 +184,8 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	// Verify Kafka payloads match RPC for the received block numbers (in arrival order).
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, receivedOrder)
 
-	// Verify snapshot reflects max processed block (+1 for lowest_unprocessed_block).
-	verifySnapshotFromMaxProcessed(t, verifyCtx, repo, chainID, kafkaByNumber)
+	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, chainID, kafkaByNumber)
 }
 
 // TestE2EBlockfetcherBackfill runs backfill over a small recent range and verifies
@@ -197,12 +197,12 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_backfill")
 	kafkaClientID := "blockfetcher-e2e-backfill"
-	clickhouseTable := getEnvStr("SNAPSHOT_TABLE_NAME", "test_db.snapshots")
+	clickhouseTable := getEnvStr("CHECKPOINT_TABLE_NAME", "test_db.checkpoints")
 	concurrency := int64(4)
 	backfill := int64(2)
 	blocksCap := 50
 	maxFailures := 10
-	snapshotInterval := 2 * time.Second
+	checkpointInterval := 2 * time.Second
 
 	// ---- Test context ----
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -233,10 +233,10 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	repo := snapshot.NewRepository(chClient, clickhouseTable)
+	repo := checkpoint.NewRepository(chClient, clickhouseTable)
 	err = repo.CreateTableIfNotExists(ctx)
 	if err != nil {
-		require.NoError(t, err, "failed to check existence or create snapshots table")
+		require.NoError(t, err, "failed to check existence or create checkpoints table")
 	}
 
 	// ---- Kafka consumer to observe backfilled blocks ----
@@ -282,7 +282,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, snapshotInterval, chainID) })
+	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, chainID) })
 
 	// Collect exactly the expected backfill range
 	expectedCount := int(end - start + 1)
@@ -332,12 +332,12 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	// Verify messages with RPC
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, numbers)
 
-	// Verify snapshot reflects max processed block (+1 for lowest_unprocessed_block).
-	verifySnapshotFromMaxProcessed(t, verifyCtx, repo, chainID, kafkaByNumber)
+	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, chainID, kafkaByNumber)
 }
 
-// verifySnapshotFromMaxProcessed finds the max processed height and checks snapshot lowest==max+1.
-func verifySnapshotFromMaxProcessed(t *testing.T, ctx context.Context, repo snapshot.Repository, chainID uint64, kafkaByNumber map[uint64][]byte) {
+// verifyCheckpointFromMaxProcessed finds the max processed height and checks checkpoint lowest==max+1.
+func verifyCheckpointFromMaxProcessed(t *testing.T, ctx context.Context, repo checkpoint.Repository, chainID uint64, kafkaByNumber map[uint64][]byte) {
 	t.Helper()
 	if len(kafkaByNumber) == 0 {
 		return
@@ -348,22 +348,22 @@ func verifySnapshotFromMaxProcessed(t *testing.T, ctx context.Context, repo snap
 			max = n
 		}
 	}
-	verifySnapshotLowestCorrect(t, ctx, repo, chainID, max+1)
+	verifyCheckpointLowestCorrect(t, ctx, repo, chainID, max+1)
 }
 
-// verifySnapshotLowestCorrect polls ClickHouse snapshot for the chain until lowest>=expected or timeout.
-func verifySnapshotLowestCorrect(t *testing.T, ctx context.Context, repo snapshot.Repository, chainID uint64, expected uint64) {
+// verifyCheckpointLowestCorrect polls ClickHouse checkpoint for the chain until lowest>=expected or timeout.
+func verifyCheckpointLowestCorrect(t *testing.T, ctx context.Context, repo checkpoint.Repository, chainID uint64, expected uint64) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		s, err := repo.ReadSnapshot(ctx, chainID)
+		s, err := repo.ReadCheckpoint(ctx, chainID)
 		if err == nil && s != nil && s.Lowest >= expected {
 			return
 		}
 		if time.Now().After(deadline) {
-			require.NoError(t, err, "read snapshot failed")
-			require.NotNil(t, s, "snapshot nil")
-			require.GreaterOrEqual(t, expected, s.Lowest, "snapshot lowest mismatch")
+			require.NoError(t, err, "read checkpoint failed")
+			require.NotNil(t, s, "checkpoint nil")
+			require.GreaterOrEqual(t, expected, s.Lowest, "checkpoint lowest mismatch")
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
