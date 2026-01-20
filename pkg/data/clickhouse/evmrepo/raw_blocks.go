@@ -13,8 +13,8 @@ var (
 
 // BlockRow represents a block row in the database
 type BlockRow struct {
-	BcID                  *big.Int // Blockchain ID
-	EvmID                 *big.Int // EVM Chain ID (defaults to 0 for now)
+	BlockchainID          *string  // Blockchain ID
+	EVMChainID            *big.Int // EVM Chain ID (defaults to 0 for now)
 	BlockNumber           uint64
 	Hash                  string
 	ParentHash            string

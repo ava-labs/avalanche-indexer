@@ -14,12 +14,11 @@ import (
 )
 
 type Block struct {
-	Number     *big.Int `json:"number"`
-	Hash       string   `json:"hash"`
-	ParentHash string   `json:"parentHash"`
-
-	BcID  *big.Int `json:"bcId,omitempty"`
-	EvmID *big.Int `json:"evmId,omitempty"`
+	EVMChainID   *big.Int `json:"evmChainId,omitempty"`
+	BlockchainID *string  `json:"blockchainId,omitempty"`
+	Number       *big.Int `json:"number"`
+	Hash         string   `json:"hash"`
+	ParentHash   string   `json:"parentHash"`
 
 	StateRoot        string `json:"stateRoot"`
 	TransactionsRoot string `json:"transactionsRoot"`
@@ -67,8 +66,6 @@ type Transaction struct {
 	MaxPriorityFee *big.Int `json:"maxPriorityFeePerGas"`
 	Input          string   `json:"input"`
 	Type           uint8    `json:"type"`
-	BcID           *big.Int `json:"bcId"`
-	EvmID          *big.Int `json:"evmId"`
 }
 
 type Withdrawal struct {
@@ -80,7 +77,7 @@ type Withdrawal struct {
 
 // BlockFromLibevm converts a libevm Block to a Coreth Block.
 // chainID should be provided since blocks may not have transactions to extract it from.
-func BlockFromLibevm(block *libevmtypes.Block, chainID *big.Int) (*Block, error) {
+func BlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*Block, error) {
 	transactions, err := TransactionsFromLibevm(block.Transactions())
 	if err != nil {
 		return nil, fmt.Errorf("convert transactions: %w", err)
@@ -105,7 +102,8 @@ func BlockFromLibevm(block *libevmtypes.Block, chainID *big.Int) (*Block, error)
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
-		BcID:                  chainID,
+		EVMChainID:            evmChainID,
+		BlockchainID:          blockchainID,
 		GasLimit:              block.GasLimit(),
 		GasUsed:               block.GasUsed(),
 		BaseFee:               block.BaseFee(),
@@ -159,7 +157,6 @@ func TransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*Transac
 			MaxPriorityFee: tx.GasTipCap(),
 			Input:          hexutil.Encode(tx.Data()),
 			Type:           tx.Type(),
-			BcID:           tx.ChainId(),
 		}
 	}
 	return result, nil
@@ -181,11 +178,92 @@ func WithdrawalsFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*Withdrawal 
 }
 
 func (b *Block) Marshal() ([]byte, error) {
-	return json.Marshal(b)
+	// Convert big.Int fields to strings for JSON
+	type BlockAlias Block
+	alias := (*BlockAlias)(b)
+
+	// Create a map and manually convert big.Int to strings
+	result := make(map[string]interface{})
+	data, _ := json.Marshal(alias)
+	json.Unmarshal(data, &result)
+
+	// Convert big.Int fields to strings
+	if b.EVMChainID != nil {
+		result["evmChainId"] = b.EVMChainID.String()
+	}
+	if b.Number != nil {
+		result["number"] = b.Number.String()
+	}
+	if b.BaseFee != nil {
+		result["baseFeePerGas"] = b.BaseFee.String()
+	}
+	if b.Difficulty != nil {
+		result["difficulty"] = b.Difficulty.String()
+	}
+
+	return json.Marshal(result)
 }
 
 func (b *Block) Unmarshal(data []byte) error {
-	return json.Unmarshal(data, b)
+	// Use a map to handle big.Int fields as strings
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	// Remove big.Int fields from raw map temporarily and convert them
+	var evmChainIDStr string
+	if val, ok := raw["evmChainId"]; ok {
+		if str, ok := val.(string); ok {
+			evmChainIDStr = str
+		}
+	}
+	numberStr, _ := raw["number"].(string)
+	baseFeeStr, _ := raw["baseFeePerGas"].(string)
+	difficultyStr, _ := raw["difficulty"].(string)
+
+	// Remove these fields so they don't cause unmarshal errors
+	delete(raw, "evmChainId")
+	delete(raw, "number")
+	delete(raw, "baseFeePerGas")
+	delete(raw, "difficulty")
+
+	// Unmarshal everything else
+	type BlockAlias Block
+	var alias BlockAlias
+	aliasData, _ := json.Marshal(raw)
+	if err := json.Unmarshal(aliasData, &alias); err != nil {
+		return err
+	}
+	*b = Block(alias)
+
+	// Handle big.Int fields manually
+	if evmChainIDStr != "" {
+		val, ok := new(big.Int).SetString(evmChainIDStr, 10)
+		if ok {
+			b.EVMChainID = val
+		}
+	}
+	if numberStr != "" {
+		val, ok := new(big.Int).SetString(numberStr, 10)
+		if ok {
+			b.Number = val
+		}
+	}
+	if baseFeeStr != "" {
+		val, ok := new(big.Int).SetString(baseFeeStr, 10)
+		if ok {
+			b.BaseFee = val
+		}
+	}
+	if difficultyStr != "" {
+		val, ok := new(big.Int).SetString(difficultyStr, 10)
+		if ok {
+			b.Difficulty = val
+		}
+	}
+
+	return nil
 }
 
 func (t *Transaction) Marshal() ([]byte, error) {

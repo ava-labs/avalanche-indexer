@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 )
 
@@ -15,12 +15,12 @@ const (
 	backoff      = 300 * time.Millisecond
 )
 
-// Start starts a scheduler that writes the Snapshot to the repository (persistent storage)
+// Start starts a scheduler that writes the Checkpoint to the repository (persistent storage)
 // every interval.
 func Start(
 	ctx context.Context,
 	s *slidingwindow.State,
-	repo snapshot.Repository,
+	repo checkpoint.Repository,
 	interval time.Duration,
 	chainID uint64,
 ) error {
@@ -36,7 +36,7 @@ func Start(
 			var err error
 			for attempt := 0; attempt <= maxRetries; attempt++ {
 				ctxW, cancel := context.WithTimeout(ctx, writeTimeout)
-				err = repo.WriteSnapshot(ctxW, &snapshot.Snapshot{
+				err = repo.WriteCheckpoint(ctxW, &checkpoint.Checkpoint{
 					ChainID:   chainID,
 					Lowest:    lowest,
 					Timestamp: time.Now().Unix(),
@@ -50,7 +50,7 @@ func Start(
 				}
 			}
 			if err != nil {
-				return fmt.Errorf("failed to write snapshot (lowest: %d): %w", lowest, err)
+				return fmt.Errorf("failed to write checkpoint (lowest: %d): %w", lowest, err)
 			}
 		}
 	}

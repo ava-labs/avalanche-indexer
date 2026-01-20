@@ -52,35 +52,35 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
 		}),
-			uint32(block.BcID.Uint64()),    // uint32: 43113 (converted from *big.Int)
-			uint32(block.EvmID.Uint64()),   // uint32: 0 (converted from *big.Int)
-			block.BlockNumber,              // uint64: 1647
-			block.Hash,                     // string
-			block.ParentHash,               // string
-			block.BlockTime,                // time.Time
-			block.Miner,                    // string
-			block.Difficulty.String(),      // string: "1" (UInt256)
-			block.TotalDifficulty.String(), // string: "1000" (UInt256)
-			block.Size,                     // uint64: 1331
-			block.GasLimit,                 // uint64: 20006296
-			block.GasUsed,                  // uint64: 183061
-			block.BaseFeePerGas.String(),   // string: "470000000000" (UInt256)
-			block.BlockGasCost.String(),    // string: "0" (UInt256)
-			block.StateRoot,                // string
-			block.TransactionsRoot,         // string
-			block.ReceiptsRoot,             // string
-			block.ExtraData,                // string
-			block.BlockExtraData,           // string
-			block.ExtDataHash,              // string
-			block.ExtDataGasUsed,           // uint32
-			block.MixHash,                  // string
-			nonceStr,                       // string or nil
-			block.Sha3Uncles,               // string
-			block.Uncles,                   // []string
-			block.BlobGasUsed,              // uint64
-			block.ExcessBlobGas,            // uint64
-			parentBeaconBlockRootStr,       // string or nil
-			block.MinDelayExcess,           // uint64
+			*block.BlockchainID,               // string: "11111111111111111111111111111111LpoYY"
+			uint32(block.EVMChainID.Uint64()), // uint32: 43113
+			block.BlockNumber,                 // uint64: 1647
+			block.Hash,                        // string
+			block.ParentHash,                  // string
+			block.BlockTime,                   // time.Time
+			block.Miner,                       // string
+			block.Difficulty.String(),         // string: "1"
+			block.TotalDifficulty.String(),    // string: "1000"
+			block.Size,                        // uint64: 1331
+			block.GasLimit,                    // uint64: 20006296
+			block.GasUsed,                     // uint64: 183061
+			block.BaseFeePerGas.String(),      // string: "470000000000"
+			block.BlockGasCost.String(),       // string: "0"
+			block.StateRoot,                   // string
+			block.TransactionsRoot,            // string
+			block.ReceiptsRoot,                // string
+			block.ExtraData,                   // string
+			block.BlockExtraData,              // string
+			block.ExtDataHash,                 // string
+			block.ExtDataGasUsed,              // uint32
+			block.MixHash,                     // string
+			nonceStr,                          // string or nil
+			block.Sha3Uncles,                  // string
+			block.Uncles,                      // []string
+			block.BlobGasUsed,                 // uint64
+			block.ExcessBlobGas,               // uint64
+			parentBeaconBlockRootStr,          // string or nil
+			block.MinDelayExcess,              // uint64
 		).
 		Return(nil).
 		Once()
@@ -127,8 +127,8 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	// Expect WriteBlock call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
-			uint32(block.BcID.Uint64()),  // uint32: converted from *big.Int
-			uint32(block.EvmID.Uint64()), // uint32: converted from *big.Int
+			*block.BlockchainID,
+			uint32(block.EVMChainID.Uint64()),
 			block.BlockNumber,
 			block.Hash,
 			block.ParentHash,
@@ -175,10 +175,11 @@ func createTestBlock() *BlockRow {
 	parentHash := "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
 	miner := "0x4142434445464748494a4b4c4d4e4f5051525354"
 	nonce := "0x55565758595a5b5c"
+	blockchainID := "11111111111111111111111111111111LpoYY"
 
 	return &BlockRow{
-		BcID:                  big.NewInt(43113),
-		EvmID:                 big.NewInt(0),
+		BlockchainID:          &blockchainID,
+		EVMChainID:            big.NewInt(43113),
 		BlockNumber:           1647,
 		Hash:                  hash,
 		ParentHash:            parentHash,

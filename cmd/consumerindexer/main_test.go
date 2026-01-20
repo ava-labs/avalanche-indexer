@@ -44,12 +44,18 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, blockRow)
-	assertBigIntEqual(t, block.BcID, blockRow.BcID)
-	// EvmID defaults to 0 if nil in the source block
-	if block.EvmID == nil {
-		assertBigIntEqual(t, big.NewInt(0), blockRow.EvmID)
+	// BlockchainID is a string
+	if block.BlockchainID != nil {
+		require.NotNil(t, blockRow.BlockchainID)
+		assert.Equal(t, *block.BlockchainID, *blockRow.BlockchainID)
 	} else {
-		assertBigIntEqual(t, block.EvmID, blockRow.EvmID)
+		assert.Nil(t, blockRow.BlockchainID)
+	}
+	// EVMChainID defaults to 0 if nil in the source block
+	if block.EVMChainID == nil {
+		assertBigIntEqual(t, big.NewInt(0), blockRow.EVMChainID)
+	} else {
+		assertBigIntEqual(t, block.EVMChainID, blockRow.EVMChainID)
 	}
 	assert.Equal(t, uint64(1647), blockRow.BlockNumber)
 	assert.Equal(t, testBlockHash, blockRow.Hash)
@@ -107,12 +113,18 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
-	assertBigIntEqual(t, block.BcID, txRow.BcID)
-	// EvmID defaults to 0 if nil in the source block
-	if block.EvmID == nil {
-		assertBigIntEqual(t, big.NewInt(0), txRow.EvmID)
+	// BlockchainID is a string, comes from block
+	if block.BlockchainID != nil {
+		require.NotNil(t, txRow.BlockchainID)
+		assert.Equal(t, *block.BlockchainID, *txRow.BlockchainID)
 	} else {
-		assertBigIntEqual(t, block.EvmID, txRow.EvmID)
+		assert.Nil(t, txRow.BlockchainID)
+	}
+	// EVMChainID defaults to 0 if nil in the source block
+	if block.EVMChainID == nil {
+		assertBigIntEqual(t, big.NewInt(0), txRow.EVMChainID)
+	} else {
+		assertBigIntEqual(t, block.EVMChainID, txRow.EVMChainID)
 	}
 	assert.Equal(t, uint64(1647), txRow.BlockNumber)
 	assert.Equal(t, testBlockHash, txRow.BlockHash)
@@ -197,7 +209,7 @@ func TestCorethTransactionToTransactionRow_NilBlockchainID(t *testing.T) {
 
 	tx := createTestTransaction()
 	block := createTestBlock()
-	block.BcID = nil // Nil blockchain ID
+	block.BlockchainID = nil // Nil blockchain ID
 	txIndex := uint64(0)
 
 	txRow, err := processor.CorethTransactionToTransactionRow(tx, block, txIndex)
@@ -245,7 +257,7 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	blockJSON := &coreth.Block{
 		Number: big.NewInt(1647),
 		Hash:   testBlockHash,
-		// BcID is nil
+		// BlockchainID is nil
 		Transactions: []*coreth.Transaction{},
 	}
 
@@ -266,8 +278,10 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 
 // Helper function to create a test block
 func createTestBlock() *coreth.Block {
+	blockchainID := "11111111111111111111111111111111LpoYY"
 	return &coreth.Block{
-		BcID:             big.NewInt(43113),
+		BlockchainID:     &blockchainID,
+		EVMChainID:       big.NewInt(43113),
 		Number:           big.NewInt(1647),
 		Hash:             testBlockHash,
 		ParentHash:       "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
@@ -294,7 +308,6 @@ func createTestBlock() *coreth.Block {
 				Value:    big.NewInt(1000000000000000000),
 				Gas:      21000,
 				GasPrice: big.NewInt(470000000000),
-				BcID:     big.NewInt(43113),
 			},
 		},
 	}
@@ -310,7 +323,6 @@ func createTestTransaction() *coreth.Transaction {
 		Value:    big.NewInt(1000000000000000000),
 		Gas:      21000,
 		GasPrice: big.NewInt(470000000000),
-		BcID:     big.NewInt(43113),
 	}
 }
 

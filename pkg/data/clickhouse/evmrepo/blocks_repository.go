@@ -34,8 +34,8 @@ func NewBlocks(ctx context.Context, client clickhouse.Client, tableName string) 
 func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			bc_id UInt32,
-			evm_id UInt32,
+			blockchain_id String,
+			evm_chain_id UInt32,
 			block_number UInt64,
 			hash String,
 			parent_hash String,
@@ -65,7 +65,7 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 			min_delay_excess UInt64
 		)
 		ENGINE = MergeTree
-		ORDER BY (bc_id, block_time, block_number)
+		ORDER BY (blockchain_id, block_time, block_number)
 		SETTINGS index_granularity = 8192
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -78,7 +78,7 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			bc_id, evm_id, block_number, hash, parent_hash, block_time, miner,
+			blockchain_id, evm_chain_id, block_number, hash, parent_hash, block_time, miner,
 			difficulty, total_difficulty, size, gas_limit, gas_used,
 			base_fee_per_gas, block_gas_cost, state_root, transactions_root, receipts_root,
 			extra_data, block_extra_data, ext_data_hash, ext_data_gas_used,
@@ -103,14 +103,16 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
 	}
 
-	// Convert *big.Int to uint32 for ClickHouse (BcID and EvmID)
-	var bcID uint32
-	if block.BcID != nil {
-		bcID = uint32(block.BcID.Uint64())
+	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
+	var blockchainID interface{}
+	if block.BlockchainID != nil {
+		blockchainID = *block.BlockchainID
+	} else {
+		blockchainID = ""
 	}
-	var evmID uint32
-	if block.EvmID != nil {
-		evmID = uint32(block.EvmID.Uint64())
+	var evmChainID uint32
+	if block.EVMChainID != nil {
+		evmChainID = uint32(block.EVMChainID.Uint64())
 	}
 
 	// Convert *big.Int to string for ClickHouse UInt256 fields
@@ -133,8 +135,8 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	}
 
 	err := r.client.Conn().Exec(ctx, query,
-		bcID,
-		evmID,
+		blockchainID,
+		evmChainID,
 		block.BlockNumber,
 		block.Hash,
 		block.ParentHash,

@@ -34,8 +34,8 @@ func NewTransactions(ctx context.Context, client clickhouse.Client, tableName st
 func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			bc_id UInt32,
-			evm_id UInt32,
+			blockchain_id String,
+			evm_chain_id UInt32,
 			block_number UInt64,
 			block_hash String,
 			block_time DateTime64(3, 'UTC'),
@@ -53,7 +53,7 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 			transaction_index UInt64
 		)
 		ENGINE = MergeTree
-		ORDER BY (bc_id, block_time, hash)
+		ORDER BY (blockchain_id, block_time, hash)
 		SETTINGS index_granularity = 8192
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -66,20 +66,22 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			bc_id, evm_id, block_number, block_hash, block_time, hash,
+			blockchain_id, evm_chain_id, block_number, block_hash, block_time, hash,
 			from_address, to_address, nonce, value, gas, gas_price,
 			max_fee_per_gas, max_priority_fee, input, type, transaction_index
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
-	// Convert *big.Int to uint32 for ClickHouse (BcID and EvmID)
-	var bcID uint32
-	if tx.BcID != nil {
-		bcID = uint32(tx.BcID.Uint64())
+	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
+	var blockchainID interface{}
+	if tx.BlockchainID != nil {
+		blockchainID = *tx.BlockchainID
+	} else {
+		blockchainID = ""
 	}
-	var evmID uint32
-	if tx.EvmID != nil {
-		evmID = uint32(tx.EvmID.Uint64())
+	var evmChainID uint32
+	if tx.EVMChainID != nil {
+		evmChainID = uint32(tx.EVMChainID.Uint64())
 	}
 
 	// Convert *big.Int to string for ClickHouse UInt256 fields
@@ -106,8 +108,8 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	}
 
 	err := r.client.Conn().Exec(ctx, query,
-		bcID,
-		evmID,
+		blockchainID,
+		evmChainID,
 		tx.BlockNumber,
 		tx.BlockHash,
 		tx.BlockTime,

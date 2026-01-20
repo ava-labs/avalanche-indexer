@@ -36,8 +36,8 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
 		}),
-			uint32(tx.BcID.Uint64()),  // uint32: converted from *big.Int
-			uint32(tx.EvmID.Uint64()), // uint32: converted from *big.Int
+			*tx.BlockchainID,               // string: blockchain ID
+			uint32(tx.EVMChainID.Uint64()), // uint32: converted from *big.Int
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -83,8 +83,8 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	// Expect WriteTransaction call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
-			uint32(tx.BcID.Uint64()),  // uint32: converted from *big.Int
-			uint32(tx.EvmID.Uint64()), // uint32: converted from *big.Int
+			*tx.BlockchainID,               // string: blockchain ID
+			uint32(tx.EVMChainID.Uint64()), // uint32: converted from *big.Int
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -135,8 +135,8 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
 		}),
-			uint32(tx.BcID.Uint64()),  // uint32: converted from *big.Int
-			uint32(tx.EvmID.Uint64()), // uint32: converted from *big.Int
+			*tx.BlockchainID,               // string: blockchain ID
+			uint32(tx.EVMChainID.Uint64()), // uint32: converted from *big.Int
 			tx.BlockNumber,
 			tx.BlockHash,
 			tx.BlockTime,
@@ -170,9 +170,10 @@ func createTestTransaction() *TransactionRow {
 	from := "0x4142434445464748494a4b4c4d4e4f5051525354"
 	to := "0x55565758595a5b5c5d5e5f6061626364656667"
 
+	blockchainID := "11111111111111111111111111111111LpoYY"
 	return &TransactionRow{
-		BcID:             big.NewInt(43113),
-		EvmID:            big.NewInt(0),
+		BlockchainID:     &blockchainID,
+		EVMChainID:       big.NewInt(0),
 		BlockNumber:      1647,
 		BlockHash:        blockHash,
 		BlockTime:        time.Unix(1604768510, 0).UTC(),

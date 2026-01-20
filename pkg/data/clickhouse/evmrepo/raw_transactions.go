@@ -14,8 +14,8 @@ var (
 
 // TransactionRow represents a transaction row in the database
 type TransactionRow struct {
-	BcID             *big.Int // Blockchain ID
-	EvmID            *big.Int // EVM Chain ID (defaults to 0 for now)
+	BlockchainID     *string  // Blockchain ID
+	EVMChainID       *big.Int // EVM Chain ID (defaults to 0 for now)
 	BlockNumber      uint64
 	BlockHash        string
 	BlockTime        time.Time

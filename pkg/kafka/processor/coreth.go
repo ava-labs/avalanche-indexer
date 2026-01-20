@@ -51,19 +51,19 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
 	}
 
+	// Validate block (BlockchainID is required) - do this even if not persisting
+	if block.BlockchainID == nil {
+		return evmrepo.ErrBlockChainIDRequired
+	}
+
 	var blockNumber uint64
 	if block.Number != nil {
 		blockNumber = block.Number.Uint64()
 	}
 
-	// Validate block (BcID is required) - do this even if not persisting
-	if block.BcID == nil {
-		return evmrepo.ErrBlockChainIDRequired
-	}
-
 	p.log.Debugw("processing coreth block",
-		"bcID", block.BcID,
-		"evmID", block.EvmID,
+		"evmChainID", block.EVMChainID,
+		"blockchainID", block.BlockchainID,
 		"blockNumber", blockNumber,
 		"hash", block.Hash,
 	)
@@ -80,9 +80,9 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		}
 
 		p.log.Debugw("successfully persisted block to ClickHouse",
-			"bcID", blockRow.BcID,
-			"evmID", blockRow.EvmID,
-			"blockNumber", blockNumber,
+			"evmChainID", blockRow.EVMChainID,
+			"blockchainID", blockRow.BlockchainID,
+			"blockNumber", blockRow.BlockNumber,
 			"hash", blockRow.Hash,
 		)
 	}
@@ -101,7 +101,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 // Exported for testing purposes
 func CorethBlockToBlockRow(block *coreth.Block) (*evmrepo.BlockRow, error) {
 	// Validate blockchain ID
-	if block.BcID == nil {
+	if block.BlockchainID == nil {
 		return nil, evmrepo.ErrBlockChainIDRequired
 	}
 
@@ -111,22 +111,27 @@ func CorethBlockToBlockRow(block *coreth.Block) (*evmrepo.BlockRow, error) {
 		blockNumber = block.Number.Uint64()
 	}
 
-	// Set BcID and EvmID (default EvmID to 0 if not set)
-	bcID := block.BcID
-	evmID := block.EvmID
-	if evmID == nil {
-		evmID = big.NewInt(0)
+	// Set BlockchainID and EVMChainID (default EVMChainID to 0 if not set)
+	blockchainID := block.BlockchainID
+	evmChainID := block.EVMChainID
+	if evmChainID == nil {
+		evmChainID = big.NewInt(0)
 	}
 
 	blockRow := &evmrepo.BlockRow{
-		BcID:        bcID,
-		EvmID:       evmID,
-		BlockNumber: blockNumber,
-		Size:        block.Size,
-		GasLimit:    block.GasLimit,
-		GasUsed:     block.GasUsed,
-		BlockTime:   time.Unix(int64(block.Timestamp), 0).UTC(),
-		ExtraData:   block.ExtraData,
+		BlockchainID:    blockchainID,
+		EVMChainID:      evmChainID,
+		BlockNumber:     blockNumber,
+		Hash:            block.Hash,
+		ParentHash:      block.ParentHash,
+		BlockTime:       time.Unix(int64(block.Timestamp), 0).UTC(),
+		Miner:           block.Miner,
+		Difficulty:      block.Difficulty,
+		TotalDifficulty: new(big.Int).Set(block.Difficulty),
+		Size:            block.Size,
+		GasLimit:        block.GasLimit,
+		GasUsed:         block.GasUsed,
+		BaseFeePerGas:   block.BaseFee,
 	}
 
 	// Set difficulty from big.Int (keep as *big.Int)
@@ -184,7 +189,7 @@ func CorethTransactionToTransactionRow(
 	txIndex uint64,
 ) (*evmrepo.TransactionRow, error) {
 	// Extract blockchain ID from block
-	if block.BcID == nil {
+	if block.BlockchainID == nil {
 		return nil, evmrepo.ErrBlockChainIDRequiredForTx
 	}
 
@@ -194,16 +199,16 @@ func CorethTransactionToTransactionRow(
 		blockNumber = block.Number.Uint64()
 	}
 
-	// Set BcID and EvmID from block (default EvmID to 0 if not set)
-	bcID := block.BcID
-	evmID := block.EvmID
-	if evmID == nil {
-		evmID = big.NewInt(0)
+	// Set BlockchainID and EVMChainID from block (default EVMChainID to 0 if not set)
+	blockchainID := block.BlockchainID
+	evmChainID := block.EVMChainID
+	if evmChainID == nil {
+		evmChainID = big.NewInt(0)
 	}
 
 	txRow := &evmrepo.TransactionRow{
-		BcID:             bcID,
-		EvmID:            evmID,
+		BlockchainID:     blockchainID,
+		EVMChainID:       evmChainID,
 		BlockNumber:      blockNumber,
 		BlockHash:        block.Hash,
 		BlockTime:        time.Unix(int64(block.Timestamp), 0).UTC(),
@@ -272,8 +277,8 @@ func (p *CorethProcessor) processTransactions(
 	}
 
 	p.log.Debugw("successfully wrote transactions",
-		"bcID", block.BcID,
-		"evmID", block.EvmID,
+		"blockchainID", block.BlockchainID,
+		"evmChainID", block.EVMChainID,
 		"blockNumber", blockNumber,
 		"transactionCount", len(block.Transactions),
 	)
