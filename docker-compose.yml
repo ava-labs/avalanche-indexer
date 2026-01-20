@@ -1,9 +1,10 @@
 networks:
-  kafka-network:
+  app-network:
     driver: bridge
 
 volumes:
   kafka-data:
+  grafana-data:
   clickhouse-test-data:
 
 services:
@@ -42,38 +43,13 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
     networks:
-      - kafka-network
+      - app-network
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9093 || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 5
       start_period: 30s
-
-  # Schema Registry
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.0
-    container_name: schema-registry
-    hostname: schema-registry
-    ports:
-      - "8081:8081"
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9093
-      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
-      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
-      SCHEMA_REGISTRY_DEBUG: "true"
-    depends_on:
-      kafka:
-        condition: service_healthy
-    networks:
-      - kafka-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
 
   # Kafka UI (Provectus)
   kafka-ui:
@@ -89,7 +65,6 @@ services:
       # Pre-configured local Kafka cluster
       KAFKA_CLUSTERS_0_NAME: local-kafka
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
-      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
       KAFKA_CLUSTERS_0_READONLY: "false"
       
       # UI settings
@@ -98,10 +73,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      schema-registry:
-        condition: service_healthy
     networks:
-      - kafka-network
+      - app-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
       interval: 10s
@@ -109,10 +82,28 @@ services:
       retries: 5
       start_period: 30s
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
   # ClickHouse Server
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-test
+    hostname: clickhouse
     ports:
       - "8123:8123"  # HTTP interface
       - "9000:9000"  # Native protocol
@@ -129,6 +120,8 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    networks:
+      - app-network
   
   # ClickHouse Init (create tables)
   clickhouse-init:
@@ -150,13 +143,21 @@ services:
       "
       '
     restart: "no"
+    networks:
+      - app-network
 
-  # Tabix UI for ClickHouse
+  # Tabix UI for ClickHouse - pre-configured with local credentials
   tabix:
     image: spoonest/clickhouse-tabix-web-client
+    platform: linux/amd64
     container_name: tabix
     ports:
       - "8082:80"
+    environment:
+      CH_NAME: local-clickhouse
+      CH_HOST: http://localhost:8123
+      CH_LOGIN: default
+      CH_PASSWORD: ""
     depends_on:
       clickhouse:
         condition: service_healthy

@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"math/big"
 
-	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/libevm/common/hexutil"
+
+	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 )
 
@@ -16,6 +17,8 @@ type Block struct {
 	Number     *big.Int `json:"number"`
 	Hash       string   `json:"hash"`
 	ParentHash string   `json:"parentHash"`
+
+	ChainID *big.Int `json:"chainId,omitempty"`
 
 	StateRoot        string `json:"stateRoot"`
 	TransactionsRoot string `json:"transactionsRoot"`
@@ -28,7 +31,8 @@ type Block struct {
 	GasUsed  uint64   `json:"gasUsed"`
 	BaseFee  *big.Int `json:"baseFeePerGas,omitempty"`
 
-	Timestamp      uint64 `json:"timestampMs,omitempty"`
+	Timestamp      uint64 `json:"timestamp"`
+	TimestampMs    uint64 `json:"timestampMs,omitempty"`
 	MinDelayExcess uint64 `json:"minDelayExcess,omitempty"`
 	Size           uint64 `json:"size"`
 
@@ -72,7 +76,8 @@ type Withdrawal struct {
 }
 
 // BlockFromLibevm converts a libevm Block to a Coreth Block.
-func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
+// chainID should be provided since blocks may not have transactions to extract it from.
+func BlockFromLibevm(block *libevmtypes.Block, chainID *big.Int) (*Block, error) {
 	transactions, err := TransactionsFromLibevm(block.Transactions())
 	if err != nil {
 		return nil, fmt.Errorf("convert transactions: %w", err)
@@ -97,11 +102,13 @@ func BlockFromLibevm(block *libevmtypes.Block) (*Block, error) {
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
+		ChainID:               chainID,
 		GasLimit:              block.GasLimit(),
 		GasUsed:               block.GasUsed(),
 		BaseFee:               block.BaseFee(),
 		Difficulty:            block.Difficulty(),
-		Timestamp:             timestampMilliseconds,
+		Timestamp:             block.Time(),
+		TimestampMs:           timestampMilliseconds,
 		MinDelayExcess:        minDelayExcess,
 		MixHash:               block.MixDigest().Hex(),
 		Nonce:                 block.Nonce(),

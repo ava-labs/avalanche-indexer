@@ -12,17 +12,19 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
+
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const flushTimeoutOnClose = 15 * time.Second
@@ -96,6 +98,19 @@ func main() {
 						Value:   3,
 					},
 					&cli.StringFlag{
+						Name:    "metrics-host",
+						Usage:   "Host for Prometheus metrics server (empty for all interfaces)",
+						EnvVars: []string{"METRICS_HOST"},
+						Value:   "",
+					},
+					&cli.IntFlag{
+						Name:    "metrics-port",
+						Aliases: []string{"m"},
+						Usage:   "Port for Prometheus metrics server",
+						EnvVars: []string{"METRICS_PORT"},
+						Value:   9090,
+					},
+					&cli.StringFlag{
 						Name:     "kafka-brokers",
 						Usage:    "The Kafka brokers to use (comma-separated list)",
 						EnvVars:  []string{"KAFKA_BROKERS"},
@@ -124,7 +139,7 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:    "snapshot-table-name",
-						Aliases: []string{"t"},
+						Aliases: []string{"T"},
 						Usage:   "The name of the table to write the snapshot to",
 						EnvVars: []string{"SNAPSHOT_TABLE_NAME"},
 						Value:   "test_db.snapshots",
@@ -135,6 +150,20 @@ func main() {
 						Usage:   "The interval to write the snapshot to the repository",
 						EnvVars: []string{"SNAPSHOT_INTERVAL"},
 						Value:   1 * time.Minute,
+					},
+					&cli.DurationFlag{
+						Name:    "gap-watchdog-interval",
+						Aliases: []string{"g"},
+						Usage:   "The interval to check the gap between the lowest and highest block heights",
+						EnvVars: []string{"GAP_WATCHDOG_INTERVAL"},
+						Value:   15 * time.Minute,
+					},
+					&cli.Uint64Flag{
+						Name:    "gap-watchdog-max-gap",
+						Aliases: []string{"G"},
+						Usage:   "The maximum gap between the lowest and highest block heights before a warning is logged",
+						EnvVars: []string{"GAP_WATCHDOG_MAX_GAP"},
+						Value:   100,
 					},
 				},
 				Action: run,
@@ -154,17 +183,21 @@ func run(c *cli.Context) error {
 	rpcURL := c.String("rpc-url")
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
-	concurrency := c.Uint64("concurrency")
-	backfill := c.Uint64("backfill-priority")
+	concurrency := c.Int64("concurrency")
+	backfill := c.Int64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
+	metricsHost := c.String("metrics-host")
+	metricsPort := c.Int("metrics-port")
+	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 	kafkaBrokers := c.String("kafka-brokers")
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
 	kafkaClientID := c.String("kafka-client-id")
-
 	snapshotTableName := c.String("snapshot-table-name")
 	snapshotInterval := c.Duration("snapshot-interval")
+	gapWatchdogInterval := c.Duration("gap-watchdog-interval")
+	gapWatchdogMaxGap := c.Uint64("gap-watchdog-max-gap")
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
@@ -180,6 +213,8 @@ func run(c *cli.Context) error {
 		"backfill", backfill,
 		"blocksCap", blocksCap,
 		"maxFailures", maxFailures,
+		"metricsHost", metricsHost,
+		"metricsPort", metricsPort,
 		"snapshotTableName", snapshotTableName,
 		"snapshotInterval", snapshotInterval,
 	)
@@ -199,6 +234,18 @@ func run(c *cli.Context) error {
 	} else {
 		sugar.Infof("end block height: %d", end)
 	}
+
+	// Initialize Prometheus metrics
+	registry := prometheus.NewRegistry()
+	m, err := metrics.New(registry)
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+
+	// Start metrics server
+	metricsServer := metrics.NewServer(metricsAddr, registry)
+	metricsErrCh := metricsServer.Start()
+	sugar.Infof("metrics server started at http://localhost%s/metrics", metricsAddr)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -236,7 +283,7 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, sugar)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, chainID, sugar, m)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
@@ -260,16 +307,24 @@ func run(c *cli.Context) error {
 	}
 
 	repo := snapshot.NewRepository(chClient, snapshotTableName)
+
+	err = repo.CreateTableIfNotExists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check existence or create snapshots table: %w", err)
+	}
+
 	if fetchStartHeight {
 		snapshot, err := repo.ReadSnapshot(ctx, chainID)
 		if err != nil {
 			return fmt.Errorf("failed to read snapshot: %w", err)
 		}
 		if snapshot == nil {
-			return fmt.Errorf("snapshot not found")
+			sugar.Infof("snapshot not found, will start from block height 0")
+			start = 0
+		} else {
+			start = snapshot.Lowest
+			sugar.Infof("start block height: %d", start)
 		}
-		start = snapshot.Lowest
-		sugar.Infof("start block height: %d", start)
 	}
 
 	s, err := slidingwindow.NewState(start, end)
@@ -277,18 +332,32 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create state: %w", err)
 	}
 
-	m, err := slidingwindow.NewManager(sugar, s, w, concurrency, backfill, blocksCap, maxFailures)
+	mgr, err := slidingwindow.NewManager(sugar, s, w, concurrency, backfill, blocksCap, maxFailures, m)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
 
+	// Initialize window metrics with starting state
+	m.UpdateWindowMetrics(start, end, 0)
+
 	sub := subscriber.NewCoreth(sugar, customethclient.New(client))
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return sub.Subscribe(gctx, blocksCap, m)
+		return sub.Subscribe(gctx, blocksCap, mgr)
 	})
 	g.Go(func() error {
-		return m.Run(gctx)
+		return mgr.Run(gctx)
+	})
+	g.Go(func() error {
+		select {
+		case <-gctx.Done():
+			return nil
+		case err := <-metricsErrCh:
+			if err != nil {
+				return fmt.Errorf("metrics server failed: %w", err)
+			}
+			return nil
+		}
 	})
 	g.Go(func() error {
 		select {
@@ -302,16 +371,23 @@ func run(c *cli.Context) error {
 		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
 	})
 
+	go slidingwindow.StartGapWatchdog(gctx, sugar, s, gapWatchdogInterval, gapWatchdogMaxGap)
+
 	err = g.Wait()
 	if errors.Is(err, context.Canceled) {
 		sugar.Infow("exiting due to context cancellation")
-		return nil
-	}
-	if err != nil {
+	} else if err != nil {
 		sugar.Errorw("run failed", "error", err)
-		return err
 	}
 
-	sugar.Info("shutting down")
-	return nil
+	// Gracefully shutdown metrics server
+	sugar.Info("shutting down metrics server")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		sugar.Warnw("metrics server shutdown error", "error", err)
+	}
+
+	sugar.Info("shutdown complete")
+	return err
 }

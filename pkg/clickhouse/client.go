@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -34,14 +35,13 @@ const (
 )
 
 type client struct {
-	conn   driver.Conn
-	logger *zap.SugaredLogger
+	conn driver.Conn
 }
 
 // New creates a new ClickHouse client with the provided configuration
-func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
+func New(cfg Config, sugar *zap.SugaredLogger) (Client, error) {
 	opts := &clickhouse.Options{
-		Addr: cfg.Addresses,
+		Addr: cfg.Hosts,
 		Auth: clickhouse.Auth{
 			Database: cfg.Database,
 			Username: cfg.Username,
@@ -55,15 +55,22 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 			maxExecutionTime: cfg.MaxExecutionTime,
 			maxBlockSize:     cfg.MaxBlockSize,
 		},
-		Compression: &clickhouse.Compression{
-			Method: clickhouse.CompressionLZ4,
-		},
+		// Disable compression for HTTP protocol to avoid size issues
+		// HTTP protocol may have issues with compressed data exceeding size limits
+		Compression: func() *clickhouse.Compression {
+			if cfg.UseHTTP {
+				return nil // Disable compression for HTTP
+			}
+			return &clickhouse.Compression{
+				Method: clickhouse.CompressionLZ4,
+			}
+		}(),
 		DialTimeout:          time.Duration(cfg.DialTimeout) * time.Second,
 		MaxOpenConns:         cfg.MaxOpenConns,
 		MaxIdleConns:         cfg.MaxIdleConns,
 		ConnMaxLifetime:      time.Duration(cfg.ConnMaxLifetime) * time.Minute,
 		ConnOpenStrategy:     clickhouse.ConnOpenInOrder,
-		BlockBufferSize:      uint8(cfg.BlockBufferSize),
+		BlockBufferSize:      cfg.BlockBufferSize,
 		MaxCompressionBuffer: cfg.MaxCompressionBuffer,
 		ClientInfo: clickhouse.ClientInfo{
 			Products: []struct {
@@ -77,6 +84,11 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 			//nolint:gosec // InsecureSkipVerify is configurable via environment variable for development/testing
 			InsecureSkipVerify: cfg.InsecureSkipVerify,
 		},
+	}
+
+	// Set protocol to HTTP if UseHTTP is enabled
+	if cfg.UseHTTP {
+		opts.Protocol = clickhouse.HTTP
 	}
 
 	// Set debug function if debug is enabled
@@ -97,7 +109,8 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 	defer cancel()
 
 	if err := conn.Ping(ctx); err != nil {
-		if exception, ok := err.(*clickhouse.Exception); ok {
+		var exception *clickhouse.Exception
+		if errors.As(err, &exception) {
 			if sugar != nil {
 				sugar.Errorw("failed to ping ClickHouse", "error", exception)
 			}
@@ -111,7 +124,7 @@ func New(cfg ClickhouseConfig, sugar *zap.SugaredLogger) (Client, error) {
 		return nil, err
 	}
 
-	return &client{conn: conn, logger: sugar}, nil
+	return &client{conn: conn}, nil
 }
 
 func (c *client) Conn() driver.Conn {

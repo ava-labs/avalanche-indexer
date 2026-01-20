@@ -4,20 +4,28 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
+	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
-	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
-	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
+
+	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
+
+var registerCustomTypesOnce sync.Once
 
 type CorethWorker struct {
 	client   *evmclient.Client
 	producer *kafka.Producer
 	topic    string
+	chainID  *big.Int
 	log      *zap.SugaredLogger
+	metrics  *metrics.Metrics
 }
 
 func NewCorethWorker(
@@ -25,9 +33,13 @@ func NewCorethWorker(
 	url string,
 	producer *kafka.Producer,
 	topic string,
+	chainID uint64,
 	log *zap.SugaredLogger,
+	metrics *metrics.Metrics,
 ) (*CorethWorker, error) {
-	customtypes.Register()
+	registerCustomTypesOnce.Do(func() {
+		customtypes.Register()
+	})
 
 	c, err := rpc.DialContext(ctx, url)
 	if err != nil {
@@ -37,18 +49,33 @@ func NewCorethWorker(
 		client:   evmclient.New(c),
 		producer: producer,
 		topic:    topic,
+		chainID:  new(big.Int).SetUint64(chainID),
 		log:      log,
+		metrics:  metrics,
 	}, nil
 }
 
 func (w *CorethWorker) Process(ctx context.Context, height uint64) error {
+	const method = "eth_getBlockByNumber"
+	start := time.Now()
+
+	if w.metrics != nil {
+		w.metrics.IncRPCInFlight()
+		defer w.metrics.DecRPCInFlight()
+	}
+
 	h := new(big.Int).SetUint64(height)
 	block, err := w.client.BlockByNumber(ctx, h)
+
+	if w.metrics != nil {
+		w.metrics.RecordRPCCall(method, err, time.Since(start).Seconds())
+	}
+
 	if err != nil {
 		return fmt.Errorf("fetch block %d: %w", height, err)
 	}
 
-	corethBlock, err := coreth.BlockFromLibevm(block)
+	corethBlock, err := coreth.BlockFromLibevm(block, w.chainID)
 	if err != nil {
 		return fmt.Errorf("convert block %d: %w", height, err)
 	}

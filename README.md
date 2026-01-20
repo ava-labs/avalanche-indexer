@@ -55,14 +55,17 @@ docker build -t indexer:blockfetcher --build-arg APP=blockfetcher .
 Run a service (example: `blockfetcher`):
 
 ```bash
-docker run --rm \
-  -e APP=blockfetcher \
-  -e CHAIN_ID=43113 \
-  -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
-  -e START_HEIGHT=0 \
-  -e CONCURRENCY=16 \
-  -e BACKFILL_PRIORITY=4 \
-  indexer:latest --verbose
+bin/blockfetcher run \
+  --chain-id 43114 \
+  --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --start-height 0 \
+  --concurrency 16 \
+  --backfill-priority 4 \
+  --blocks-ch-capacity 200 \
+  --max-failures 5 \
+  --kafka-brokers localhost:9092 \
+  --kafka-topic blocks \
+  --verbose
 ```
 
 See each service’s README for its full flag/env reference.
@@ -77,8 +80,8 @@ See each service’s README for its full flag/env reference.
 
 This project includes a Docker Compose configuration for local development with:
 - **Apache Kafka** (KRaft mode, no Zookeeper)
-- **Confluent Schema Registry**
 - **Provectus Kafka UI**
+- **ClickHouse** (with Tabix UI)
 
 ##### Quick Start
 
@@ -102,8 +105,10 @@ docker compose down -v
 |---------|------|-------------|
 | Kafka | `9092` | External client access (from host) |
 | Kafka | `9093` | Internal access (container-to-container) |
-| Schema Registry | `8081` | Avro/JSON/Protobuf schema management |
 | Kafka UI | `8080` | Web UI for Kafka management |
+| ClickHouse | `8123` | HTTP interface |
+| ClickHouse | `9000` | Native protocol |
+| Tabix | `8082` | ClickHouse web UI |
 
 ##### Connecting from Host Applications
 
@@ -111,11 +116,14 @@ docker compose down -v
 # Kafka bootstrap server
 localhost:9092
 
-# Schema Registry
-http://localhost:8081
-
 # Kafka UI
 http://localhost:8080
+
+# ClickHouse
+http://localhost:8123
+
+# Tabix (ClickHouse UI)
+http://localhost:8082
 ```
 
 ##### Connecting from Other Docker Containers
@@ -126,22 +134,20 @@ Add your container to the `kafka-network` network and use:
 # Kafka bootstrap server
 kafka:9093
 
-# Schema Registry
-http://schema-registry:8081
+# ClickHouse
+clickhouse:8123
 ```
 
 ##### Kafka UI Features
 
 The Kafka UI is pre-configured with:
 - **Cluster**: `local-kafka` pointing to the local Kafka broker
-- **Schema Registry**: Already integrated
 - **Dynamic Config**: Enabled (`DYNAMIC_CONFIG_ENABLED=true`) — allows adding/editing clusters via the UI
 
 Access the UI at [http://localhost:8080](http://localhost:8080) to:
 - View and create topics
 - Browse messages
 - Manage consumer groups
-- View and register schemas
 
 ---
 

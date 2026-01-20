@@ -8,15 +8,35 @@ Fetches blocks from an RPC endpoint, processes them concurrently using a sliding
 - Concurrency control and backfill prioritization
 - Failure thresholds and graceful shutdown
 - Kafka integration for block publishing
+- Gap watchdog that warns if the gap grows beyond the threshold (runs on schedule)
 
 ### Usage
 
-Run locally (from repo root):
+#### Prerequisites
+
+1. **Start infrastructure services** (Kafka, ClickHouse):
+   ```bash
+   docker compose up -d
+   ```
+
+2. **Optionally set environment variables**:
+   ```bash
+   export CLICKHOUSE_HOSTS="localhost:9000"
+   export CLICKHOUSE_USERNAME="default"
+   export CLICKHOUSE_PASSWORD=""
+   ...
+   ```
+
+3. **Build the application**:
+   ```bash
+   make build-all
+   ```
+
+### Run the block fetcher locally
 
 ```bash
-make build-all 
-
 bin/blockfetcher run \
+  --chain-id 43114 \
   --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
   --start-height 0 \
   --concurrency 16 \
@@ -44,7 +64,7 @@ All flags have environment variable equivalents:
 - `--verbose` / `-v` → none (pass `--verbose`)
 
 
-### Docker
+### Run the block fetcher using Docker
 
 Build the multi-binary image (all services):
 
@@ -56,6 +76,7 @@ Run `blockfetcher` with environment variables (ENTRYPOINT selects the binary by 
 
 ```bash
 docker run --rm \
+  --network avalanche-indexer_app-network \
   -e APP=blockfetcher \
   -e CHAIN_ID=43113 \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
@@ -64,8 +85,12 @@ docker run --rm \
   -e BACKFILL_PRIORITY=4 \
   -e BLOCKS_CH_CAPACITY=200 \
   -e MAX_FAILURES=5 \
-  -e KAFKA_BROKERS=kafka:9092 \
+  -e KAFKA_BROKERS=kafka:9093 \
   -e KAFKA_TOPIC=blocks \
+  -e CLICKHOUSE_HOSTS=clickhouse:9000 \
+  -e CLICKHOUSE_DATABASE=test_db \
+  -e CLICKHOUSE_USERNAME=default \
+  -e CLICKHOUSE_PASSWORD= \
   indexer:latest run --verbose
 ```
 
@@ -75,16 +100,6 @@ Notes:
 
 ```bash
 docker build -t indexer:blockfetcher --build-arg APP=blockfetcher .
-docker run --rm \
-  -e APP=blockfetcher \
-  -e CHAIN_ID=43113 \
-  -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
-  -e START_HEIGHT=0 \
-  -e CONCURRENCY=16 \
-  -e BACKFILL_PRIORITY=4 \
-  -e KAFKA_BROKERS=kafka:9092 \
-  -e KAFKA_TOPIC=blocks \
-  indexer:blockfetcher run --verbose
 ```
 
 ### Configuration tips
