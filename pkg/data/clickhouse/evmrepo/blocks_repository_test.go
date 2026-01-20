@@ -52,35 +52,35 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
 		}),
-			uint32(block.BcID.Uint64()),  // uint32: 43113 (converted from *big.Int)
-			uint32(block.EvmID.Uint64()), // uint32: 0 (converted from *big.Int)
-			block.BlockNumber,            // uint64: 1647
-			block.Hash,                   // string
-			block.ParentHash,             // string
-			block.BlockTime,              // time.Time
-			block.Miner,                  // string
-			block.Difficulty,             // uint64: 1
-			block.TotalDifficulty,        // uint64: 1000
-			block.Size,                   // uint64: 1331
-			block.GasLimit,               // uint64: 20006296
-			block.GasUsed,                // uint64: 183061
-			block.BaseFeePerGas,          // uint64: 470000000000
-			block.BlockGasCost,           // uint64: 0
-			block.StateRoot,              // string
-			block.TransactionsRoot,       // string
-			block.ReceiptsRoot,           // string
-			block.ExtraData,              // string
-			block.BlockExtraData,         // string
-			block.ExtDataHash,            // string
-			block.ExtDataGasUsed,         // uint32
-			block.MixHash,                // string
-			nonceStr,                     // string or nil
-			block.Sha3Uncles,             // string
-			block.Uncles,                 // []string
-			block.BlobGasUsed,            // uint64
-			block.ExcessBlobGas,          // uint64
-			parentBeaconBlockRootStr,     // string or nil
-			block.MinDelayExcess,         // uint64
+			uint32(block.BcID.Uint64()),    // uint32: 43113 (converted from *big.Int)
+			uint32(block.EvmID.Uint64()),   // uint32: 0 (converted from *big.Int)
+			block.BlockNumber,              // uint64: 1647
+			block.Hash,                     // string
+			block.ParentHash,               // string
+			block.BlockTime,                // time.Time
+			block.Miner,                    // string
+			block.Difficulty.String(),      // string: "1" (UInt256)
+			block.TotalDifficulty.String(), // string: "1000" (UInt256)
+			block.Size,                     // uint64: 1331
+			block.GasLimit,                 // uint64: 20006296
+			block.GasUsed,                  // uint64: 183061
+			block.BaseFeePerGas.String(),   // string: "470000000000" (UInt256)
+			block.BlockGasCost.String(),    // string: "0" (UInt256)
+			block.StateRoot,                // string
+			block.TransactionsRoot,         // string
+			block.ReceiptsRoot,             // string
+			block.ExtraData,                // string
+			block.BlockExtraData,           // string
+			block.ExtDataHash,              // string
+			block.ExtDataGasUsed,           // uint32
+			block.MixHash,                  // string
+			nonceStr,                       // string or nil
+			block.Sha3Uncles,               // string
+			block.Uncles,                   // []string
+			block.BlobGasUsed,              // uint64
+			block.ExcessBlobGas,            // uint64
+			parentBeaconBlockRootStr,       // string or nil
+			block.MinDelayExcess,           // uint64
 		).
 		Return(nil).
 		Once()
@@ -134,13 +134,13 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			block.ParentHash,
 			block.BlockTime,
 			block.Miner,
-			block.Difficulty,
-			block.TotalDifficulty,
+			block.Difficulty.String(),
+			block.TotalDifficulty.String(),
 			block.Size,
 			block.GasLimit,
 			block.GasUsed,
-			block.BaseFeePerGas,
-			block.BlockGasCost,
+			block.BaseFeePerGas.String(),
+			block.BlockGasCost.String(),
 			block.StateRoot,
 			block.TransactionsRoot,
 			block.ReceiptsRoot,
@@ -184,13 +184,13 @@ func createTestBlock() *BlockRow {
 		ParentHash:            parentHash,
 		BlockTime:             time.Unix(1604768510, 0).UTC(),
 		Miner:                 miner,
-		Difficulty:            1,
-		TotalDifficulty:       1000,
+		Difficulty:            big.NewInt(1),
+		TotalDifficulty:       big.NewInt(1000),
 		Size:                  1331,
 		GasLimit:              20006296,
 		GasUsed:               183061,
-		BaseFeePerGas:         470000000000,
-		BlockGasCost:          0,
+		BaseFeePerGas:         big.NewInt(470000000000),
+		BlockGasCost:          big.NewInt(0),
 		StateRoot:             hash,
 		TransactionsRoot:      hash,
 		ReceiptsRoot:          hash,

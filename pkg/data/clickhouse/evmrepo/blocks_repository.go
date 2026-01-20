@@ -41,13 +41,13 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 			parent_hash String,
 			block_time DateTime64(3, 'UTC'),
 			miner String,
-			difficulty UInt64,
-			total_difficulty UInt64,
+			difficulty UInt256,
+			total_difficulty UInt256,
 			size UInt64,
 			gas_limit UInt64,
 			gas_used UInt64,
-			base_fee_per_gas UInt64,
-			block_gas_cost UInt64,
+			base_fee_per_gas UInt256,
+			block_gas_cost UInt256,
 			state_root String,
 			transactions_root String,
 			receipts_root String,
@@ -103,7 +103,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
 	}
 
-	// Convert *big.Int to uint32 for ClickHouse
+	// Convert *big.Int to uint32 for ClickHouse (BcID and EvmID)
 	var bcID uint32
 	if block.BcID != nil {
 		bcID = uint32(block.BcID.Uint64())
@@ -111,6 +111,25 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	var evmID uint32
 	if block.EvmID != nil {
 		evmID = uint32(block.EvmID.Uint64())
+	}
+
+	// Convert *big.Int to string for ClickHouse UInt256 fields
+	// ClickHouse accepts UInt256 as string representation
+	difficultyStr := "0"
+	if block.Difficulty != nil {
+		difficultyStr = block.Difficulty.String()
+	}
+	totalDifficultyStr := "0"
+	if block.TotalDifficulty != nil {
+		totalDifficultyStr = block.TotalDifficulty.String()
+	}
+	baseFeeStr := "0"
+	if block.BaseFeePerGas != nil {
+		baseFeeStr = block.BaseFeePerGas.String()
+	}
+	blockGasCostStr := "0"
+	if block.BlockGasCost != nil {
+		blockGasCostStr = block.BlockGasCost.String()
 	}
 
 	err := r.client.Conn().Exec(ctx, query,
@@ -121,13 +140,13 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		block.ParentHash,
 		block.BlockTime,
 		block.Miner,
-		block.Difficulty,
-		block.TotalDifficulty,
+		difficultyStr,
+		totalDifficultyStr,
 		block.Size,
 		block.GasLimit,
 		block.GasUsed,
-		block.BaseFeePerGas,
-		block.BlockGasCost,
+		baseFeeStr,
+		blockGasCostStr,
 		block.StateRoot,
 		block.TransactionsRoot,
 		block.ReceiptsRoot,

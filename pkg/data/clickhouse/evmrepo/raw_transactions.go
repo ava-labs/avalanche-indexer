@@ -23,11 +23,11 @@ type TransactionRow struct {
 	From             string
 	To               *string // Nullable
 	Nonce            uint64
-	Value            string // Stored as string to handle large values
+	Value            *big.Int // UInt256 in ClickHouse
 	Gas              uint64
-	GasPrice         string  // Stored as string to handle large values
-	MaxFeePerGas     *string // Nullable, stored as string
-	MaxPriorityFee   *string // Nullable, stored as string
+	GasPrice         *big.Int // UInt256 in ClickHouse
+	MaxFeePerGas     *big.Int // Nullable, UInt256 in ClickHouse
+	MaxPriorityFee   *big.Int // Nullable, UInt256 in ClickHouse
 	Input            string
 	Type             uint8
 	TransactionIndex uint64

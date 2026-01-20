@@ -20,13 +20,13 @@ type BlockRow struct {
 	ParentHash            string
 	BlockTime             time.Time
 	Miner                 string
-	Difficulty            uint64
-	TotalDifficulty       uint64
+	Difficulty            *big.Int // UInt256 in ClickHouse
+	TotalDifficulty       *big.Int // UInt256 in ClickHouse
 	Size                  uint64
 	GasLimit              uint64
 	GasUsed               uint64
-	BaseFeePerGas         uint64
-	BlockGasCost          uint64
+	BaseFeePerGas         *big.Int // UInt256 in ClickHouse
+	BlockGasCost          *big.Int // UInt256 in ClickHouse
 	StateRoot             string
 	TransactionsRoot      string
 	ReceiptsRoot          string

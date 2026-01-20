@@ -45,11 +45,11 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.From,
 			tx.To,
 			tx.Nonce,
-			tx.Value,
+			tx.Value.String(), // string: UInt256
 			tx.Gas,
-			tx.GasPrice,
-			tx.MaxFeePerGas,
-			tx.MaxPriorityFee,
+			tx.GasPrice.String(),       // string: UInt256
+			tx.MaxFeePerGas.String(),   // string: UInt256 (nullable)
+			tx.MaxPriorityFee.String(), // string: UInt256 (nullable)
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
@@ -92,11 +92,11 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.From,
 			tx.To,
 			tx.Nonce,
-			tx.Value,
+			tx.Value.String(), // string: UInt256
 			tx.Gas,
-			tx.GasPrice,
-			tx.MaxFeePerGas,
-			tx.MaxPriorityFee,
+			tx.GasPrice.String(),       // string: UInt256
+			tx.MaxFeePerGas.String(),   // string: UInt256 (nullable)
+			tx.MaxPriorityFee.String(), // string: UInt256 (nullable)
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
@@ -144,11 +144,11 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.From,
 			mock.Anything, // To can be nil or *string
 			tx.Nonce,
-			tx.Value,
+			tx.Value.String(), // string: UInt256
 			tx.Gas,
-			tx.GasPrice,
-			tx.MaxFeePerGas,
-			tx.MaxPriorityFee,
+			tx.GasPrice.String(),       // string: UInt256
+			tx.MaxFeePerGas.String(),   // string: UInt256 (nullable)
+			tx.MaxPriorityFee.String(), // string: UInt256 (nullable)
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
@@ -169,8 +169,6 @@ func createTestTransaction() *TransactionRow {
 	txHash := "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
 	from := "0x4142434445464748494a4b4c4d4e4f5051525354"
 	to := "0x55565758595a5b5c5d5e5f6061626364656667"
-	maxFee := "1000000000"
-	maxPriority := "2000000000"
 
 	return &TransactionRow{
 		BcID:             big.NewInt(43113),
@@ -182,11 +180,11 @@ func createTestTransaction() *TransactionRow {
 		From:             from,
 		To:               &to,
 		Nonce:            42,
-		Value:            "1000000000000000000", // 1 ETH in wei
+		Value:            big.NewInt(1000000000000000000), // 1 ETH in wei
 		Gas:              21000,
-		GasPrice:         "470000000000", // 470 gwei
-		MaxFeePerGas:     &maxFee,
-		MaxPriorityFee:   &maxPriority,
+		GasPrice:         big.NewInt(470000000000), // 470 gwei
+		MaxFeePerGas:     big.NewInt(1000000000),
+		MaxPriorityFee:   big.NewInt(2000000000),
 		Input:            "0x",
 		Type:             2, // EIP-1559 transaction
 		TransactionIndex: 0,

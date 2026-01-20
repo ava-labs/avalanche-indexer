@@ -43,11 +43,11 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 			from_address String,
 			to_address Nullable(String),
 			nonce UInt64,
-			value String,
+			value UInt256,
 			gas UInt64,
-			gas_price String,
-			max_fee_per_gas Nullable(String),
-			max_priority_fee Nullable(String),
+			gas_price UInt256,
+			max_fee_per_gas Nullable(UInt256),
+			max_priority_fee Nullable(UInt256),
 			input String,
 			type UInt8,
 			transaction_index UInt64
@@ -72,7 +72,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
-	// Convert *big.Int to uint32 for ClickHouse
+	// Convert *big.Int to uint32 for ClickHouse (BcID and EvmID)
 	var bcID uint32
 	if tx.BcID != nil {
 		bcID = uint32(tx.BcID.Uint64())
@@ -80,6 +80,29 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	var evmID uint32
 	if tx.EvmID != nil {
 		evmID = uint32(tx.EvmID.Uint64())
+	}
+
+	// Convert *big.Int to string for ClickHouse UInt256 fields
+	// ClickHouse accepts UInt256 as string representation
+	valueStr := "0"
+	if tx.Value != nil {
+		valueStr = tx.Value.String()
+	}
+	gasPriceStr := "0"
+	if tx.GasPrice != nil {
+		gasPriceStr = tx.GasPrice.String()
+	}
+	var maxFeePerGasStr interface{}
+	if tx.MaxFeePerGas != nil {
+		maxFeePerGasStr = tx.MaxFeePerGas.String()
+	} else {
+		maxFeePerGasStr = nil
+	}
+	var maxPriorityFeeStr interface{}
+	if tx.MaxPriorityFee != nil {
+		maxPriorityFeeStr = tx.MaxPriorityFee.String()
+	} else {
+		maxPriorityFeeStr = nil
 	}
 
 	err := r.client.Conn().Exec(ctx, query,
@@ -92,11 +115,11 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		tx.From,
 		tx.To,
 		tx.Nonce,
-		tx.Value,
+		valueStr,
 		tx.Gas,
-		tx.GasPrice,
-		tx.MaxFeePerGas,
-		tx.MaxPriorityFee,
+		gasPriceStr,
+		maxFeePerGasStr,
+		maxPriorityFeeStr,
 		tx.Input,
 		tx.Type,
 		tx.TransactionIndex,

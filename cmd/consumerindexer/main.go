@@ -355,7 +355,11 @@ func run(c *cli.Context) error {
 					return fmt.Errorf("all brokers down: %w", e)
 				}
 				// Non-fatal errors are usually informational
-				sugar.Warnw("ignoring unexpected kafka error", "code", fmt.Sprintf("%#x", e.Code()), "error", e)
+				sugar.Warnw(
+					"ignoring unexpected kafka error",
+					"code", fmt.Sprintf("%#x", e.Code()),
+					"error", e,
+				)
 				continue
 			default:
 				sugar.Debugw("ignored event", "type", fmt.Sprintf("%T", e))
@@ -398,7 +402,12 @@ func buildClickHouseConfig(c *cli.Context) clickhouse.Config {
 }
 
 // processMessage processes a Kafka message and writes it to ClickHouse
-func processMessage(ctx context.Context, msg *kafka.Message, repos *repositories, sugar *zap.SugaredLogger) error {
+func processMessage(
+	ctx context.Context,
+	msg *kafka.Message,
+	repos *repositories,
+	sugar *zap.SugaredLogger,
+) error {
 	topic := *msg.TopicPartition.Topic
 
 	switch topic {
@@ -411,7 +420,12 @@ func processMessage(ctx context.Context, msg *kafka.Message, repos *repositories
 }
 
 // processBlockMessage processes a block message from Kafka
-func processBlockMessage(ctx context.Context, data []byte, repos *repositories, sugar *zap.SugaredLogger) error {
+func processBlockMessage(
+	ctx context.Context,
+	data []byte,
+	repos *repositories,
+	sugar *zap.SugaredLogger,
+) error {
 	// Parse JSON payload directly to coreth.Block
 	var block coreth.Block
 	if err := json.Unmarshal(data, &block); err != nil {
@@ -435,7 +449,12 @@ func processBlockMessage(ctx context.Context, data []byte, repos *repositories, 
 }
 
 // processBlock converts a coreth.Block to BlockRow and writes it to ClickHouse
-func processBlock(ctx context.Context, block *coreth.Block, repos *repositories, sugar *zap.SugaredLogger) error {
+func processBlock(
+	ctx context.Context,
+	block *coreth.Block,
+	repos *repositories,
+	sugar *zap.SugaredLogger,
+) error {
 	// Validate blockchain ID
 	if block.BcID == nil {
 		return evmrepo.ErrBlockChainIDRequired
@@ -459,8 +478,14 @@ func processBlock(ctx context.Context, block *coreth.Block, repos *repositories,
 	return nil
 }
 
-// processTransactions converts transactions from a coreth.Block to TransactionRow and writes them to ClickHouse
-func processTransactions(ctx context.Context, block *coreth.Block, repos *repositories, sugar *zap.SugaredLogger) error {
+// processTransactions converts transactions from a coreth.Block to TransactionRow and writes
+// them to ClickHouse
+func processTransactions(
+	ctx context.Context,
+	block *coreth.Block,
+	repos *repositories,
+	sugar *zap.SugaredLogger,
+) error {
 	// Validate blockchain ID
 	if block.BcID == nil {
 		return evmrepo.ErrBlockChainIDRequiredForTx
@@ -521,10 +546,14 @@ func corethBlockToBlockRow(block *coreth.Block) *evmrepo.BlockRow {
 		ExtraData:   block.ExtraData,
 	}
 
-	// Set difficulty from big.Int
+	// Set difficulty from big.Int (keep as *big.Int)
 	if block.Difficulty != nil {
-		blockRow.Difficulty = block.Difficulty.Uint64()
-		blockRow.TotalDifficulty = block.Difficulty.Uint64() // Using same value for now
+		blockRow.Difficulty = block.Difficulty
+		// TotalDifficulty: for now use Difficulty, but this should be cumulative in production
+		blockRow.TotalDifficulty = new(big.Int).Set(block.Difficulty)
+	} else {
+		blockRow.Difficulty = big.NewInt(0)
+		blockRow.TotalDifficulty = big.NewInt(0)
 	}
 
 	// Direct string assignments - no conversions needed
@@ -540,10 +569,14 @@ func corethBlockToBlockRow(block *coreth.Block) *evmrepo.BlockRow {
 	// Parse nonce - convert uint64 to hex string
 	blockRow.Nonce = strconv.FormatUint(block.Nonce, 16)
 
-	// Optional fields
+	// Optional fields - keep as *big.Int
 	if block.BaseFee != nil {
-		blockRow.BaseFeePerGas = block.BaseFee.Uint64()
+		blockRow.BaseFeePerGas = block.BaseFee
+	} else {
+		blockRow.BaseFeePerGas = big.NewInt(0)
 	}
+	// BlockGasCost defaults to 0 for now (not in coreth.Block yet)
+	blockRow.BlockGasCost = big.NewInt(0)
 	if block.BlobGasUsed != nil {
 		blockRow.BlobGasUsed = *block.BlobGasUsed
 	}
@@ -561,7 +594,11 @@ func corethBlockToBlockRow(block *coreth.Block) *evmrepo.BlockRow {
 }
 
 // corethTransactionToTransactionRow converts a coreth.Transaction to TransactionRow
-func corethTransactionToTransactionRow(tx *coreth.Transaction, block *coreth.Block, txIndex uint64) (*evmrepo.TransactionRow, error) {
+func corethTransactionToTransactionRow(
+	tx *coreth.Transaction,
+	block *coreth.Block,
+	txIndex uint64,
+) (*evmrepo.TransactionRow, error) {
 	// Extract blockchain ID from block
 	if block.BcID == nil {
 		return nil, evmrepo.ErrBlockChainIDRequiredForTx
@@ -601,29 +638,27 @@ func corethTransactionToTransactionRow(tx *coreth.Transaction, block *coreth.Blo
 		txRow.To = &tx.To
 	}
 
-	// Convert big.Int values to string
+	// Set big.Int values directly (keep as *big.Int)
 	if tx.Value != nil {
-		txRow.Value = tx.Value.String()
+		txRow.Value = tx.Value
 	} else {
-		txRow.Value = "0"
+		txRow.Value = big.NewInt(0)
 	}
 
 	if tx.GasPrice != nil {
-		txRow.GasPrice = tx.GasPrice.String()
+		txRow.GasPrice = tx.GasPrice
 	} else {
-		txRow.GasPrice = "0"
+		txRow.GasPrice = big.NewInt(0)
 	}
 
 	// Handle nullable MaxFeePerGas
 	if tx.MaxFeePerGas != nil {
-		maxFeeStr := tx.MaxFeePerGas.String()
-		txRow.MaxFeePerGas = &maxFeeStr
+		txRow.MaxFeePerGas = tx.MaxFeePerGas
 	}
 
 	// Handle nullable MaxPriorityFee
 	if tx.MaxPriorityFee != nil {
-		maxPriorityStr := tx.MaxPriorityFee.String()
-		txRow.MaxPriorityFee = &maxPriorityStr
+		txRow.MaxPriorityFee = tx.MaxPriorityFee
 	}
 
 	return txRow, nil

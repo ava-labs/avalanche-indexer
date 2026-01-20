@@ -54,7 +54,7 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(1331), blockRow.Size)
 	assert.Equal(t, uint64(20006296), blockRow.GasLimit)
 	assert.Equal(t, uint64(183061), blockRow.GasUsed)
-	assert.Equal(t, uint64(470000000000), blockRow.BaseFeePerGas)
+	assertBigIntEqual(t, big.NewInt(470000000000), blockRow.BaseFeePerGas)
 	assert.Equal(t, "2a", blockRow.Nonce) // 42 in hex
 }
 
@@ -83,7 +83,7 @@ func TestCorethBlockToBlockRow_OptionalFields(t *testing.T) {
 	blockRow := corethBlockToBlockRow(block)
 
 	require.NotNil(t, blockRow)
-	assert.Equal(t, uint64(470000000000), blockRow.BaseFeePerGas)
+	assertBigIntEqual(t, big.NewInt(470000000000), blockRow.BaseFeePerGas)
 	assert.Equal(t, uint64(1000), blockRow.BlobGasUsed)
 	assert.Equal(t, uint64(2000), blockRow.ExcessBlobGas)
 	assert.Equal(t, "0xbeaconroot1234567890abcdef1234567890abcdef1234567890abcdef1234567890", blockRow.ParentBeaconBlockRoot)
@@ -116,9 +116,9 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 	require.NotNil(t, txRow.To)
 	assert.Equal(t, "0x55565758595a5b5c5d5e5f6061626364656667", *txRow.To)
 	assert.Equal(t, uint64(1), txRow.Nonce)
-	assert.Equal(t, "1000000000000000000", txRow.Value)
+	assertBigIntEqual(t, big.NewInt(1000000000000000000), txRow.Value)
 	assert.Equal(t, uint64(21000), txRow.Gas)
-	assert.Equal(t, "470000000000", txRow.GasPrice)
+	assertBigIntEqual(t, big.NewInt(470000000000), txRow.GasPrice)
 	assert.Equal(t, txIndex, txRow.TransactionIndex)
 }
 
@@ -149,7 +149,7 @@ func TestCorethTransactionToTransactionRow_NilValue(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
-	assert.Equal(t, "0", txRow.Value)
+	assertBigIntEqual(t, big.NewInt(0), txRow.Value)
 }
 
 func TestCorethTransactionToTransactionRow_NilGasPrice(t *testing.T) {
@@ -164,7 +164,7 @@ func TestCorethTransactionToTransactionRow_NilGasPrice(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, txRow)
-	assert.Equal(t, "0", txRow.GasPrice)
+	assertBigIntEqual(t, big.NewInt(0), txRow.GasPrice)
 }
 
 func TestCorethTransactionToTransactionRow_MaxFeeFields(t *testing.T) {
@@ -182,8 +182,8 @@ func TestCorethTransactionToTransactionRow_MaxFeeFields(t *testing.T) {
 	require.NotNil(t, txRow)
 	require.NotNil(t, txRow.MaxFeePerGas)
 	require.NotNil(t, txRow.MaxPriorityFee)
-	assert.Equal(t, "1000000000", *txRow.MaxFeePerGas)
-	assert.Equal(t, "2000000000", *txRow.MaxPriorityFee)
+	assertBigIntEqual(t, big.NewInt(1000000000), txRow.MaxFeePerGas)
+	assertBigIntEqual(t, big.NewInt(2000000000), txRow.MaxPriorityFee)
 }
 
 func TestCorethTransactionToTransactionRow_NilBlockchainID(t *testing.T) {
