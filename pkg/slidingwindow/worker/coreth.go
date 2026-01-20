@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
-	"github.com/ava-labs/avalanche-indexer/pkg/types/coreth"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
