@@ -1,4 +1,4 @@
-package coreth
+package messages
 
 import (
 	"encoding/json"
@@ -79,7 +79,7 @@ func newSignedTx(chainID *big.Int, nonce uint64, to *common.Address) *libevmtype
 	return signedTx
 }
 
-func TestBlockFromLibevm(t *testing.T) {
+func TestCorethBlockFromLibevm(t *testing.T) {
 	initCustomTypes()
 	t.Parallel()
 
@@ -91,15 +91,18 @@ func TestBlockFromLibevm(t *testing.T) {
 		header      *libevmtypes.Header
 		txs         []*libevmtypes.Transaction
 		withdrawals []*libevmtypes.Withdrawal
-		assertFn    func(t *testing.T, got *Block)
+		chainID     *big.Int
+		assertFn    func(t *testing.T, got *CorethBlock)
 	}{
 		{
 			name:        "minimal block without optional fields",
 			header:      newTestHeader(),
 			txs:         nil,
 			withdrawals: nil,
-			assertFn: func(t *testing.T, got *Block) {
+			chainID:     chainID,
+			assertFn: func(t *testing.T, got *CorethBlock) {
 				assert.Equal(t, big.NewInt(42), got.Number)
+				assert.Equal(t, chainID, got.ChainID)
 				assert.NotEmpty(t, got.Hash)
 				assert.Equal(t, uint64(8_000_000), got.GasLimit)
 				assert.Equal(t, uint64(21_000), got.GasUsed)
@@ -119,7 +122,8 @@ func TestBlockFromLibevm(t *testing.T) {
 			}),
 			txs:         nil,
 			withdrawals: nil,
-			assertFn: func(t *testing.T, got *Block) {
+			chainID:     chainID,
+			assertFn: func(t *testing.T, got *CorethBlock) {
 				assert.Equal(t, "0x0000000000000000000000000000000000000000000000000000000000000abc", got.ParentBeaconBlockRoot)
 			},
 		},
@@ -133,7 +137,8 @@ func TestBlockFromLibevm(t *testing.T) {
 			}),
 			txs:         nil,
 			withdrawals: nil,
-			assertFn: func(t *testing.T, got *Block) {
+			chainID:     chainID,
+			assertFn: func(t *testing.T, got *CorethBlock) {
 				require.NotNil(t, got.ExcessBlobGas)
 				require.NotNil(t, got.BlobGasUsed)
 				assert.Equal(t, uint64(131072), *got.ExcessBlobGas)
@@ -145,7 +150,8 @@ func TestBlockFromLibevm(t *testing.T) {
 			header:      newTestHeader(),
 			txs:         []*libevmtypes.Transaction{newSignedTx(chainID, 1, &toAddr)},
 			withdrawals: nil,
-			assertFn: func(t *testing.T, got *Block) {
+			chainID:     chainID,
+			assertFn: func(t *testing.T, got *CorethBlock) {
 				require.Len(t, got.Transactions, 1)
 				tx := got.Transactions[0]
 				assert.NotEmpty(t, tx.Hash)
@@ -162,7 +168,8 @@ func TestBlockFromLibevm(t *testing.T) {
 			header:      newTestHeader(),
 			txs:         []*libevmtypes.Transaction{newSignedTx(chainID, 1, nil)},
 			withdrawals: nil,
-			assertFn: func(t *testing.T, got *Block) {
+			chainID:     chainID,
+			assertFn: func(t *testing.T, got *CorethBlock) {
 				require.Len(t, got.Transactions, 1)
 				assert.Empty(t, got.Transactions[0].To, "contract creation should have empty To")
 			},
@@ -188,7 +195,8 @@ func TestBlockFromLibevm(t *testing.T) {
 					Amount:    1_000_000_000, // 1 ETH in Gwei
 				},
 			},
-			assertFn: func(t *testing.T, got *Block) {
+			chainID: chainID,
+			assertFn: func(t *testing.T, got *CorethBlock) {
 				require.Len(t, got.Withdrawals, 2)
 
 				assert.Equal(t, uint64(0), got.Withdrawals[0].Index)
@@ -217,7 +225,8 @@ func TestBlockFromLibevm(t *testing.T) {
 			withdrawals: []*libevmtypes.Withdrawal{
 				{Index: 0, Validator: 1, Address: common.HexToAddress("0x5555555555555555555555555555555555555555"), Amount: 100},
 			},
-			assertFn: func(t *testing.T, got *Block) {
+			chainID: chainID,
+			assertFn: func(t *testing.T, got *CorethBlock) {
 				assert.NotEmpty(t, got.ParentBeaconBlockRoot)
 				require.NotNil(t, got.ExcessBlobGas)
 				require.NotNil(t, got.BlobGasUsed)
@@ -232,7 +241,7 @@ func TestBlockFromLibevm(t *testing.T) {
 			t.Parallel()
 			block := libevmtypes.NewBlockWithWithdrawals(tt.header, tt.txs, nil, nil, tt.withdrawals, newTestHasher())
 
-			got, err := BlockFromLibevm(block)
+			got, err := CorethBlockFromLibevm(block, tt.chainID)
 
 			require.NoError(t, err)
 			require.NotNil(t, got)
@@ -241,16 +250,18 @@ func TestBlockFromLibevm(t *testing.T) {
 	}
 }
 
-func TestBlockFromLibevm_HeaderFields(t *testing.T) {
+func TestCorethBlockFromLibevm_HeaderFields(t *testing.T) {
 	initCustomTypes()
 	t.Parallel()
 
+	chainID := big.NewInt(43114)
 	header := newTestHeader()
 	block := libevmtypes.NewBlock(header, nil, nil, nil, newTestHasher())
 
-	got, err := BlockFromLibevm(block)
+	got, err := CorethBlockFromLibevm(block, chainID)
 
 	require.NoError(t, err)
+	assert.Equal(t, chainID, got.ChainID)
 	assert.Equal(t, header.ParentHash.Hex(), got.ParentHash)
 	assert.Equal(t, header.Root.Hex(), got.StateRoot)
 	assert.Equal(t, header.Coinbase.Hex(), got.Miner)
@@ -259,6 +270,7 @@ func TestBlockFromLibevm_HeaderFields(t *testing.T) {
 	assert.Equal(t, header.GasUsed, got.GasUsed)
 	assert.Equal(t, header.Difficulty, got.Difficulty)
 	assert.Equal(t, header.BaseFee, got.BaseFee)
+	assert.Equal(t, header.Time, got.Timestamp)
 	assert.NotEmpty(t, got.LogsBloom)
 	assert.NotEmpty(t, got.ExtraData)
 	assert.NotEmpty(t, got.UncleHash)
@@ -266,7 +278,7 @@ func TestBlockFromLibevm_HeaderFields(t *testing.T) {
 	assert.NotEmpty(t, got.ReceiptsRoot)
 }
 
-func TestTransactionsFromLibevm(t *testing.T) {
+func TestCorethTransactionsFromLibevm(t *testing.T) {
 	t.Parallel()
 
 	chainID := big.NewInt(43114)
@@ -276,13 +288,13 @@ func TestTransactionsFromLibevm(t *testing.T) {
 		name     string
 		txs      []*libevmtypes.Transaction
 		wantLen  int
-		assertFn func(t *testing.T, got []*Transaction)
+		assertFn func(t *testing.T, got []*CorethTransaction)
 	}{
 		{
 			name:    "empty transactions",
 			txs:     nil,
 			wantLen: 0,
-			assertFn: func(t *testing.T, got []*Transaction) {
+			assertFn: func(t *testing.T, got []*CorethTransaction) {
 				assert.Empty(t, got)
 			},
 		},
@@ -290,7 +302,7 @@ func TestTransactionsFromLibevm(t *testing.T) {
 			name:    "single transaction with To address",
 			txs:     []*libevmtypes.Transaction{newSignedTx(chainID, 1, &toAddr)},
 			wantLen: 1,
-			assertFn: func(t *testing.T, got []*Transaction) {
+			assertFn: func(t *testing.T, got []*CorethTransaction) {
 				tx := got[0]
 				assert.NotEmpty(t, tx.Hash)
 				assert.NotEmpty(t, tx.From)
@@ -309,7 +321,7 @@ func TestTransactionsFromLibevm(t *testing.T) {
 			name:    "contract creation (nil To)",
 			txs:     []*libevmtypes.Transaction{newSignedTx(chainID, 1, nil)},
 			wantLen: 1,
-			assertFn: func(t *testing.T, got []*Transaction) {
+			assertFn: func(t *testing.T, got []*CorethTransaction) {
 				assert.Empty(t, got[0].To)
 			},
 		},
@@ -321,7 +333,7 @@ func TestTransactionsFromLibevm(t *testing.T) {
 				newSignedTx(chainID, 3, &toAddr),
 			},
 			wantLen: 3,
-			assertFn: func(t *testing.T, got []*Transaction) {
+			assertFn: func(t *testing.T, got []*CorethTransaction) {
 				assert.Len(t, got, 3)
 				// Each tx should have a unique hash
 				hashes := make(map[string]struct{})
@@ -337,7 +349,7 @@ func TestTransactionsFromLibevm(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := TransactionsFromLibevm(tt.txs)
+			got, err := CorethTransactionsFromLibevm(tt.txs)
 
 			require.NoError(t, err)
 			assert.Len(t, got, tt.wantLen)
@@ -346,7 +358,7 @@ func TestTransactionsFromLibevm(t *testing.T) {
 	}
 }
 
-func TestWithdrawalsFromLibevm(t *testing.T) {
+func TestCorethWithdrawalsFromLibevm(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -391,7 +403,7 @@ func TestWithdrawalsFromLibevm(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := WithdrawalsFromLibevm(tt.withdrawals)
+			got := CorethWithdrawalFromLibevm(tt.withdrawals)
 
 			assert.Len(t, got, tt.wantLen)
 
@@ -406,25 +418,25 @@ func TestWithdrawalsFromLibevm(t *testing.T) {
 	}
 }
 
-func TestBlock_MarshalUnmarshal(t *testing.T) {
+func TestCorethBlock_MarshalUnmarshal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name  string
-		block *Block
+		block *CorethBlock
 	}{
 		{
 			name: "minimal block",
-			block: &Block{
+			block: &CorethBlock{
 				Number:       big.NewInt(100),
 				Hash:         "0xabc",
 				ParentHash:   "0xdef",
-				Transactions: []*Transaction{},
+				Transactions: []*CorethTransaction{},
 			},
 		},
 		{
 			name: "block with all fields",
-			block: &Block{
+			block: &CorethBlock{
 				Number:                big.NewInt(12345),
 				Hash:                  "0x1234567890abcdef",
 				ParentHash:            "0xfedcba0987654321",
@@ -447,17 +459,17 @@ func TestBlock_MarshalUnmarshal(t *testing.T) {
 				ExcessBlobGas:         ptrUint64(100),
 				BlobGasUsed:           ptrUint64(200),
 				ParentBeaconBlockRoot: "0xbeacon",
-				Withdrawals: []*Withdrawal{
+				Withdrawals: []*CorethWithdrawal{
 					{Index: 0, ValidatorIndex: 1, Address: "0xaddr", Amount: 100},
 				},
-				Transactions: []*Transaction{
+				Transactions: []*CorethTransaction{
 					{Hash: "0xtx1", From: "0xfrom", To: "0xto", Nonce: 1, Value: big.NewInt(100)},
 				},
 			},
 		},
 		{
 			name: "block with nil optional fields",
-			block: &Block{
+			block: &CorethBlock{
 				Number:        big.NewInt(1),
 				Hash:          "0x1",
 				Transactions:  nil,
@@ -476,7 +488,7 @@ func TestBlock_MarshalUnmarshal(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
-			var got Block
+			var got CorethBlock
 			err = got.Unmarshal(data)
 			require.NoError(t, err)
 
@@ -492,16 +504,16 @@ func TestBlock_MarshalUnmarshal(t *testing.T) {
 	}
 }
 
-func TestTransaction_MarshalUnmarshal(t *testing.T) {
+func TestCorethTransaction_MarshalUnmarshal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
-		tx   *Transaction
+		tx   *CorethTransaction
 	}{
 		{
 			name: "minimal transaction",
-			tx: &Transaction{
+			tx: &CorethTransaction{
 				Hash:  "0xabc",
 				From:  "0xfrom",
 				Nonce: 1,
@@ -509,7 +521,7 @@ func TestTransaction_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "full transaction",
-			tx: &Transaction{
+			tx: &CorethTransaction{
 				Hash:           "0x1234567890abcdef",
 				From:           "0xfromaddress",
 				To:             "0xtoaddress",
@@ -526,7 +538,7 @@ func TestTransaction_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "contract creation (empty To)",
-			tx: &Transaction{
+			tx: &CorethTransaction{
 				Hash:  "0xcontract",
 				From:  "0xcreator",
 				To:    "",
@@ -544,7 +556,7 @@ func TestTransaction_MarshalUnmarshal(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
-			var got Transaction
+			var got CorethTransaction
 			err = got.Unmarshal(data)
 			require.NoError(t, err)
 
@@ -561,16 +573,16 @@ func TestTransaction_MarshalUnmarshal(t *testing.T) {
 	}
 }
 
-func TestWithdrawal_MarshalUnmarshal(t *testing.T) {
+func TestCorethWithdrawal_MarshalUnmarshal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name       string
-		withdrawal *Withdrawal
+		withdrawal *CorethWithdrawal
 	}{
 		{
 			name: "typical withdrawal",
-			withdrawal: &Withdrawal{
+			withdrawal: &CorethWithdrawal{
 				Index:          42,
 				ValidatorIndex: 100,
 				Address:        "0x1234567890123456789012345678901234567890",
@@ -579,7 +591,7 @@ func TestWithdrawal_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "zero values",
-			withdrawal: &Withdrawal{
+			withdrawal: &CorethWithdrawal{
 				Index:          0,
 				ValidatorIndex: 0,
 				Address:        "",
@@ -596,7 +608,7 @@ func TestWithdrawal_MarshalUnmarshal(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
-			var got Withdrawal
+			var got CorethWithdrawal
 			err = got.Unmarshal(data)
 			require.NoError(t, err)
 
@@ -608,13 +620,14 @@ func TestWithdrawal_MarshalUnmarshal(t *testing.T) {
 	}
 }
 
-func TestBlock_JSONTags(t *testing.T) {
+func TestCorethBlock_JSONTags(t *testing.T) {
 	t.Parallel()
 
-	block := &Block{
+	block := &CorethBlock{
 		Number:                big.NewInt(42),
 		Hash:                  "0xhash",
 		ParentHash:            "0xparent",
+		ChainID:               big.NewInt(43114),
 		StateRoot:             "0xstate",
 		TransactionsRoot:      "0xtxroot",
 		ReceiptsRoot:          "0xreceipts",
@@ -634,10 +647,10 @@ func TestBlock_JSONTags(t *testing.T) {
 		ExcessBlobGas:         ptrUint64(100),
 		BlobGasUsed:           ptrUint64(200),
 		ParentBeaconBlockRoot: "0xbeacon",
-		Withdrawals: []*Withdrawal{
+		Withdrawals: []*CorethWithdrawal{
 			{Index: 0, ValidatorIndex: 1, Address: "0xaddr", Amount: 100},
 		},
-		Transactions: []*Transaction{
+		Transactions: []*CorethTransaction{
 			{Hash: "0xtx1", From: "0xfrom", To: "0xto"},
 		},
 	}
@@ -651,9 +664,9 @@ func TestBlock_JSONTags(t *testing.T) {
 
 	// Verify JSON field names match expected tags
 	expectedFields := []string{
-		"number", "hash", "parentHash", "stateRoot", "transactionsRoot",
+		"number", "hash", "parentHash", "chainId", "stateRoot", "transactionsRoot",
 		"receiptsRoot", "sha3Uncles", "miner", "gasLimit", "gasUsed",
-		"baseFeePerGas", "timestampMs", "minDelayExcess", "size",
+		"baseFeePerGas", "timestamp", "size",
 		"difficulty", "mixHash", "nonce", "logsBloom", "extraData",
 		"excessBlobGas", "blobGasUsed", "parentBeaconBlockRoot",
 		"withdrawals", "transactions",
@@ -662,12 +675,23 @@ func TestBlock_JSONTags(t *testing.T) {
 		_, ok := m[field]
 		assert.True(t, ok, "expected JSON field %q to be present", field)
 	}
+
+	// Optional fields that may or may not be present
+	// timestampMs and minDelayExcess are only present if they have values
+	if block.TimestampMs > 0 {
+		_, ok := m["timestampMs"]
+		assert.True(t, ok, "expected JSON field 'timestampMs' to be present when value > 0")
+	}
+	if block.MinDelayExcess > 0 {
+		_, ok := m["minDelayExcess"]
+		assert.True(t, ok, "expected JSON field 'minDelayExcess' to be present when value > 0")
+	}
 }
 
-func TestTransaction_JSONTags(t *testing.T) {
+func TestCorethTransaction_JSONTags(t *testing.T) {
 	t.Parallel()
 
-	tx := &Transaction{
+	tx := &CorethTransaction{
 		Hash:           "0xhash",
 		From:           "0xfrom",
 		To:             "0xto",
@@ -699,10 +723,10 @@ func TestTransaction_JSONTags(t *testing.T) {
 	}
 }
 
-func TestWithdrawal_JSONTags(t *testing.T) {
+func TestCorethWithdrawal_JSONTags(t *testing.T) {
 	t.Parallel()
 
-	w := &Withdrawal{
+	w := &CorethWithdrawal{
 		Index:          1,
 		ValidatorIndex: 100,
 		Address:        "0xaddr",
@@ -723,28 +747,28 @@ func TestWithdrawal_JSONTags(t *testing.T) {
 	}
 }
 
-func TestBlock_Unmarshal_InvalidJSON(t *testing.T) {
+func TestCorethBlock_Unmarshal_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
-	var b Block
+	var b CorethBlock
 	err := b.Unmarshal([]byte("invalid json"))
 
 	assert.Error(t, err)
 }
 
-func TestTransaction_Unmarshal_InvalidJSON(t *testing.T) {
+func TestCorethTransaction_Unmarshal_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
-	var tx Transaction
+	var tx CorethTransaction
 	err := tx.Unmarshal([]byte("{not valid"))
 
 	assert.Error(t, err)
 }
 
-func TestWithdrawal_Unmarshal_InvalidJSON(t *testing.T) {
+func TestCorethWithdrawal_Unmarshal_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
-	var w Withdrawal
+	var w CorethWithdrawal
 	err := w.Unmarshal([]byte(""))
 
 	assert.Error(t, err)

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages/coreth"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
@@ -75,7 +75,7 @@ func (w *CorethWorker) Process(ctx context.Context, height uint64) error {
 		return fmt.Errorf("fetch block %d: %w", height, err)
 	}
 
-	corethBlock, err := coreth.BlockFromLibevm(block, w.chainID)
+	corethBlock, err := kafkamsg.CorethBlockFromLibevm(block, w.chainID)
 	if err != nil {
 		return fmt.Errorf("convert block %d: %w", height, err)
 	}

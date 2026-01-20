@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages/coreth"
 	"go.uber.org/zap"
 
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -37,7 +37,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		return errors.New("received nil message or empty value")
 	}
 
-	var block coreth.Block
+	var block kafkamsg.CorethBlock
 	if err := block.Unmarshal(msg.Value); err != nil {
 		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
 	}

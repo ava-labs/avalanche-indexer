@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages/coreth"
 )
 
 // ClickhouseBlock represents a block row in the raw_blocks ClickHouse table
@@ -45,7 +45,7 @@ type ClickhouseBlock struct {
 // ParseBlockFromJSON parses a JSON block from Kafka and converts it to ClickhouseBlock
 func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, error) {
 	// Unmarshal to coreth.Block
-	var block coreth.Block
+	var block kafkamsg.CorethBlock
 	if err := json.Unmarshal(data, &block); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal block JSON: %w", err)
 	}
@@ -60,7 +60,7 @@ func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, error) {
 }
 
 // corethBlockToClickhouseBlock converts a coreth.Block to ClickhouseBlock
-func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) (*ClickhouseBlock, error) {
+func corethBlockToClickhouseBlock(block *kafkamsg.CorethBlock, chainID uint32) (*ClickhouseBlock, error) {
 	// Extract number from big.Int
 	var blockNumber uint64
 	if block.Number != nil {

@@ -9,6 +9,7 @@
     "hexutil",
     "Infof",
     "Infow",
+    "kafkamsg",
     "Libevm",
     "libevmtypes",
     "librdkafka",
