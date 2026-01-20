@@ -41,6 +41,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	start := time.Now()
 
 	if msg == nil || msg.Value == nil {
+		p.metrics.IncError("nil_message")
 		return errors.New("received nil message or empty value")
 	}
 

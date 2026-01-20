@@ -268,7 +268,11 @@ func run(c *cli.Context) error {
 	// Start metrics server
 	metricsServer := metrics.NewServer(metricsAddr, registry)
 	metricsErrCh := metricsServer.Start()
-	sugar.Infof("metrics server started at http://localhost%s/metrics", metricsAddr)
+	if metricsHost == "" {
+		sugar.Infof("metrics server listening on http://0.0.0.0:%d/metrics", metricsPort)
+	} else {
+		sugar.Infof("metrics server listening on http://%s/metrics", metricsAddr)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
