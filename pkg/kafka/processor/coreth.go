@@ -43,7 +43,8 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	}
 
 	p.log.Debugw("processing coreth block",
-		"chainID", block.ChainID,
+		"evmChainID", block.EVMChainID,
+		"bcID", block.BlockchainID,
 		"blockNumber", block.Number,
 		"hash", block.Hash,
 	)
@@ -60,7 +61,8 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		}
 
 		p.log.Debugw("successfully persisted block to ClickHouse",
-			"chainID", clickhouseBlock.ChainID,
+			"evmChainID", clickhouseBlock.EVMChainID,
+			"bcID", clickhouseBlock.BlockchainID,
 			"blockNumber", clickhouseBlock.BlockNumber,
 			"hash", clickhouseBlock.Hash,
 		)

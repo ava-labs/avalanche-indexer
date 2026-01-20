@@ -44,10 +44,16 @@ func main() {
 						Usage:   "Enable verbose logging",
 					},
 					&cli.StringFlag{
-						Name:     "chain-id",
+						Name:     "evm-chain-id",
 						Aliases:  []string{"C"},
-						Usage:    "The chain ID to write the checkpoint to",
-						EnvVars:  []string{"CHAIN_ID"},
+						Usage:    "The EVM chain ID of the blockchain being ingested",
+						EnvVars:  []string{"EVM_CHAIN_ID"},
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "bc-id",
+						Usage:    "The blockchain ID of the blockchain being ingested",
+						EnvVars:  []string{"BLOCKCHAIN_ID"},
 						Required: true,
 					},
 					&cli.StringFlag{
@@ -179,7 +185,8 @@ func main() {
 
 func run(c *cli.Context) error {
 	verbose := c.Bool("verbose")
-	chainID := c.Uint64("chain-id")
+	evmChainID := c.Uint64("chain-id")
+	bcID := c.String("bc-id")
 	rpcURL := c.String("rpc-url")
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
@@ -205,7 +212,8 @@ func run(c *cli.Context) error {
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 	sugar.Infow("config",
 		"verbose", verbose,
-		"chainID", chainID,
+		"evmChainID", evmChainID,
+		"bcID", bcID,
 		"rpcURL", rpcURL,
 		"start", start,
 		"end", end,
@@ -283,7 +291,7 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, chainID, sugar, m)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, sugar, m)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
@@ -314,7 +322,7 @@ func run(c *cli.Context) error {
 	}
 
 	if fetchStartHeight {
-		checkpoint, err := repo.ReadCheckpoint(ctx, chainID)
+		checkpoint, err := repo.ReadCheckpoint(ctx, evmChainID)
 		if err != nil {
 			return fmt.Errorf("failed to read checkpoint: %w", err)
 		}
@@ -368,7 +376,7 @@ func run(c *cli.Context) error {
 		}
 	})
 	g.Go(func() error {
-		return scheduler.Start(gctx, s, repo, checkpointInterval, chainID)
+		return scheduler.Start(gctx, s, repo, checkpointInterval, evmChainID)
 	})
 
 	go slidingwindow.StartGapWatchdog(gctx, sugar, s, gapWatchdogInterval, gapWatchdogMaxGap)

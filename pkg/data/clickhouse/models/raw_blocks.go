@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"time"
 
@@ -12,7 +13,8 @@ import (
 
 // ClickhouseBlock represents a block row in the raw_blocks ClickHouse table
 type ClickhouseBlock struct {
-	ChainID               uint32
+	EVMChainID            *big.Int
+	BlockchainID          *string
 	BlockNumber           uint64
 	Hash                  string
 	ParentHash            string
@@ -51,16 +53,18 @@ func ParseBlockFromJSON(data []byte) (*ClickhouseBlock, error) {
 	}
 
 	// Extract chainID from block (should always be set by BlockFromLibevm)
-	if block.ChainID == nil {
-		return nil, errors.New("block chainID is required but was not set")
+	if block.EVMChainID == nil {
+		return nil, errors.New("block evmChainID is required but was not set")
 	}
-	chainID := uint32(block.ChainID.Uint64())
+	if block.BlockchainID == nil {
+		return nil, errors.New("block blockchainID is required but was not set")
+	}
 
-	return corethBlockToClickhouseBlock(&block, chainID)
+	return corethBlockToClickhouseBlock(&block)
 }
 
 // corethBlockToClickhouseBlock converts a coreth.Block to ClickhouseBlock
-func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) (*ClickhouseBlock, error) {
+func corethBlockToClickhouseBlock(block *coreth.Block) (*ClickhouseBlock, error) {
 	// Extract number from big.Int
 	var blockNumber uint64
 	if block.Number != nil {
@@ -68,13 +72,14 @@ func corethBlockToClickhouseBlock(block *coreth.Block, chainID uint32) (*Clickho
 	}
 
 	clickhouseBlock := &ClickhouseBlock{
-		ChainID:     chainID,
-		BlockNumber: blockNumber,
-		Size:        block.Size,
-		GasLimit:    block.GasLimit,
-		GasUsed:     block.GasUsed,
-		BlockTime:   time.Unix(int64(block.Timestamp), 0).UTC(),
-		ExtraData:   block.ExtraData,
+		EVMChainID:   block.EVMChainID,
+		BlockchainID: block.BlockchainID,
+		BlockNumber:  blockNumber,
+		Size:         block.Size,
+		GasLimit:     block.GasLimit,
+		GasUsed:      block.GasUsed,
+		BlockTime:    time.Unix(int64(block.Timestamp), 0).UTC(),
+		ExtraData:    block.ExtraData,
 	}
 
 	// Set difficulty from big.Int
