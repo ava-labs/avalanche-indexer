@@ -3,14 +3,20 @@
     "Coreth",
     "customethclient",
     "Debugf",
+    "Debugw",
     "Errorw",
     "evmclient",
     "hexutil",
     "Infof",
+    "Infow",
     "Libevm",
     "libevmtypes",
+    "librdkafka",
+    "nolint",
+    "roundrobin",
     "schemaregistry",
     "serde",
-    "Warnf"
+    "Warnf",
+    "Warnw"
   ]
 }
