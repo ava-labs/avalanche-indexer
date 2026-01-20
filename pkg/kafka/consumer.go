@@ -15,7 +15,6 @@ import (
 )
 
 const (
-	defaultPollInterval                = 100 * time.Millisecond
 	defaultPartitionAssignmentStrategy = "roundrobin"
 )
 
@@ -77,10 +76,10 @@ func NewConsumer(
 
 	dlqProducerConfig := cKafka.ConfigMap{
 		"bootstrap.servers":      cfg.BootstrapServers,
-		"acks":                   "all",
-		"linger.ms":              5,
-		"batch.size":             16384,
-		"compression.type":       "lz4",
+		"acks":                   "all", // All brokers must acknowledge the message
+		"linger.ms":              5,     // Batch messages for 5ms
+		"batch.size":             16384, // 16KB batch size
+		"compression.type":       "lz4", // Fast compression
 		"enable.idempotence":     true,
 		"go.logs.channel.enable": cfg.EnableLogs,
 	}
@@ -157,7 +156,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 			run = false
 			continue
 		default:
-			ev := c.consumer.Poll(int(defaultPollInterval.Milliseconds()))
+			ev := c.consumer.Poll(int(c.cfg.PollInterval.Milliseconds()))
 			if ev == nil {
 				continue
 			}
@@ -325,7 +324,7 @@ func (c *Consumer) getRebalanceCallback(ctx context.Context) cKafka.RebalanceCb 
 			)
 
 			if kc.AssignmentLost() {
-				c.log.Error("assignment lost involuntarily, commit may fail")
+				c.log.Errorw("assignment lost involuntarily, commit may fail")
 			}
 
 			for _, partition := range ev.Partitions {
