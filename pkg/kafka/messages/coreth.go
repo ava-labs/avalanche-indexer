@@ -1,6 +1,6 @@
-// Package coreth provides types for Coreth (C-Chain) blocks and transactions,
+// Package messages provides types for Kafka messages,
 // along with conversion functions from libevm types.
-package coreth
+package messages
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 )
 
-type Block struct {
+type CorethBlock struct {
 	EVMChainID   *big.Int `json:"evmChainId,omitempty"`
 	BlockchainID *string  `json:"blockchainId,omitempty"`
 	Number       *big.Int `json:"number"`
@@ -49,12 +49,11 @@ type Block struct {
 
 	ParentBeaconBlockRoot string `json:"parentBeaconBlockRoot,omitempty"`
 
-	Withdrawals []*Withdrawal `json:"withdrawals,omitempty"`
-
-	Transactions []*Transaction `json:"transactions"`
+	Withdrawals  []*CorethWithdrawal  `json:"withdrawals"`
+	Transactions []*CorethTransaction `json:"transactions"`
 }
 
-type Transaction struct {
+type CorethTransaction struct {
 	Hash           string   `json:"hash"`
 	From           string   `json:"from"`
 	To             string   `json:"to"`
@@ -68,17 +67,17 @@ type Transaction struct {
 	Type           uint8    `json:"type"`
 }
 
-type Withdrawal struct {
+type CorethWithdrawal struct {
 	Index          uint64 `json:"index"`
 	ValidatorIndex uint64 `json:"validatorIndex"`
 	Address        string `json:"address"`
 	Amount         uint64 `json:"amount"`
 }
 
-// BlockFromLibevm converts a libevm Block to a Coreth Block.
+// CorethBlockFromLibevm converts a libevm Block to a Coreth Block.
 // chainID should be provided since blocks may not have transactions to extract it from.
-func BlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*Block, error) {
-	transactions, err := TransactionsFromLibevm(block.Transactions())
+func CorethBlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*CorethBlock, error) {
+	transactions, err := CorethTransactionsFromLibevm(block.Transactions())
 	if err != nil {
 		return nil, fmt.Errorf("convert transactions: %w", err)
 	}
@@ -98,7 +97,7 @@ func BlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockchainID
 		minDelayExcess = extra.MinDelayExcess.Delay()
 	}
 
-	return &Block{
+	return &CorethBlock{
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
@@ -124,14 +123,14 @@ func BlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockchainID
 		ParentBeaconBlockRoot: beaconRoot,
 		ExcessBlobGas:         block.ExcessBlobGas(),
 		BlobGasUsed:           block.BlobGasUsed(),
-		Withdrawals:           WithdrawalsFromLibevm(block.Withdrawals()),
+		Withdrawals:           CorethWithdrawalFromLibevm(block.Withdrawals()),
 		Transactions:          transactions,
 	}, nil
 }
 
-// TransactionsFromLibevm converts libevm Transactions to Coreth Transactions.
-func TransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*Transaction, error) {
-	result := make([]*Transaction, len(transactions))
+// CorethTransactionsFromLibevm converts libevm Transactions to Coreth Transactions.
+func CorethTransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*CorethTransaction, error) {
+	result := make([]*CorethTransaction, len(transactions))
 
 	for i, tx := range transactions {
 		signer := libevmtypes.LatestSignerForChainID(tx.ChainId())
@@ -145,7 +144,7 @@ func TransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*Transac
 			to = tx.To().Hex()
 		}
 
-		result[i] = &Transaction{
+		result[i] = &CorethTransaction{
 			Hash:           tx.Hash().Hex(),
 			From:           from.Hex(),
 			To:             to,
@@ -162,12 +161,12 @@ func TransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*Transac
 	return result, nil
 }
 
-// WithdrawalsFromLibevm converts libevm Withdrawals to Coreth Withdrawals.
-func WithdrawalsFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*Withdrawal {
-	result := make([]*Withdrawal, len(withdrawals))
+// CorethWithdrawalFromLibevm converts libevm Withdrawals to Coreth Withdrawals.
+func CorethWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*CorethWithdrawal {
+	result := make([]*CorethWithdrawal, len(withdrawals))
 
 	for i, w := range withdrawals {
-		result[i] = &Withdrawal{
+		result[i] = &CorethWithdrawal{
 			Index:          w.Index,
 			ValidatorIndex: w.Validator,
 			Address:        w.Address.Hex(),
@@ -177,9 +176,9 @@ func WithdrawalsFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*Withdrawal 
 	return result
 }
 
-func (b *Block) Marshal() ([]byte, error) {
+func (b *CorethBlock) Marshal() ([]byte, error) {
 	// Convert big.Int fields to strings for JSON
-	type BlockAlias Block
+	type BlockAlias CorethBlock
 	alias := (*BlockAlias)(b)
 
 	// Create a map and manually convert big.Int to strings
@@ -209,7 +208,7 @@ func (b *Block) Marshal() ([]byte, error) {
 	return json.Marshal(result)
 }
 
-func (b *Block) Unmarshal(data []byte) error {
+func (b *CorethBlock) Unmarshal(data []byte) error {
 	// Use a map to handle big.Int fields as strings
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -234,13 +233,13 @@ func (b *Block) Unmarshal(data []byte) error {
 	delete(raw, "difficulty")
 
 	// Unmarshal everything else
-	type BlockAlias Block
+	type BlockAlias CorethBlock
 	var alias BlockAlias
 	aliasData, _ := json.Marshal(raw)
 	if err := json.Unmarshal(aliasData, &alias); err != nil {
 		return err
 	}
-	*b = Block(alias)
+	*b = CorethBlock(alias)
 
 	// Handle big.Int fields manually
 	if evmChainIDStr != "" {
@@ -271,18 +270,18 @@ func (b *Block) Unmarshal(data []byte) error {
 	return nil
 }
 
-func (t *Transaction) Marshal() ([]byte, error) {
+func (t *CorethTransaction) Marshal() ([]byte, error) {
 	return json.Marshal(t)
 }
 
-func (t *Transaction) Unmarshal(data []byte) error {
+func (t *CorethTransaction) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, t)
 }
 
-func (w *Withdrawal) Marshal() ([]byte, error) {
+func (w *CorethWithdrawal) Marshal() ([]byte, error) {
 	return json.Marshal(w)
 }
 
-func (w *Withdrawal) Unmarshal(data []byte) error {
+func (w *CorethWithdrawal) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, w)
 }
