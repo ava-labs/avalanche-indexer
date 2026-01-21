@@ -57,7 +57,7 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	} else {
 		assertBigIntEqual(t, block.EVMChainID, blockRow.EVMChainID)
 	}
-	assert.Equal(t, uint64(1647), blockRow.BlockNumber)
+	assertBigIntEqual(t, big.NewInt(1647), blockRow.BlockNumber)
 	assert.Equal(t, testBlockHash, blockRow.Hash)
 	assert.Equal(t, "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40", blockRow.ParentHash)
 	assert.Equal(t, time.Unix(1604768510, 0).UTC(), blockRow.BlockTime)
@@ -78,7 +78,7 @@ func TestCorethBlockToBlockRow_NilNumber(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, blockRow)
-	assert.Equal(t, uint64(0), blockRow.BlockNumber)
+	assertBigIntEqual(t, big.NewInt(0), blockRow.BlockNumber)
 }
 
 func TestCorethBlockToBlockRow_OptionalFields(t *testing.T) {
