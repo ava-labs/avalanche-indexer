@@ -16,7 +16,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	stream "github.com/ava-labs/avalanche-indexer/pkg/kafka"
-	corethtypes "github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
@@ -389,16 +389,17 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 			continue
 		}
 		// Decode Kafka payload
-		var got corethtypes.Block
+		var got kafkamsg.CorethBlock
 		require.NoError(t, got.Unmarshal(val), "decode kafka block %d", n)
 
 		// Fetch from RPC and convert to our Block type
 		bn := new(big.Int).SetUint64(n)
 		lb, err := ec.BlockByNumber(ctx, bn)
 		require.NoError(t, err, "fetch rpc block %d", n)
+
 		evmChainID := got.EVMChainID
 		blockchainIDStr := got.BlockchainID
-		expPtr, err := corethtypes.BlockFromLibevm(lb, evmChainID, blockchainIDStr)
+		expPtr, err := kafkamsg.CorethBlockFromLibevm(lb, evmChainID, blockchainIDStr)
 		require.NoError(t, err, "convert rpc block %d", n)
 		exp := *expPtr
 

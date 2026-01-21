@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"go.uber.org/zap"
 
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -46,7 +46,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		return errors.New("received nil message or empty value")
 	}
 
-	var block coreth.Block
+	var block kafkamsg.CorethBlock
 	if err := block.Unmarshal(msg.Value); err != nil {
 		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
 	}
@@ -92,9 +92,9 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	return nil
 }
 
-// CorethBlockToBlockRow converts a coreth.Block to BlockRow
+// CorethBlockToBlockRow converts a kafkamsg.CorethBlock to BlockRow
 // Exported for testing purposes
-func CorethBlockToBlockRow(block *coreth.Block) (*evmrepo.BlockRow, error) {
+func CorethBlockToBlockRow(block *kafkamsg.CorethBlock) (*evmrepo.BlockRow, error) {
 	// Validate blockchain ID
 	if block.BlockchainID == nil {
 		return nil, evmrepo.ErrBlockChainIDRequired
@@ -158,7 +158,7 @@ func CorethBlockToBlockRow(block *coreth.Block) (*evmrepo.BlockRow, error) {
 	} else {
 		blockRow.BaseFeePerGas = big.NewInt(0)
 	}
-	// BlockGasCost defaults to 0 for now (not in coreth.Block yet)
+	// BlockGasCost defaults to 0 for now (not in kafkamsg.CorethBlock yet)
 	blockRow.BlockGasCost = big.NewInt(0)
 	if block.BlobGasUsed != nil {
 		blockRow.BlobGasUsed = *block.BlobGasUsed
@@ -179,8 +179,8 @@ func CorethBlockToBlockRow(block *coreth.Block) (*evmrepo.BlockRow, error) {
 // CorethTransactionToTransactionRow converts a coreth.Transaction to TransactionRow
 // Exported for testing purposes
 func CorethTransactionToTransactionRow(
-	tx *coreth.Transaction,
-	block *coreth.Block,
+	tx *kafkamsg.CorethTransaction,
+	block *kafkamsg.CorethBlock,
 	txIndex uint64,
 ) (*evmrepo.TransactionRow, error) {
 	// Extract blockchain ID from block
@@ -247,11 +247,11 @@ func CorethTransactionToTransactionRow(
 	return txRow, nil
 }
 
-// processTransactions converts transactions from a coreth.Block to TransactionRow and writes
+// processTransactions converts transactions from a kafkamsg.CorethBlock to TransactionRow and writes
 // them to ClickHouse
 func (p *CorethProcessor) processTransactions(
 	ctx context.Context,
-	block *coreth.Block,
+	block *kafkamsg.CorethBlock,
 ) error {
 	// Convert and write each transaction
 	// TODO: Add batching (in a future PR)
