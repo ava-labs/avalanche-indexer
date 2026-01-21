@@ -258,7 +258,7 @@ func TestCorethBlockFromLibevm_HeaderFields(t *testing.T) {
 	header := newTestHeader()
 	block := libevmtypes.NewBlock(header, nil, nil, nil, newTestHasher())
 
-	got, err := CorethBlockFromLibevm(block, chainID, nil)
+	got, err := CorethBlockFromLibevm(block, chainID, nil /* optional parameter not needed for this test */)
 
 	require.NoError(t, err)
 	assert.Equal(t, chainID, got.EVMChainID)
