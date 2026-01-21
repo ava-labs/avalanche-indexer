@@ -241,6 +241,7 @@ func TestCorethBlockFromLibevm(t *testing.T) {
 			t.Parallel()
 			block := libevmtypes.NewBlockWithWithdrawals(tt.header, tt.txs, nil, nil, tt.withdrawals, newTestHasher())
 
+			// Pass nil for the optional third parameter to use its default behavior in this test.
 			got, err := CorethBlockFromLibevm(block, tt.chainID, nil)
 
 			require.NoError(t, err)
