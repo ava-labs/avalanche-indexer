@@ -177,10 +177,10 @@ func createTestBlock() *BlockRow {
 	nonce := "0x55565758595a5b5c"
 	blockchainID := "11111111111111111111111111111111LpoYY"
 
-	return &ClickhouseBlock{
+	return &BlockRow{
 		EVMChainID:            big.NewInt(43113),
 		BlockchainID:          &blockchainID,
-		BlockNumber:           1647,
+		BlockNumber:           big.NewInt(1647),
 		Hash:                  hash,
 		ParentHash:            parentHash,
 		BlockTime:             time.Unix(1604768510, 0).UTC(),
