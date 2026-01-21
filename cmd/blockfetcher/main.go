@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/snapshot"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
@@ -44,10 +44,16 @@ func main() {
 						Usage:   "Enable verbose logging",
 					},
 					&cli.StringFlag{
-						Name:     "chain-id",
+						Name:     "evm-chain-id",
 						Aliases:  []string{"C"},
-						Usage:    "The chain ID to write the snapshot to",
-						EnvVars:  []string{"CHAIN_ID"},
+						Usage:    "The EVM chain ID of the blockchain being ingested",
+						EnvVars:  []string{"EVM_CHAIN_ID"},
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "bc-id",
+						Usage:    "The blockchain ID of the blockchain being ingested",
+						EnvVars:  []string{"BLOCKCHAIN_ID"},
 						Required: true,
 					},
 					&cli.StringFlag{
@@ -138,17 +144,17 @@ func main() {
 						Value:   "blockfetcher",
 					},
 					&cli.StringFlag{
-						Name:    "snapshot-table-name",
+						Name:    "checkpoint-table-name",
 						Aliases: []string{"T"},
-						Usage:   "The name of the table to write the snapshot to",
-						EnvVars: []string{"SNAPSHOT_TABLE_NAME"},
-						Value:   "test_db.snapshots",
+						Usage:   "The name of the table to write the checkpoint to",
+						EnvVars: []string{"CHECKPOINT_TABLE_NAME"},
+						Value:   "test_db.checkpoints",
 					},
 					&cli.DurationFlag{
-						Name:    "snapshot-interval",
+						Name:    "checkpoint-interval",
 						Aliases: []string{"i"},
-						Usage:   "The interval to write the snapshot to the repository",
-						EnvVars: []string{"SNAPSHOT_INTERVAL"},
+						Usage:   "The interval to write the checkpoint to the repository",
+						EnvVars: []string{"CHECKPOINT_INTERVAL"},
 						Value:   1 * time.Minute,
 					},
 					&cli.DurationFlag{
@@ -179,7 +185,8 @@ func main() {
 
 func run(c *cli.Context) error {
 	verbose := c.Bool("verbose")
-	chainID := c.Uint64("chain-id")
+	evmChainID := c.Uint64("evm-chain-id")
+	bcID := c.String("bc-id")
 	rpcURL := c.String("rpc-url")
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
@@ -194,8 +201,8 @@ func run(c *cli.Context) error {
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
 	kafkaClientID := c.String("kafka-client-id")
-	snapshotTableName := c.String("snapshot-table-name")
-	snapshotInterval := c.Duration("snapshot-interval")
+	checkpointTableName := c.String("checkpoint-table-name")
+	checkpointInterval := c.Duration("checkpoint-interval")
 	gapWatchdogInterval := c.Duration("gap-watchdog-interval")
 	gapWatchdogMaxGap := c.Uint64("gap-watchdog-max-gap")
 	sugar, err := utils.NewSugaredLogger(verbose)
@@ -205,7 +212,8 @@ func run(c *cli.Context) error {
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 	sugar.Infow("config",
 		"verbose", verbose,
-		"chainID", chainID,
+		"evmChainID", evmChainID,
+		"bcID", bcID,
 		"rpcURL", rpcURL,
 		"start", start,
 		"end", end,
@@ -215,13 +223,13 @@ func run(c *cli.Context) error {
 		"maxFailures", maxFailures,
 		"metricsHost", metricsHost,
 		"metricsPort", metricsPort,
-		"snapshotTableName", snapshotTableName,
-		"snapshotInterval", snapshotInterval,
+		"checkpointTableName", checkpointTableName,
+		"checkpointInterval", checkpointInterval,
 	)
 
 	var fetchStartHeight bool
 	if start == 0 {
-		sugar.Infof("start block height: not specified, will fetch from the latest snapshot")
+		sugar.Infof("start block height: not specified, will fetch from the latest checkpoint")
 		fetchStartHeight = true
 	} else {
 		sugar.Infof("start block height: %d", start)
@@ -283,7 +291,7 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, chainID, sugar, m)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, sugar, m)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
@@ -306,23 +314,23 @@ func run(c *cli.Context) error {
 		sugar.Infof("latest block height: %d", end)
 	}
 
-	repo := snapshot.NewRepository(chClient, snapshotTableName)
+	repo := checkpoint.NewRepository(chClient, checkpointTableName)
 
 	err = repo.CreateTableIfNotExists(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to check existence or create snapshots table: %w", err)
+		return fmt.Errorf("failed to check existence or create checkpoints table: %w", err)
 	}
 
 	if fetchStartHeight {
-		snapshot, err := repo.ReadSnapshot(ctx, chainID)
+		checkpoint, err := repo.ReadCheckpoint(ctx, evmChainID)
 		if err != nil {
-			return fmt.Errorf("failed to read snapshot: %w", err)
+			return fmt.Errorf("failed to read checkpoint: %w", err)
 		}
-		if snapshot == nil {
-			sugar.Infof("snapshot not found, will start from block height 0")
+		if checkpoint == nil {
+			sugar.Infof("checkpoint not found, will start from block height 0")
 			start = 0
 		} else {
-			start = snapshot.Lowest
+			start = checkpoint.Lowest
 			sugar.Infof("start block height: %d", start)
 		}
 	}
@@ -368,7 +376,7 @@ func run(c *cli.Context) error {
 		}
 	})
 	g.Go(func() error {
-		return scheduler.Start(gctx, s, repo, snapshotInterval, chainID)
+		return scheduler.Start(gctx, s, repo, checkpointInterval, evmChainID)
 	})
 
 	go slidingwindow.StartGapWatchdog(gctx, sugar, s, gapWatchdogInterval, gapWatchdogMaxGap)
