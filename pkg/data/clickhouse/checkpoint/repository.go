@@ -1,4 +1,4 @@
-package snapshot
+package checkpoint
 
 import (
 	"context"
@@ -9,12 +9,12 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// Snapshot Repository is used to write and read the snapshot of the sliding window state
+// Checkpoint Repository is used to write and read the checkpoint of the sliding window state
 // to the persistent storage (ClickHouse).
 type Repository interface {
 	CreateTableIfNotExists(ctx context.Context) error
-	WriteSnapshot(ctx context.Context, snapshot *Snapshot) error
-	ReadSnapshot(ctx context.Context, chainID uint64) (*Snapshot, error)
+	WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint) error
+	ReadCheckpoint(ctx context.Context, chainID uint64) (*Checkpoint, error)
 }
 
 type repository struct {
@@ -26,7 +26,7 @@ func NewRepository(client clickhouse.Client, tableName string) Repository {
 	return &repository{client: client, tableName: tableName}
 }
 
-// CreateTableIfNotExists creates the snapshots table if it doesn't exist.
+// CreateTableIfNotExists creates the checkpoints table if it doesn't exist.
 // Schema:
 //   - chain_id: UInt64 (primary key)
 //   - lowest_unprocessed_block: UInt64
@@ -43,32 +43,32 @@ func (r *repository) CreateTableIfNotExists(ctx context.Context) error {
 		ORDER BY chain_id
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
-		return fmt.Errorf("failed to create snapshots table: %w", err)
+		return fmt.Errorf("failed to create checkpoints table: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) WriteSnapshot(ctx context.Context, snapshot *Snapshot) error {
+func (r *repository) WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint) error {
 	query := fmt.Sprintf("INSERT INTO %s (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)", r.tableName)
 	err := r.client.Conn().
-		Exec(ctx, query, snapshot.ChainID, snapshot.Lowest, snapshot.Timestamp)
+		Exec(ctx, query, checkpoint.ChainID, checkpoint.Lowest, checkpoint.Timestamp)
 	if err != nil {
-		return fmt.Errorf("failed to write snapshot: %w", err)
+		return fmt.Errorf("failed to write checkpoint: %w", err)
 	}
 	return nil
 }
 
-func (r *repository) ReadSnapshot(ctx context.Context, chainID uint64) (*Snapshot, error) {
-	var snapshot Snapshot
+func (r *repository) ReadCheckpoint(ctx context.Context, chainID uint64) (*Checkpoint, error) {
+	var checkpoint Checkpoint
 	query := fmt.Sprintf("SELECT * FROM %s FINAL WHERE chain_id = %d", r.tableName, chainID)
 	err := r.client.Conn().
 		QueryRow(ctx, query).
-		Scan(&snapshot.ChainID, &snapshot.Lowest, &snapshot.Timestamp)
+		Scan(&checkpoint.ChainID, &checkpoint.Lowest, &checkpoint.Timestamp)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return &snapshot, nil
+	return &checkpoint, nil
 }

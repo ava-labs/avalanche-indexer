@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
@@ -223,6 +223,12 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
 						Value:   "default.raw_blocks",
 					},
+					&cli.StringFlag{
+						Name:    "raw-transactions-table-name",
+						Usage:   "ClickHouse table name for raw transactions",
+						EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
+						Value:   "default.raw_transactions",
+					},
 					// Metrics configuration flags
 					&cli.StringFlag{
 						Name:    "metrics-host",
@@ -292,7 +298,8 @@ func run(c *cli.Context) error {
 	flushTimeout := c.Duration("flush-timeout")
 	goroutineWaitTimeout := c.Duration("goroutine-wait-timeout")
 	pollInterval := c.Duration("poll-interval")
-	rawTableName := c.String("raw-blocks-table-name")
+	rawBlocksTableName := c.String("raw-blocks-table-name")
+	rawTransactionsTableName := c.String("raw-transactions-table-name")
 	metricsHost := c.String("metrics-host")
 	metricsPort := c.Int("metrics-port")
 	chainID := c.Uint64("chain-id")
@@ -329,7 +336,8 @@ func run(c *cli.Context) error {
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
 		"clickhouseDebug", chCfg.Debug,
-		"rawTableName", rawTableName,
+		"rawBlocksTableName", rawBlocksTableName,
+		"rawTransactionsTableName", rawTransactionsTableName,
 		"metricsHost", metricsHost,
 		"metricsPort", metricsPort,
 		"chainID", chainID,
@@ -371,12 +379,21 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	// Initialize raw blocks repository
-	rawBlocksRepo := models.NewRepository(chClient, rawTableName)
-	sugar.Info("Raw blocks repository initialized", "tableName", rawTableName)
+	// Initialize repositories (tables are created automatically)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create blocks repository: %w", err)
+	}
+	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
+
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create transactions repository: %w", err)
+	}
+	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
 
 	// Create CorethProcessor with ClickHouse persistence and metrics
-	proc := processor.NewCorethProcessor(sugar, rawBlocksRepo, m)
+	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
 
 	// Configure consumer
 	consumerCfg := kafka.ConsumerConfig{
