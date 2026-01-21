@@ -56,15 +56,10 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		return evmrepo.ErrBlockChainIDRequired
 	}
 
-	var blockNumber uint64
-	if block.Number != nil {
-		blockNumber = block.Number.Uint64()
-	}
-
 	p.log.Debugw("processing coreth block",
 		"evmChainID", block.EVMChainID,
-		"blockchainID", block.BlockchainID,
-		"blockNumber", blockNumber,
+		"bcID", block.BlockchainID,
+		"blockNumber", block.Number,
 		"hash", block.Hash,
 	)
 

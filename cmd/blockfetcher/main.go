@@ -43,7 +43,7 @@ func main() {
 						Aliases: []string{"v"},
 						Usage:   "Enable verbose logging",
 					},
-					&cli.Uint64Flag{
+					&cli.StringFlag{
 						Name:     "evm-chain-id",
 						Aliases:  []string{"C"},
 						Usage:    "The EVM chain ID of the blockchain being ingested",
