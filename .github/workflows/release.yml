@@ -29,7 +29,7 @@ jobs:
             avaplatform/avalanche-indexer:${{ github.ref_name }}-amd64
   CreateAndPushARM:
       name: Push Docker image to Docker Hub
-      runs-on: ubuntu-24.04-arm-4-core
+      runs-on: ubuntu-24.04-arm
       steps:
         - name: Checkout
           uses: actions/checkout@v4
