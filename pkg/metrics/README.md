@@ -164,7 +164,7 @@ rate(indexer_blocks_processed_total{evm_chain_id="43114", environment="productio
 sum by (region) (rate(indexer_errors_total{environment="production"}[5m]))
 
 # Pipeline backlog by chain and environment
-(indexer_highest - indexer_lowest)
+(indexer_highest{evm_chain_id="43114", environment="production"} - indexer_lowest{evm_chain_id="43114", environment="production"})
 
 # Cross-service throughput comparison (fetcher vs consumer)
 sum by (job, evm_chain_id) (rate(indexer_blocks_processed_total{environment="production"}[5m]))
