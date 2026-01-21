@@ -20,7 +20,7 @@ import (
 type CorethProcessor struct {
 	log     *zap.SugaredLogger
 	repo    models.Repository
-	metrics *metrics.Metrics
+	metrics *metrics.Metrics // nil-safe: all Metrics methods handle nil receivers gracefully
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
@@ -41,13 +41,13 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	start := time.Now()
 
 	if msg == nil || msg.Value == nil {
-		p.metrics.IncError("nil_message")
+		p.metrics.IncError("coreth_nil_message")
 		return errors.New("received nil message or empty value")
 	}
 
 	var block coreth.Block
 	if err := block.Unmarshal(msg.Value); err != nil {
-		p.metrics.IncError("unmarshal_error")
+		p.metrics.IncError("coreth_unmarshal_error")
 		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
 	}
 
@@ -61,12 +61,12 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	if p.repo != nil {
 		clickhouseBlock, err := models.ParseBlockFromJSON(msg.Value)
 		if err != nil {
-			p.metrics.IncError("parse_error")
+			p.metrics.IncError("coreth_parse_error")
 			return fmt.Errorf("failed to parse block for storage: %w", err)
 		}
 
 		if err := p.repo.WriteBlock(ctx, clickhouseBlock); err != nil {
-			p.metrics.IncError("write_error")
+			p.metrics.IncError("coreth_write_error")
 			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
 		}
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -126,6 +125,13 @@ func main() {
 						Value:   "",
 					},
 					&cli.StringFlag{
+						Name:    "cloud-provider",
+						Aliases: []string{"P"},
+						Usage:   "Cloud provider for metrics labels (e.g., 'aws', 'oci', 'gcp')",
+						EnvVars: []string{"CLOUD_PROVIDER"},
+						Value:   "",
+					},
+					&cli.StringFlag{
 						Name:     "kafka-brokers",
 						Usage:    "The Kafka brokers to use (comma-separated list)",
 						EnvVars:  []string{"KAFKA_BROKERS"},
@@ -207,6 +213,7 @@ func run(c *cli.Context) error {
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 	environment := c.String("environment")
 	region := c.String("region")
+	cloudProvider := c.String("cloud-provider")
 	kafkaBrokers := c.String("kafka-brokers")
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
@@ -234,6 +241,7 @@ func run(c *cli.Context) error {
 		"metricsPort", metricsPort,
 		"environment", environment,
 		"region", region,
+		"cloudProvider", cloudProvider,
 		"snapshotTableName", snapshotTableName,
 		"snapshotInterval", snapshotInterval,
 	)
@@ -257,9 +265,10 @@ func run(c *cli.Context) error {
 	// Initialize Prometheus metrics with labels for multi-instance filtering
 	registry := prometheus.NewRegistry()
 	m, err := metrics.NewWithLabels(registry, metrics.Labels{
-		Chain:       strconv.FormatUint(chainID, 10),
-		Environment: environment,
-		Region:      region,
+		EVMChainID:    chainID,
+		Environment:   environment,
+		Region:        region,
+		CloudProvider: cloudProvider,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)

@@ -127,9 +127,10 @@ Both `blockfetcher` and `consumerindexer` support:
 |------|---------|---------|-------------|
 | `--metrics-host` | `METRICS_HOST` | `""` (all interfaces) | Host to bind metrics server |
 | `--metrics-port` | `METRICS_PORT` | `9090` | Port for metrics server |
-| `--chain-id` | `CHAIN_ID` | `""` | Chain identifier for metrics labels |
+| `--chain-id` | `CHAIN_ID` | `0` | EVM chain ID for metrics labels (e.g., `43114` for C-Chain mainnet) |
 | `--environment` | `ENVIRONMENT` | `""` | Deployment environment (e.g., `production`, `staging`) |
 | `--region` | `REGION` | `""` | Cloud region (e.g., `us-east-1`) |
+| `--cloud-provider` | `CLOUD_PROVIDER` | `""` | Cloud provider (e.g., `aws`, `oci`, `gcp`) |
 
 ### Metrics Labels for Multi-Instance Filtering
 
@@ -141,6 +142,7 @@ blockfetcher run \
   --chain-id 43114 \
   --environment production \
   --region us-east-1 \
+  --cloud-provider aws \
   ...
 
 # Consumerindexer with all labels
@@ -148,6 +150,7 @@ consumerindexer run \
   --chain-id 43114 \
   --environment production \
   --region us-east-1 \
+  --cloud-provider aws \
   ...
 ```
 
@@ -155,7 +158,7 @@ This enables Grafana queries across the pipeline:
 
 ```promql
 # Processing rate for C-Chain mainnet in production
-rate(indexer_blocks_processed_total{chain="43114", environment="production"}[5m])
+rate(indexer_blocks_processed_total{evm_chain_id="43114", environment="production"}[5m])
 
 # Compare error rates across regions
 sum by (region) (rate(indexer_errors_total{environment="production"}[5m]))
@@ -164,7 +167,7 @@ sum by (region) (rate(indexer_errors_total{environment="production"}[5m]))
 (indexer_highest - indexer_lowest)
 
 # Cross-service throughput comparison (fetcher vs consumer)
-sum by (job, chain) (rate(indexer_blocks_processed_total{environment="production"}[5m]))
+sum by (job, evm_chain_id) (rate(indexer_blocks_processed_total{environment="production"}[5m]))
 ```
 
 ## Extending Metrics
