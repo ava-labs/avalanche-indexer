@@ -423,10 +423,13 @@ func run(c *cli.Context) error {
 	go func() {
 		select {
 		case <-ctx.Done():
-			return
+			// Signal completion to avoid blocking on errCh read
+			errCh <- nil
 		case err := <-metricsErrCh:
 			if err != nil {
 				errCh <- fmt.Errorf("metrics server error: %w", err)
+			} else {
+				errCh <- nil
 			}
 		}
 	}()
