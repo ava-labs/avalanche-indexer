@@ -32,7 +32,8 @@ import (
 // by producing them to Kafka. It assumes Docker Compose has started Kafka and ClickHouse.
 func TestE2EBlockfetcherRealTime(t *testing.T) {
 	// ---- Config (can be overridden via env to match local setup) ----
-	chainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji testnet
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji testnet
+	bcID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
 	rpcURL := getEnvStr("RPC_URL", "wss://api.avax-test.network/ext/bc/C/ws")
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_realtime")
@@ -79,7 +80,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	}
 
 	seed := &checkpoint.Checkpoint{
-		ChainID:   chainID,
+		ChainID:   evmChainID,
 		Lowest:    startHeight,
 		Timestamp: time.Now().Unix(),
 	}
@@ -111,7 +112,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, chainID, log, nil)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil)
 	require.NoError(t, err)
 
 	state, err := slidingwindow.NewState(seed.Lowest, latest)
@@ -132,7 +133,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, chainID) })
+	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
 
 	minMsgs := 5
 	received := 0
@@ -185,14 +186,15 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, receivedOrder)
 
 	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, chainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
 }
 
 // TestE2EBlockfetcherBackfill runs backfill over a small recent range and verifies
 // produced Kafka blocks match RPC responses using verifyBlocksFromRPC.
 func TestE2EBlockfetcherBackfill(t *testing.T) {
 	// ---- Config ----
-	chainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji by default
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji by default
+	bcID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
 	rpcURL := getEnvStr("RPC_URL", "wss://api.avax-test.network/ext/bc/C/ws")
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_backfill")
@@ -264,7 +266,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, chainID, log, nil)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil)
 	require.NoError(t, err)
 
 	state, err := slidingwindow.NewState(start, end)
@@ -282,7 +284,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, chainID) })
+	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
 
 	// Collect exactly the expected backfill range
 	expectedCount := int(end - start + 1)
@@ -333,7 +335,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, numbers)
 
 	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, chainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
 }
 
 // verifyCheckpointFromMaxProcessed finds the max processed height and checks checkpoint lowest==max+1.
@@ -394,13 +396,15 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 		bn := new(big.Int).SetUint64(n)
 		lb, err := ec.BlockByNumber(ctx, bn)
 		require.NoError(t, err, "fetch rpc block %d", n)
-		chainID := got.ChainID
-		expPtr, err := corethtypes.BlockFromLibevm(lb, chainID)
+		evmChainID := got.EVMChainID
+		bcID := got.BlockchainID
+		expPtr, err := corethtypes.BlockFromLibevm(lb, evmChainID, bcID)
 		require.NoError(t, err, "convert rpc block %d", n)
 		exp := *expPtr
 
 		// Compare a set of critical fields for robustness
-		require.Equal(t, exp.ChainID, got.ChainID, "chainID %d", n)
+		require.Equal(t, exp.EVMChainID, got.EVMChainID, "evmChainID %d", n)
+		require.Equal(t, exp.BlockchainID, got.BlockchainID, "blockchainID %d", n)
 		require.Equal(t, exp.Hash, got.Hash, "hash %d", n)
 		require.Equal(t, exp.ParentHash, got.ParentHash, "parentHash %d", n)
 		require.Equal(t, exp.Number.Uint64(), got.Number.Uint64(), "number %d", n)

@@ -29,13 +29,13 @@ func NewRepository(client clickhouse.Client, tableName string) Repository {
 func (r *repository) WriteBlock(ctx context.Context, block *ClickhouseBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			chain_id, block_number, hash, parent_hash, block_time, miner,
+			evm_chain_id, blockchain_id, block_number, hash, parent_hash, block_time, miner,
 			difficulty, total_difficulty, size, gas_limit, gas_used,
 			base_fee_per_gas, block_gas_cost, state_root, transactions_root, receipts_root,
 			extra_data, block_extra_data, ext_data_hash, ext_data_gas_used,
 			mix_hash, nonce, sha3_uncles, uncles,
 			blob_gas_used, excess_blob_gas, parent_beacon_block_root, min_delay_excess
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
 	// For nullable nonce - convert empty string to nil
@@ -55,7 +55,8 @@ func (r *repository) WriteBlock(ctx context.Context, block *ClickhouseBlock) err
 	}
 
 	err := r.client.Conn().Exec(ctx, query,
-		block.ChainID,
+		block.EVMChainID,
+		block.BlockchainID,
 		block.BlockNumber,
 		block.Hash,
 		block.ParentHash,
