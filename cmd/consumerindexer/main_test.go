@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
-	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
