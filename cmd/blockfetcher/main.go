@@ -185,7 +185,7 @@ func main() {
 
 func run(c *cli.Context) error {
 	verbose := c.Bool("verbose")
-	evmChainID := c.Uint64("chain-id")
+	evmChainID := c.Uint64("evm-chain-id")
 	bcID := c.String("bc-id")
 	rpcURL := c.String("rpc-url")
 	start := c.Uint64("start-height")

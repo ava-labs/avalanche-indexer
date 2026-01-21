@@ -397,8 +397,8 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 		lb, err := ec.BlockByNumber(ctx, bn)
 		require.NoError(t, err, "fetch rpc block %d", n)
 		evmChainID := got.EVMChainID
-		bcID := got.BlockchainID
-		expPtr, err := corethtypes.BlockFromLibevm(lb, evmChainID, bcID)
+		blockchainIDStr := got.BlockchainID
+		expPtr, err := corethtypes.BlockFromLibevm(lb, evmChainID, blockchainIDStr)
 		require.NoError(t, err, "convert rpc block %d", n)
 		exp := *expPtr
 
