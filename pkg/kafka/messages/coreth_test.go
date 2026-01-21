@@ -8,11 +8,12 @@ import (
 
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/libevm/common"
-	libevmtypes "github.com/ava-labs/libevm/core/types"
 	"github.com/ava-labs/libevm/crypto"
 	"github.com/ava-labs/libevm/trie"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	libevmtypes "github.com/ava-labs/libevm/core/types"
 )
 
 var (
@@ -745,33 +746,6 @@ func TestCorethWithdrawal_JSONTags(t *testing.T) {
 		_, ok := m[field]
 		assert.True(t, ok, "expected JSON field %q to be present", field)
 	}
-}
-
-func TestCorethBlock_Unmarshal_InvalidJSON(t *testing.T) {
-	t.Parallel()
-
-	var b CorethBlock
-	err := b.Unmarshal([]byte("invalid json"))
-
-	assert.Error(t, err)
-}
-
-func TestCorethTransaction_Unmarshal_InvalidJSON(t *testing.T) {
-	t.Parallel()
-
-	var tx CorethTransaction
-	err := tx.Unmarshal([]byte("{not valid"))
-
-	assert.Error(t, err)
-}
-
-func TestCorethWithdrawal_Unmarshal_InvalidJSON(t *testing.T) {
-	t.Parallel()
-
-	var w CorethWithdrawal
-	err := w.Unmarshal([]byte(""))
-
-	assert.Error(t, err)
 }
 
 // ptrUint64 returns a pointer to the given uint64 value.

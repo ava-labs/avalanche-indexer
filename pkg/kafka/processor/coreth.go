@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/models"
-	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages/coreth"
 	"go.uber.org/zap"
 
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 

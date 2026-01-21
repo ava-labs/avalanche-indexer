@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages/coreth"
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 )
 
 // ClickhouseBlock represents a block row in the raw_blocks ClickHouse table
