@@ -52,35 +52,35 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
 		}),
-			block.EVMChainID,         // *big.Int: 43113
-			block.BlockchainID,       // *string: "11111111111111111111111111111111LpoYY"
-			block.BlockNumber,        // uint64: 1647
-			block.Hash,               // string
-			block.ParentHash,         // string
-			block.BlockTime,          // time.Time
-			block.Miner,              // string
-			block.Difficulty,         // uint64: 1
-			block.TotalDifficulty,    // uint64: 1000
-			block.Size,               // uint64: 1331
-			block.GasLimit,           // uint64: 20006296
-			block.GasUsed,            // uint64: 183061
-			block.BaseFeePerGas,      // uint64: 470000000000
-			block.BlockGasCost,       // uint64: 0
-			block.StateRoot,          // string
-			block.TransactionsRoot,   // string
-			block.ReceiptsRoot,       // string
-			block.ExtraData,          // string
-			block.BlockExtraData,     // string
-			block.ExtDataHash,        // string
-			block.ExtDataGasUsed,     // uint32
-			block.MixHash,            // string
-			nonceStr,                 // string or nil
-			block.Sha3Uncles,         // string
-			block.Uncles,             // []string
-			block.BlobGasUsed,        // uint64
-			block.ExcessBlobGas,      // uint64
-			parentBeaconBlockRootStr, // string or nil
-			block.MinDelayExcess,     // uint64
+			*block.BlockchainID,            // string: "11111111111111111111111111111111LpoYY"
+			block.EVMChainID.String(),      // string: "43113" (UInt256)
+			block.BlockNumber.Uint64(),     // uint64: 1647
+			block.Hash,                     // string
+			block.ParentHash,               // string
+			block.BlockTime,                // time.Time
+			block.Miner,                    // string
+			block.Difficulty.String(),      // string: "1" (UInt256)
+			block.TotalDifficulty.String(), // string: "1000" (UInt256)
+			block.Size,                     // uint64: 1331
+			block.GasLimit,                 // uint64: 20006296
+			block.GasUsed,                  // uint64: 183061
+			block.BaseFeePerGas.String(),   // string: "470000000000" (UInt256)
+			block.BlockGasCost.String(),    // string: "0" (UInt256)
+			block.StateRoot,                // string
+			block.TransactionsRoot,         // string
+			block.ReceiptsRoot,             // string
+			block.ExtraData,                // string
+			block.BlockExtraData,           // string
+			block.ExtDataHash,              // string
+			block.ExtDataGasUsed,           // uint32
+			block.MixHash,                  // string
+			nonceStr,                       // string or nil
+			block.Sha3Uncles,               // string
+			block.Uncles,                   // []string
+			block.BlobGasUsed,              // uint64
+			block.ExcessBlobGas,            // uint64
+			parentBeaconBlockRootStr,       // string or nil
+			block.MinDelayExcess,           // uint64
 		).
 		Return(nil).
 		Once()
@@ -127,9 +127,9 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	// Expect WriteBlock call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
-			block.EVMChainID,
-			block.BlockchainID,
-			block.BlockNumber,
+			*block.BlockchainID,        // string: blockchain ID
+			block.EVMChainID.String(),  // string: evmChainID (UInt256)
+			block.BlockNumber.Uint64(), // uint64: block number
 			block.Hash,
 			block.ParentHash,
 			block.BlockTime,
