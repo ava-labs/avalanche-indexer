@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/types/coreth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -254,11 +254,11 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	t.Parallel()
 
-	blockJSON := &coreth.Block{
+	blockJSON := &kafkamsg.CorethBlock{
 		Number: big.NewInt(1647),
 		Hash:   testBlockHash,
 		// BlockchainID is nil
-		Transactions: []*coreth.Transaction{},
+		Transactions: []*kafkamsg.CorethTransaction{},
 	}
 
 	data, err := json.Marshal(blockJSON)
@@ -277,9 +277,9 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 }
 
 // Helper function to create a test block
-func createTestBlock() *coreth.Block {
+func createTestBlock() *kafkamsg.CorethBlock {
 	blockchainID := "11111111111111111111111111111111LpoYY"
-	return &coreth.Block{
+	return &kafkamsg.CorethBlock{
 		BlockchainID:     &blockchainID,
 		EVMChainID:       big.NewInt(43113),
 		Number:           big.NewInt(1647),
@@ -299,7 +299,7 @@ func createTestBlock() *coreth.Block {
 		MixHash:          testBlockHash,
 		ExtraData:        "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		BaseFee:          big.NewInt(470000000000),
-		Transactions: []*coreth.Transaction{
+		Transactions: []*kafkamsg.CorethTransaction{
 			{
 				Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 				From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
@@ -314,8 +314,8 @@ func createTestBlock() *coreth.Block {
 }
 
 // Helper function to create a test transaction
-func createTestTransaction() *coreth.Transaction {
-	return &coreth.Transaction{
+func createTestTransaction() *kafkamsg.CorethTransaction {
+	return &kafkamsg.CorethTransaction{
 		Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 		From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
 		To:       "0x55565758595a5b5c5d5e5f6061626364656667",
