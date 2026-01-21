@@ -103,7 +103,7 @@ func TestCorethBlockFromLibevm(t *testing.T) {
 			chainID:     chainID,
 			assertFn: func(t *testing.T, got *CorethBlock) {
 				assert.Equal(t, big.NewInt(42), got.Number)
-				assert.Equal(t, chainID, got.ChainID)
+				assert.Equal(t, chainID, got.EVMChainID)
 				assert.NotEmpty(t, got.Hash)
 				assert.Equal(t, uint64(8_000_000), got.GasLimit)
 				assert.Equal(t, uint64(21_000), got.GasUsed)
@@ -161,7 +161,6 @@ func TestCorethBlockFromLibevm(t *testing.T) {
 				assert.Equal(t, uint64(1), tx.Nonce)
 				assert.Equal(t, uint64(21000), tx.Gas)
 				assert.Equal(t, big.NewInt(1_000_000_000_000_000_000), tx.Value)
-				assert.Equal(t, chainID, tx.ChainID)
 			},
 		},
 		{
@@ -242,7 +241,8 @@ func TestCorethBlockFromLibevm(t *testing.T) {
 			t.Parallel()
 			block := libevmtypes.NewBlockWithWithdrawals(tt.header, tt.txs, nil, nil, tt.withdrawals, newTestHasher())
 
-			got, err := CorethBlockFromLibevm(block, tt.chainID)
+			// Pass nil for the optional third parameter to use its default behavior in this test.
+			got, err := CorethBlockFromLibevm(block, tt.chainID, nil)
 
 			require.NoError(t, err)
 			require.NotNil(t, got)
@@ -259,10 +259,10 @@ func TestCorethBlockFromLibevm_HeaderFields(t *testing.T) {
 	header := newTestHeader()
 	block := libevmtypes.NewBlock(header, nil, nil, nil, newTestHasher())
 
-	got, err := CorethBlockFromLibevm(block, chainID)
+	got, err := CorethBlockFromLibevm(block, chainID, nil /* optional parameter not needed for this test */)
 
 	require.NoError(t, err)
-	assert.Equal(t, chainID, got.ChainID)
+	assert.Equal(t, chainID, got.EVMChainID)
 	assert.Equal(t, header.ParentHash.Hex(), got.ParentHash)
 	assert.Equal(t, header.Root.Hex(), got.StateRoot)
 	assert.Equal(t, header.Coinbase.Hex(), got.Miner)
@@ -313,7 +313,6 @@ func TestCorethTransactionsFromLibevm(t *testing.T) {
 				assert.Equal(t, big.NewInt(1_000_000_000_000_000_000), tx.Value)
 				assert.Equal(t, big.NewInt(2_000_000_000), tx.MaxFeePerGas)
 				assert.Equal(t, big.NewInt(1_000_000_000), tx.MaxPriorityFee)
-				assert.Equal(t, chainID, tx.ChainID)
 				assert.Equal(t, uint8(2), tx.Type) // DynamicFeeTxType
 				assert.Contains(t, tx.Input, "0x") // hex encoded
 			},
@@ -534,7 +533,6 @@ func TestCorethTransaction_MarshalUnmarshal(t *testing.T) {
 				MaxPriorityFee: big.NewInt(1_000_000_000),
 				Input:          "0x1234",
 				Type:           2,
-				ChainID:        big.NewInt(43114),
 			},
 		},
 		{
@@ -628,7 +626,7 @@ func TestCorethBlock_JSONTags(t *testing.T) {
 		Number:                big.NewInt(42),
 		Hash:                  "0xhash",
 		ParentHash:            "0xparent",
-		ChainID:               big.NewInt(43114),
+		EVMChainID:            big.NewInt(43114),
 		StateRoot:             "0xstate",
 		TransactionsRoot:      "0xtxroot",
 		ReceiptsRoot:          "0xreceipts",
@@ -665,7 +663,7 @@ func TestCorethBlock_JSONTags(t *testing.T) {
 
 	// Verify JSON field names match expected tags
 	expectedFields := []string{
-		"number", "hash", "parentHash", "chainId", "stateRoot", "transactionsRoot",
+		"number", "hash", "parentHash", "evmChainId", "stateRoot", "transactionsRoot",
 		"receiptsRoot", "sha3Uncles", "miner", "gasLimit", "gasUsed",
 		"baseFeePerGas", "timestamp", "size",
 		"difficulty", "mixHash", "nonce", "logsBloom", "extraData",
@@ -704,7 +702,6 @@ func TestCorethTransaction_JSONTags(t *testing.T) {
 		MaxPriorityFee: big.NewInt(100),
 		Input:          "0x1234",
 		Type:           2,
-		ChainID:        big.NewInt(43114),
 	}
 
 	data, err := json.Marshal(tx)
@@ -716,7 +713,7 @@ func TestCorethTransaction_JSONTags(t *testing.T) {
 
 	expectedFields := []string{
 		"hash", "from", "to", "nonce", "value", "gas", "gasPrice",
-		"maxFeePerGas", "maxPriorityFeePerGas", "input", "type", "chainId",
+		"maxFeePerGas", "maxPriorityFeePerGas", "input", "type",
 	}
 	for _, field := range expectedFields {
 		_, ok := m[field]
