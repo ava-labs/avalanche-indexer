@@ -237,12 +237,12 @@ func main() {
 						EnvVars: []string{"METRICS_PORT"},
 						Value:   9090,
 					},
-					&cli.StringFlag{
+					&cli.Uint64Flag{
 						Name:    "chain-id",
 						Aliases: []string{"C"},
-						Usage:   "Chain identifier for metrics labels (e.g., '43114' for C-Chain mainnet)",
+						Usage:   "EVM chain ID for metrics labels (e.g., 43114 for C-Chain mainnet)",
 						EnvVars: []string{"CHAIN_ID"},
-						Value:   "",
+						Value:   0,
 					},
 					&cli.StringFlag{
 						Name:    "environment",
@@ -256,6 +256,13 @@ func main() {
 						Aliases: []string{"R"},
 						Usage:   "Cloud region for metrics labels (e.g., 'us-east-1')",
 						EnvVars: []string{"REGION"},
+						Value:   "",
+					},
+					&cli.StringFlag{
+						Name:    "cloud-provider",
+						Aliases: []string{"P"},
+						Usage:   "Cloud provider for metrics labels (e.g., 'aws', 'oci', 'gcp')",
+						EnvVars: []string{"CLOUD_PROVIDER"},
 						Value:   "",
 					},
 				},
@@ -288,9 +295,10 @@ func run(c *cli.Context) error {
 	rawTableName := c.String("raw-blocks-table-name")
 	metricsHost := c.String("metrics-host")
 	metricsPort := c.Int("metrics-port")
-	chainID := c.String("chain-id")
+	chainID := c.Uint64("chain-id")
 	environment := c.String("environment")
 	region := c.String("region")
+	cloudProvider := c.String("cloud-provider")
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 
 	sugar, err := utils.NewSugaredLogger(verbose)
@@ -327,14 +335,16 @@ func run(c *cli.Context) error {
 		"chainID", chainID,
 		"environment", environment,
 		"region", region,
+		"cloudProvider", cloudProvider,
 	)
 
 	// Initialize Prometheus metrics with labels for multi-instance filtering
 	registry := prometheus.NewRegistry()
 	m, err := metrics.NewWithLabels(registry, metrics.Labels{
-		Chain:       chainID,
-		Environment: environment,
-		Region:      region,
+		EVMChainID:    chainID,
+		Environment:   environment,
+		Region:        region,
+		CloudProvider: cloudProvider,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
