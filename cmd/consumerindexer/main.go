@@ -454,7 +454,7 @@ func run(c *cli.Context) error {
 	}()
 
 	// Wait for first error or completion
-	consumerErr := <-errCh
+	firstErr := <-errCh
 
 	// Gracefully shutdown metrics server
 	sugar.Info("shutting down metrics server")
@@ -465,7 +465,7 @@ func run(c *cli.Context) error {
 	}
 
 	sugar.Info("shutdown complete")
-	return consumerErr
+	return firstErr
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
