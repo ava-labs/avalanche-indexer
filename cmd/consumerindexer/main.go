@@ -317,19 +317,6 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	// Initialize repositories (tables are created automatically) - create non-batched versions first to ensure tables exist
-	_, err = evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create blocks repository: %w", err)
-	}
-	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
-
-	_, err = evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create transactions repository: %w", err)
-	}
-	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
-
 	// Create combined batch inserter for blocks and transactions
 	batchInserter := evmrepo.NewBatchInserter(
 		ctx,
@@ -346,11 +333,20 @@ func run(c *cli.Context) error {
 		}
 	}()
 
-	// Create batched repositories (both use the same combined inserter)
-	blocksRepo := evmrepo.NewBatchedBlocks(batchInserter)
-	transactionsRepo := evmrepo.NewBatchedTransactions(batchInserter)
+	// Initialize repositories with batching enabled (tables are created automatically)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName, batchInserter)
+	if err != nil {
+		return fmt.Errorf("failed to create blocks repository: %w", err)
+	}
+	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
 
-	sugar.Infow("combined batch inserter initialized",
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName, batchInserter)
+	if err != nil {
+		return fmt.Errorf("failed to create transactions repository: %w", err)
+	}
+	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
+
+	sugar.Infow("repositories initialized with batching",
 		"blocksTable", rawBlocksTableName,
 		"transactionsTable", rawTransactionsTableName,
 		"batchMaxSize", batchMaxSize,

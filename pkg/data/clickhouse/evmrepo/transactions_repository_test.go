@@ -57,7 +57,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions", nil)
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions", nil)
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.ErrorIs(t, err, execErr)
@@ -156,7 +156,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions", nil)
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)

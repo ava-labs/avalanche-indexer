@@ -14,15 +14,18 @@ type Blocks interface {
 }
 
 type blocks struct {
-	client    clickhouse.Client
-	tableName string
+	client        clickhouse.Client
+	tableName     string
+	batchInserter *BatchInserter // Optional: if set, uses batching; if nil, uses direct inserts
 }
 
 // NewBlocks creates a new raw blocks repository and initializes the table
-func NewBlocks(ctx context.Context, client clickhouse.Client, tableName string) (Blocks, error) {
+// If batchInserter is provided, writes will be batched; otherwise, direct inserts are used
+func NewBlocks(ctx context.Context, client clickhouse.Client, tableName string, batchInserter *BatchInserter) (Blocks, error) {
 	repo := &blocks{
-		client:    client,
-		tableName: tableName,
+		client:        client,
+		tableName:     tableName,
+		batchInserter: batchInserter,
 	}
 	if err := repo.CreateTableIfNotExists(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize blocks table: %w", err)
@@ -75,7 +78,14 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 }
 
 // WriteBlock inserts a raw block into ClickHouse
+// If batchInserter is set, adds to batch; otherwise, performs direct insert
 func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
+	// Use batching if batch inserter is available
+	if r.batchInserter != nil {
+		return r.batchInserter.AddBlock(ctx, block)
+	}
+
+	// Otherwise, use direct insert (for testing or table creation scenarios)
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			blockchain_id, evm_chain_id, block_number, hash, parent_hash, block_time, miner,

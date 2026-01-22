@@ -3,6 +3,7 @@ package evmrepo
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"sync"
 	"time"
 
@@ -151,6 +152,7 @@ func (bi *BatchInserter) AddBlock(ctx context.Context, block *BlockRow) error {
 	}
 
 	// Convert data for ClickHouse
+	// Note: For batch inserts, we must pass *big.Int directly for UInt256, not strings
 	var blockchainID interface{}
 	if block.BlockchainID != nil {
 		blockchainID = *block.BlockchainID
@@ -158,9 +160,12 @@ func (bi *BatchInserter) AddBlock(ctx context.Context, block *BlockRow) error {
 		blockchainID = ""
 	}
 
-	evmChainIDStr := "0"
+	// For batch inserts, pass *big.Int directly (not string)
+	var evmChainID *big.Int
 	if block.EVMChainID != nil {
-		evmChainIDStr = block.EVMChainID.String()
+		evmChainID = block.EVMChainID
+	} else {
+		evmChainID = big.NewInt(0)
 	}
 
 	var blockNumber uint64
@@ -168,21 +173,30 @@ func (bi *BatchInserter) AddBlock(ctx context.Context, block *BlockRow) error {
 		blockNumber = block.BlockNumber.Uint64()
 	}
 
-	difficultyStr := "0"
+	// For batch inserts, pass *big.Int directly (not string)
+	var difficulty *big.Int
 	if block.Difficulty != nil {
-		difficultyStr = block.Difficulty.String()
+		difficulty = block.Difficulty
+	} else {
+		difficulty = big.NewInt(0)
 	}
-	totalDifficultyStr := "0"
+	var totalDifficulty *big.Int
 	if block.TotalDifficulty != nil {
-		totalDifficultyStr = block.TotalDifficulty.String()
+		totalDifficulty = block.TotalDifficulty
+	} else {
+		totalDifficulty = big.NewInt(0)
 	}
-	baseFeeStr := "0"
+	var baseFee *big.Int
 	if block.BaseFeePerGas != nil {
-		baseFeeStr = block.BaseFeePerGas.String()
+		baseFee = block.BaseFeePerGas
+	} else {
+		baseFee = big.NewInt(0)
 	}
-	blockGasCostStr := "0"
+	var blockGasCost *big.Int
 	if block.BlockGasCost != nil {
-		blockGasCostStr = block.BlockGasCost.String()
+		blockGasCost = block.BlockGasCost
+	} else {
+		blockGasCost = big.NewInt(0)
 	}
 
 	var nonceStr interface{}
@@ -201,19 +215,19 @@ func (bi *BatchInserter) AddBlock(ctx context.Context, block *BlockRow) error {
 
 	err := bi.blockBatch.Append(
 		blockchainID,
-		evmChainIDStr,
+		evmChainID,
 		blockNumber,
 		block.Hash,
 		block.ParentHash,
 		block.BlockTime,
 		block.Miner,
-		difficultyStr,
-		totalDifficultyStr,
+		difficulty,
+		totalDifficulty,
 		block.Size,
 		block.GasLimit,
 		block.GasUsed,
-		baseFeeStr,
-		blockGasCostStr,
+		baseFee,
+		blockGasCost,
 		block.StateRoot,
 		block.TransactionsRoot,
 		block.ReceiptsRoot,
@@ -259,6 +273,7 @@ func (bi *BatchInserter) AddTransaction(ctx context.Context, tx *TransactionRow)
 	}
 
 	// Convert data for ClickHouse
+	// Note: For batch inserts, we must pass *big.Int directly for UInt256, not strings
 	var blockchainID interface{}
 	if tx.BlockchainID != nil {
 		blockchainID = *tx.BlockchainID
@@ -266,35 +281,44 @@ func (bi *BatchInserter) AddTransaction(ctx context.Context, tx *TransactionRow)
 		blockchainID = ""
 	}
 
-	evmChainIDStr := "0"
+	// For batch inserts, pass *big.Int directly (not string)
+	var evmChainID *big.Int
 	if tx.EVMChainID != nil {
-		evmChainIDStr = tx.EVMChainID.String()
+		evmChainID = tx.EVMChainID
+	} else {
+		evmChainID = big.NewInt(0)
 	}
 
-	valueStr := "0"
+	// For batch inserts, pass *big.Int directly (not string)
+	var value *big.Int
 	if tx.Value != nil {
-		valueStr = tx.Value.String()
+		value = tx.Value
+	} else {
+		value = big.NewInt(0)
 	}
-	gasPriceStr := "0"
+	var gasPrice *big.Int
 	if tx.GasPrice != nil {
-		gasPriceStr = tx.GasPrice.String()
+		gasPrice = tx.GasPrice
+	} else {
+		gasPrice = big.NewInt(0)
 	}
-	var maxFeePerGasStr interface{}
+	// Nullable fields can be nil or *big.Int
+	var maxFeePerGas interface{}
 	if tx.MaxFeePerGas != nil {
-		maxFeePerGasStr = tx.MaxFeePerGas.String()
+		maxFeePerGas = tx.MaxFeePerGas
 	} else {
-		maxFeePerGasStr = nil
+		maxFeePerGas = nil
 	}
-	var maxPriorityFeeStr interface{}
+	var maxPriorityFee interface{}
 	if tx.MaxPriorityFee != nil {
-		maxPriorityFeeStr = tx.MaxPriorityFee.String()
+		maxPriorityFee = tx.MaxPriorityFee
 	} else {
-		maxPriorityFeeStr = nil
+		maxPriorityFee = nil
 	}
 
 	err := bi.txBatch.Append(
 		blockchainID,
-		evmChainIDStr,
+		evmChainID,
 		tx.BlockNumber,
 		tx.BlockHash,
 		tx.BlockTime,
@@ -302,11 +326,11 @@ func (bi *BatchInserter) AddTransaction(ctx context.Context, tx *TransactionRow)
 		tx.From,
 		tx.To,
 		tx.Nonce,
-		valueStr,
+		value,
 		tx.Gas,
-		gasPriceStr,
-		maxFeePerGasStr,
-		maxPriorityFeeStr,
+		gasPrice,
+		maxFeePerGas,
+		maxPriorityFee,
 		tx.Input,
 		tx.Type,
 		tx.TransactionIndex,
@@ -363,7 +387,7 @@ func (bi *BatchInserter) flushTransactionsLocked(ctx context.Context) error {
 	count := bi.txCount
 	if err := bi.txBatch.Send(); err != nil {
 		// Log the error prominently - flush failures mean data loss
-		bi.log.Errorw("CRITICAL: failed to send transaction batch to ClickHouse - data may be lost",
+		bi.log.Errorw("Failed to send transaction batch to ClickHouse - data may be lost",
 			"error", err,
 			"count", count,
 			"table", bi.txsTable,
@@ -371,7 +395,7 @@ func (bi *BatchInserter) flushTransactionsLocked(ctx context.Context) error {
 		// Reset batch state even on failure so we can continue
 		bi.txBatch = nil
 		bi.txCount = 0
-		return fmt.Errorf("failed to send transaction batch: %w", err)
+		return fmt.Errorf("Failed to send transaction batch: %w", err)
 	}
 
 	bi.log.Debugw("flushed transactions to ClickHouse", "count", count)
