@@ -260,13 +260,12 @@ func CorethTransactionToTransactionRow(
 }
 
 // processTransactions converts transactions from a kafkamsg.CorethBlock to TransactionRow and writes
-// them to ClickHouse
+// them to ClickHouse using batching
 func (p *CorethProcessor) processTransactions(
 	ctx context.Context,
 	block *kafkamsg.CorethBlock,
 ) error {
-	// Convert and write each transaction
-	// TODO: Add batching (in a future PR)
+	// Convert and write each transaction (batching is handled by the repository)
 	for i, tx := range block.Transactions {
 		txRow, err := CorethTransactionToTransactionRow(tx, block, uint64(i))
 		if err != nil {
@@ -283,7 +282,7 @@ func (p *CorethProcessor) processTransactions(
 		blockNumber = block.Number.Uint64()
 	}
 
-	p.log.Debugw("successfully wrote transactions",
+	p.log.Debugw("successfully queued transactions for batch write",
 		"blockchainID", block.BlockchainID,
 		"evmChainID", block.EVMChainID,
 		"blockNumber", blockNumber,

@@ -271,6 +271,18 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
 						Value:   "default.raw_transactions",
 					},
+					&cli.IntFlag{
+						Name:    "batch-max-size",
+						Usage:   "Maximum number of rows per batch before flushing",
+						EnvVars: []string{"BATCH_MAX_SIZE"},
+						Value:   1000,
+					},
+					&cli.DurationFlag{
+						Name:    "batch-flush-interval",
+						Usage:   "Interval for flushing batches even if max size not reached",
+						EnvVars: []string{"BATCH_FLUSH_INTERVAL"},
+						Value:   5 * time.Second,
+					},
 				},
 				Action: run,
 			},
@@ -308,6 +320,8 @@ func run(c *cli.Context) error {
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
+	batchMaxSize := c.Int("batch-max-size")
+	batchFlushInterval := c.Duration("batch-flush-interval")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -346,6 +360,8 @@ func run(c *cli.Context) error {
 		"cloudProvider", cloudProvider,
 		"rawBlocksTableName", rawBlocksTableName,
 		"rawTransactionsTableName", rawTransactionsTableName,
+		"batchMaxSize", batchMaxSize,
+		"batchFlushInterval", batchFlushInterval,
 	)
 
 	// Initialize Prometheus metrics with labels for multi-instance filtering
@@ -381,19 +397,41 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	// Initialize repositories (tables are created automatically)
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName)
+	// Create combined batch inserter for blocks and transactions
+	batchInserter := evmrepo.NewBatchInserter(
+		ctx,
+		chClient.Conn(),
+		sugar,
+		rawBlocksTableName,
+		rawTransactionsTableName,
+		batchMaxSize,
+		batchFlushInterval,
+	)
+	defer func() {
+		if err := batchInserter.Close(); err != nil {
+			sugar.Errorw("failed to close batch inserter", "error", err)
+		}
+	}()
+
+	// Initialize repositories with batching enabled (tables are created automatically)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName, batchInserter)
 	if err != nil {
 		return fmt.Errorf("failed to create blocks repository: %w", err)
 	}
 	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName, batchInserter)
 	if err != nil {
 		return fmt.Errorf("failed to create transactions repository: %w", err)
 	}
 	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
 
+	sugar.Infow("repositories initialized with batching",
+		"blocksTable", rawBlocksTableName,
+		"transactionsTable", rawTransactionsTableName,
+		"batchMaxSize", batchMaxSize,
+		"batchFlushInterval", batchFlushInterval,
+	)
 	// Create CorethProcessor with ClickHouse persistence and metrics
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
 

@@ -85,7 +85,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks", nil)
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.NoError(t, err)
@@ -160,7 +160,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks", nil)
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.ErrorIs(t, err, execErr)
