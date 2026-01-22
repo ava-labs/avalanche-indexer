@@ -391,18 +391,18 @@ func (bi *BatchInserter) flushTransactionsLocked() error {
 
 // FlushAll flushes both blocks and transactions together for data consistency
 // This is the preferred method to ensure blocks and their transactions are written together
-func (bi *BatchInserter) FlushAll(ctx context.Context) error {
+func (bi *BatchInserter) FlushAll() error {
 	// Acquire both locks to ensure atomic flush
 	bi.blockBatchMux.Lock()
 	bi.txBatchMux.Lock()
 	defer bi.txBatchMux.Unlock()
 	defer bi.blockBatchMux.Unlock()
 
-	return bi.flushAllLocked(ctx)
+	return bi.flushAllLocked()
 }
 
 // flushAllLocked flushes both batches (must be called with both locks held)
-func (bi *BatchInserter) flushAllLocked(ctx context.Context) error {
+func (bi *BatchInserter) flushAllLocked() error {
 	// Flush blocks first (locks already held, so call locked version directly)
 	blockErr := bi.flushBlocksLocked()
 
@@ -429,5 +429,5 @@ func (bi *BatchInserter) Close(ctx context.Context) error {
 	bi.wg.Wait()
 
 	// Final flush
-	return bi.FlushAll(ctx)
+	return bi.FlushAll()
 }
