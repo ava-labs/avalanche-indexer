@@ -227,6 +227,18 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
 						Value:   "default.raw_transactions",
 					},
+					&cli.IntFlag{
+						Name:    "batch-max-size",
+						Usage:   "Maximum number of rows per batch before flushing",
+						EnvVars: []string{"BATCH_MAX_SIZE"},
+						Value:   1000,
+					},
+					&cli.DurationFlag{
+						Name:    "batch-flush-interval",
+						Usage:   "Interval for flushing batches even if max size not reached",
+						EnvVars: []string{"BATCH_FLUSH_INTERVAL"},
+						Value:   5 * time.Second,
+					},
 				},
 				Action: run,
 			},
@@ -256,6 +268,8 @@ func run(c *cli.Context) error {
 	pollInterval := c.Duration("poll-interval")
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
+	batchMaxSize := c.Int("batch-max-size")
+	batchFlushInterval := c.Duration("batch-flush-interval")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -287,6 +301,8 @@ func run(c *cli.Context) error {
 		"clickhouseDebug", chCfg.Debug,
 		"rawBlocksTableName", rawBlocksTableName,
 		"rawTransactionsTableName", rawTransactionsTableName,
+		"batchMaxSize", batchMaxSize,
+		"batchFlushInterval", batchFlushInterval,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -301,20 +317,47 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	// Initialize repositories (tables are created automatically)
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName)
+	// Initialize repositories (tables are created automatically) - create non-batched versions first to ensure tables exist
+	_, err = evmrepo.NewBlocks(ctx, chClient, rawBlocksTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create blocks repository: %w", err)
 	}
 	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
+	_, err = evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create transactions repository: %w", err)
 	}
 	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
 
-	// Create CorethProcessor with ClickHouse persistence
+	// Create combined batch inserter for blocks and transactions
+	batchInserter := evmrepo.NewBatchInserter(
+		ctx,
+		chClient.Conn(),
+		sugar,
+		rawBlocksTableName,
+		rawTransactionsTableName,
+		batchMaxSize,
+		batchFlushInterval,
+	)
+	defer func() {
+		if err := batchInserter.Close(ctx); err != nil {
+			sugar.Errorw("failed to close batch inserter", "error", err)
+		}
+	}()
+
+	// Create batched repositories (both use the same combined inserter)
+	blocksRepo := evmrepo.NewBatchedBlocks(batchInserter)
+	transactionsRepo := evmrepo.NewBatchedTransactions(batchInserter)
+
+	sugar.Infow("combined batch inserter initialized",
+		"blocksTable", rawBlocksTableName,
+		"transactionsTable", rawTransactionsTableName,
+		"batchMaxSize", batchMaxSize,
+		"batchFlushInterval", batchFlushInterval,
+	)
+
+	// Create CorethProcessor with batched ClickHouse persistence
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo)
 
 	// Configure consumer
