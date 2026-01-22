@@ -15,6 +15,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/urfave/cli/v2"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 func main() {
@@ -112,6 +114,36 @@ func main() {
 						Usage:   "Poll interval for Kafka consumer",
 						EnvVars: []string{"KAFKA_POLL_INTERVAL"},
 						Value:   100 * time.Millisecond,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-num-partitions",
+						Usage:   "The number of partitions to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_NUM_PARTITIONS"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-dlq-topic-num-partitions",
+						Usage:   "The number of partitions to use for the Kafka DLQ topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_DLQ_TOPIC_NUM_PARTITIONS"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-replication-factor",
+						Usage:   "The replication factor to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_REPLICATION_FACTOR"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-dlq-topic-replication-factor",
+						Usage:   "The replication factor to use for the Kafka DLQ topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_DLQ_TOPIC_REPLICATION_FACTOR"},
+						Value:   1,
+					},
+					&cli.BoolFlag{
+						Name:    "publish-to-dlq",
+						Usage:   "Publish failed messages to DLQ",
+						EnvVars: []string{"KAFKA_PUBLISH_TO_DLQ"},
+						Value:   false,
 					},
 					// ClickHouse configuration flags
 					&cli.StringSliceFlag{
@@ -256,6 +288,11 @@ func run(c *cli.Context) error {
 	pollInterval := c.Duration("poll-interval")
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
+	publishToDLQ := c.Bool("publish-to-dlq")
+	kafkaTopicNumPartitions := c.Int("kafka-topic-num-partitions")
+	kafkaTopicReplicationFactor := c.Int("kafka-topic-replication-factor")
+	kafkaDLQTopicNumPartitions := c.Int("kafka-dlq-topic-num-partitions")
+	kafkaDLQTopicReplicationFactor := c.Int("kafka-dlq-topic-replication-factor")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -287,6 +324,11 @@ func run(c *cli.Context) error {
 		"clickhouseDebug", chCfg.Debug,
 		"rawBlocksTableName", rawBlocksTableName,
 		"rawTransactionsTableName", rawTransactionsTableName,
+		"publishToDLQ", publishToDLQ,
+		"kafkaTopicNumPartitions", kafkaTopicNumPartitions,
+		"kafkaTopicReplicationFactor", kafkaTopicReplicationFactor,
+		"kafkaDLQTopicNumPartitions", kafkaDLQTopicNumPartitions,
+		"kafkaDLQTopicReplicationFactor", kafkaDLQTopicReplicationFactor,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -317,12 +359,38 @@ func run(c *cli.Context) error {
 	// Create CorethProcessor with ClickHouse persistence
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo)
 
+	adminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{"bootstrap.servers": bootstrapServers})
+	if err != nil {
+		return fmt.Errorf("failed to create kafka admin client: %w", err)
+	}
+	defer adminClient.Close()
+
+	err = kafka.CreateTopicWithConfigIfNotExists(ctx, adminClient, kafka.TopicConfig{
+		Name:              topic,
+		NumPartitions:     kafkaTopicNumPartitions,
+		ReplicationFactor: kafkaTopicReplicationFactor,
+	}, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+	}
+
+	if publishToDLQ {
+		err = kafka.CreateTopicWithConfigIfNotExists(ctx, adminClient, kafka.TopicConfig{
+			Name:              dlqTopic,
+			NumPartitions:     kafkaDLQTopicNumPartitions,
+			ReplicationFactor: kafkaDLQTopicReplicationFactor,
+		}, sugar)
+		if err != nil {
+			return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+		}
+	}
+
 	// Configure consumer
 	consumerCfg := kafka.ConsumerConfig{
 		DLQTopic:                    dlqTopic,
 		Topic:                       topic,
 		Concurrency:                 concurrency,
-		IsDLQConsumer:               false,
+		PublishToDLQ:                publishToDLQ,
 		BootstrapServers:            bootstrapServers,
 		GroupID:                     groupID,
 		AutoOffsetReset:             autoOffsetReset,

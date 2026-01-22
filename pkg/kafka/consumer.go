@@ -97,7 +97,7 @@ func NewConsumer(
 		log,
 	)
 
-	if !cfg.IsDLQConsumer && cfg.DLQTopic == "" {
+	if cfg.PublishToDLQ && cfg.DLQTopic == "" {
 		return nil, errors.New("DLQ topic not configured")
 	}
 
@@ -124,8 +124,8 @@ func (c *Consumer) Start(ctx context.Context) error {
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if c.cfg.IsDLQConsumer {
-		c.log.Warnw("consumer is subscribing to a DLQ topic - messages will NOT be re-sent to DLQ on failure",
+	if !c.cfg.PublishToDLQ {
+		c.log.Warnw("consumer is set to not publish to DLQ on failure",
 			"topic", c.cfg.Topic,
 		)
 	}
@@ -222,7 +222,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			return
 		}
 
-		if c.cfg.IsDLQConsumer {
+		if !c.cfg.PublishToDLQ {
 			select {
 			case c.errCh <- err:
 			default:

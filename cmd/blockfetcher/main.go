@@ -24,7 +24,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const flushTimeoutOnClose = 15 * time.Second
@@ -143,6 +143,18 @@ func main() {
 						EnvVars: []string{"KAFKA_CLIENT_ID"},
 						Value:   "blockfetcher",
 					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-num-partitions",
+						Usage:   "The number of partitions to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_NUM_PARTITIONS"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-replication-factor",
+						Usage:   "The replication factor to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_REPLICATION_FACTOR"},
+						Value:   1,
+					},
 					&cli.StringFlag{
 						Name:    "checkpoint-table-name",
 						Aliases: []string{"T"},
@@ -201,6 +213,8 @@ func run(c *cli.Context) error {
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
 	kafkaClientID := c.String("kafka-client-id")
+	kafkaTopicNumPartitions := c.Int("kafka-topic-num-partitions")
+	kafkaTopicReplicationFactor := c.Int("kafka-topic-replication-factor")
 	checkpointTableName := c.String("checkpoint-table-name")
 	checkpointInterval := c.Duration("checkpoint-interval")
 	gapWatchdogInterval := c.Duration("gap-watchdog-interval")
@@ -264,8 +278,24 @@ func run(c *cli.Context) error {
 	}
 	defer client.Close()
 
+	// Create Kafka admin client to ensure topic exists
+	kafkaAdminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{"bootstrap.servers": kafkaBrokers})
+	if err != nil {
+		return fmt.Errorf("failed to create kafka admin client: %w", err)
+	}
+	defer kafkaAdminClient.Close()
+
+	err = kafka.CreateTopicWithConfigIfNotExists(ctx, kafkaAdminClient, kafka.TopicConfig{
+		Name:              kafkaTopic,
+		NumPartitions:     kafkaTopicNumPartitions,
+		ReplicationFactor: kafkaTopicReplicationFactor,
+	}, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+	}
+
 	// Kafka producer configuration
-	kafkaConfig := &confluentKafka.ConfigMap{
+	kafkaConfig := &cKafka.ConfigMap{
 		// Required
 		"bootstrap.servers": kafkaBrokers,
 		"client.id":         kafkaClientID,
