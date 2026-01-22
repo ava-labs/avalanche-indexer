@@ -346,7 +346,7 @@ func (bi *BatchInserter) flushBlocksLocked(ctx context.Context) error {
 	count := bi.blockCount
 	if err := bi.blockBatch.Send(); err != nil {
 		// Log the error prominently - flush failures mean data loss
-		bi.log.Errorw("CRITICAL: failed to send block batch to ClickHouse - data may be lost",
+		bi.log.Errorw("Failed to send block batch to ClickHouse - data may be lost",
 			"error", err,
 			"count", count,
 			"table", bi.blocksTable,
@@ -354,7 +354,7 @@ func (bi *BatchInserter) flushBlocksLocked(ctx context.Context) error {
 		// Reset batch state even on failure so we can continue
 		bi.blockBatch = nil
 		bi.blockCount = 0
-		return fmt.Errorf("failed to send block batch: %w", err)
+		return fmt.Errorf("Failed to send block batch: %w", err)
 	}
 
 	bi.log.Debugw("flushed blocks to ClickHouse", "count", count)
