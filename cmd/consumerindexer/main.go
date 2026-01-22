@@ -408,7 +408,7 @@ func run(c *cli.Context) error {
 		batchFlushInterval,
 	)
 	defer func() {
-		if err := batchInserter.Close(ctx); err != nil {
+		if err := batchInserter.Close(); err != nil {
 			sugar.Errorw("failed to close batch inserter", "error", err)
 		}
 	}()

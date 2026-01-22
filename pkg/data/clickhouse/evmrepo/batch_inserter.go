@@ -91,7 +91,7 @@ func (bi *BatchInserter) flushLoop() {
 			bi.flushMux.Unlock()
 
 			if shouldFlush {
-				if err := bi.FlushAll(bi.ctx); err != nil {
+				if err := bi.FlushAll(); err != nil {
 					bi.log.Errorw("failed to flush batches in flush loop", "error", err)
 				}
 			}
@@ -240,7 +240,7 @@ func (bi *BatchInserter) AddBlock(ctx context.Context, block *BlockRow) error {
 
 	// Flush if needed (FlushAll will acquire both locks)
 	if shouldFlush {
-		return bi.FlushAll(ctx)
+		return bi.FlushAll()
 	}
 
 	return nil
@@ -331,7 +331,7 @@ func (bi *BatchInserter) AddTransaction(ctx context.Context, tx *TransactionRow)
 
 	// Flush if needed (FlushAll will acquire both locks)
 	if shouldFlush {
-		return bi.FlushAll(ctx)
+		return bi.FlushAll()
 	}
 
 	return nil
@@ -346,7 +346,7 @@ func (bi *BatchInserter) flushBlocksLocked() error {
 	count := bi.blockCount
 	if err := bi.blockBatch.Send(); err != nil {
 		// Log the error prominently - flush failures mean data loss
-		bi.log.Errorw("Failed to send block batch to ClickHouse - data may be lost",
+		bi.log.Errorw("failed to send block batch to ClickHouse - data may be lost",
 			"error", err,
 			"count", count,
 			"table", bi.blocksTable,
@@ -372,7 +372,7 @@ func (bi *BatchInserter) flushTransactionsLocked() error {
 	count := bi.txCount
 	if err := bi.txBatch.Send(); err != nil {
 		// Log the error prominently - flush failures mean data loss
-		bi.log.Errorw("Failed to send transaction batch to ClickHouse - data may be lost",
+		bi.log.Errorw("failed to send transaction batch to ClickHouse - data may be lost",
 			"error", err,
 			"count", count,
 			"table", bi.txsTable,
@@ -422,7 +422,7 @@ func (bi *BatchInserter) flushAllLocked() error {
 }
 
 // Close gracefully shuts down the batch inserter, flushing any remaining batches
-func (bi *BatchInserter) Close(ctx context.Context) error {
+func (bi *BatchInserter) Close() error {
 	bi.cancel()
 	bi.flushTicker.Stop()
 	close(bi.stopCh)
