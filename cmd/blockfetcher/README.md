@@ -79,7 +79,8 @@ Run `blockfetcher` with environment variables (ENTRYPOINT selects the binary by 
 docker run --rm \
   --network avalanche-indexer_app-network \
   -e APP=blockfetcher \
-  -e CHAIN_ID=43113 \
+  -e EVM_CHAIN_ID=43113 \
+  -e BLOCKCHAIN_ID=11111111111111111111111111111111LpoYY \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
   -e START_HEIGHT=0 \
   -e CONCURRENCY=16 \
