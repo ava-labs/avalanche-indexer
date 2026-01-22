@@ -241,6 +241,7 @@ func TestCorethBlockFromLibevm(t *testing.T) {
 			t.Parallel()
 			block := libevmtypes.NewBlockWithWithdrawals(tt.header, tt.txs, nil, nil, tt.withdrawals, newTestHasher())
 
+			// Pass nil for the optional third parameter to use its default behavior in this test.
 			got, err := CorethBlockFromLibevm(block, tt.chainID, nil)
 
 			require.NoError(t, err)
@@ -258,7 +259,7 @@ func TestCorethBlockFromLibevm_HeaderFields(t *testing.T) {
 	header := newTestHeader()
 	block := libevmtypes.NewBlock(header, nil, nil, nil, newTestHasher())
 
-	got, err := CorethBlockFromLibevm(block, chainID, nil)
+	got, err := CorethBlockFromLibevm(block, chainID, nil /* optional parameter not needed for this test */)
 
 	require.NoError(t, err)
 	assert.Equal(t, chainID, got.EVMChainID)
