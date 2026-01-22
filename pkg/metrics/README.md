@@ -72,6 +72,104 @@ histogram_quantile(0.95, sum by (method, le) (rate(indexer_rpc_duration_seconds_
 2. Add Prometheus data source: `http://prometheus:9090`
 3. Create dashboards using the metrics above
 
+## Kubernetes Deployment
+
+### Prometheus Scraping Annotations
+
+Add annotations to your pod spec based on your monitoring infrastructure. In Helm, these would be conditioned on a values flag like `prometheus.type: "standard"` or `prometheus.type: "grafana-cloud"`.
+
+#### Self-Hosted / Cloud-Managed Prometheus
+
+For self-hosted Prometheus or cloud-managed Prometheus (AWS Managed Prometheus, GCP Managed Prometheus, etc.):
+
+```yaml
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"      # Must match --metrics-port flag
+    prometheus.io/path: "/metrics"
+```
+
+#### Grafana Cloud (Alloy)
+
+For Grafana Cloud using Alloy:
+
+```yaml
+metadata:
+  annotations:
+    k8s.grafana.com/scrape: "true"
+    k8s.grafana.com/port: "9090"           # Must match --metrics-port flag
+    k8s.grafana.com/metrics_path: "/metrics"
+```
+
+#### Both
+
+If your infrastructure supports both then include all annotations for maximum compatibility:
+
+```yaml
+metadata:
+  annotations:
+    # Standard Prometheus
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+    # Grafana Cloud (Alloy)
+    k8s.grafana.com/scrape: "true"
+    k8s.grafana.com/port: "9090"
+    k8s.grafana.com/metrics_path: "/metrics"
+```
+
+### Configuration Flags
+
+Both `blockfetcher` and `consumerindexer` support:
+
+| Flag | Env Var | Default | Description |
+|------|---------|---------|-------------|
+| `--metrics-host` | `METRICS_HOST` | `""` (all interfaces) | Host to bind metrics server |
+| `--metrics-port` | `METRICS_PORT` | `9090` | Port for metrics server |
+| `--chain-id` | `CHAIN_ID` | `0` | EVM chain ID for metrics labels (e.g., `43114` for C-Chain mainnet) |
+| `--environment` | `ENVIRONMENT` | `""` | Deployment environment (e.g., `production`, `staging`) |
+| `--region` | `REGION` | `""` | Cloud region (e.g., `us-east-1`) |
+| `--cloud-provider` | `CLOUD_PROVIDER` | `""` | Cloud provider (e.g., `aws`, `oci`, `gcp`) |
+
+### Metrics Labels for Multi-Instance Filtering
+
+When running multiple indexer instances, use these flags to add constant labels to all metrics:
+
+```bash
+# Blockfetcher with all labels
+blockfetcher run \
+  --chain-id 43114 \
+  --environment production \
+  --region us-east-1 \
+  --cloud-provider aws \
+  ...
+
+# Consumerindexer with all labels
+consumerindexer run \
+  --chain-id 43114 \
+  --environment production \
+  --region us-east-1 \
+  --cloud-provider aws \
+  ...
+```
+
+This enables Grafana queries across the pipeline:
+
+```promql
+# Processing rate for C-Chain mainnet in production
+rate(indexer_blocks_processed_total{evm_chain_id="43114", environment="production"}[5m])
+
+# Compare error rates across regions
+sum by (region) (rate(indexer_errors_total{environment="production"}[5m]))
+
+# Pipeline backlog by chain and environment
+(indexer_highest{evm_chain_id="43114", environment="production"} - indexer_lowest{evm_chain_id="43114", environment="production"})
+
+# Cross-service throughput comparison (fetcher vs consumer)
+sum by (job, evm_chain_id) (rate(indexer_blocks_processed_total{environment="production"}[5m]))
+```
+
 ## Extending Metrics
 
 To add new metrics:
