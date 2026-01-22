@@ -2,11 +2,40 @@ package metrics
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 const Namespace = "indexer"
+
+// Labels holds constant labels applied to all metrics.
+// These are useful for distinguishing metrics from multiple indexer instances.
+type Labels struct {
+	EVMChainID    uint64 // EVM chain ID (e.g., 43114 for C-Chain mainnet)
+	Environment   string // Deployment environment (e.g., "production", "staging", "development")
+	Region        string // Cloud region (e.g., "us-east-1", "eu-west-1")
+	CloudProvider string // Cloud provider (e.g., "aws", "oci", "gcp")
+}
+
+// toPrometheusLabels converts Labels to prometheus.Labels map.
+// Only non-empty labels are included to avoid empty label values.
+func (l Labels) toPrometheusLabels() prometheus.Labels {
+	labels := prometheus.Labels{}
+	if l.EVMChainID != 0 {
+		labels["evm_chain_id"] = strconv.FormatUint(l.EVMChainID, 10)
+	}
+	if l.Environment != "" {
+		labels["environment"] = l.Environment
+	}
+	if l.Region != "" {
+		labels["region"] = l.Region
+	}
+	if l.CloudProvider != "" {
+		labels["cloud_provider"] = l.CloudProvider
+	}
+	return labels
+}
 
 type Metrics struct {
 	// Sliding window state
@@ -30,7 +59,25 @@ type Metrics struct {
 
 // New creates a new Metrics instance and registers all metrics with the provided registerer.
 // Returns an error if any metric registration fails.
+// For metrics with constant labels (e.g., evm_chain_id), use NewWithLabels instead.
 func New(reg prometheus.Registerer) (*Metrics, error) {
+	return NewWithLabels(reg, Labels{})
+}
+
+// NewWithLabels creates a new Metrics instance with constant labels applied to all metrics.
+// This is useful when running multiple indexer instances and needing to filter by dimensions like evm_chain_id.
+func NewWithLabels(reg prometheus.Registerer, labels Labels) (*Metrics, error) {
+	// Wrap the registerer with constant labels if any are provided
+	promLabels := labels.toPrometheusLabels()
+	if len(promLabels) > 0 {
+		reg = prometheus.WrapRegistererWith(promLabels, reg)
+	}
+
+	return newMetrics(reg)
+}
+
+// newMetrics is the internal constructor that creates and registers all metrics.
+func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 	m := &Metrics{
 		lowest: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
@@ -118,6 +165,9 @@ const (
 
 // IncError increments the error counter for the given error type.
 func (m *Metrics) IncError(errType string) {
+	if m == nil {
+		return
+	}
 	m.errors.WithLabelValues(errType).Inc()
 }
 

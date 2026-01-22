@@ -117,6 +117,27 @@ func main() {
 						Value:   9090,
 					},
 					&cli.StringFlag{
+						Name:    "environment",
+						Aliases: []string{"E"},
+						Usage:   "Deployment environment for metrics labels (e.g., 'production', 'staging')",
+						EnvVars: []string{"ENVIRONMENT"},
+						Value:   "",
+					},
+					&cli.StringFlag{
+						Name:    "region",
+						Aliases: []string{"R"},
+						Usage:   "Cloud region for metrics labels (e.g., 'us-east-1')",
+						EnvVars: []string{"REGION"},
+						Value:   "",
+					},
+					&cli.StringFlag{
+						Name:    "cloud-provider",
+						Aliases: []string{"P"},
+						Usage:   "Cloud provider for metrics labels (e.g., 'aws', 'oci', 'gcp')",
+						EnvVars: []string{"CLOUD_PROVIDER"},
+						Value:   "",
+					},
+					&cli.StringFlag{
 						Name:     "kafka-brokers",
 						Usage:    "The Kafka brokers to use (comma-separated list)",
 						EnvVars:  []string{"KAFKA_BROKERS"},
@@ -209,6 +230,9 @@ func run(c *cli.Context) error {
 	metricsHost := c.String("metrics-host")
 	metricsPort := c.Int("metrics-port")
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
+	environment := c.String("environment")
+	region := c.String("region")
+	cloudProvider := c.String("cloud-provider")
 	kafkaBrokers := c.String("kafka-brokers")
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
@@ -237,6 +261,9 @@ func run(c *cli.Context) error {
 		"maxFailures", maxFailures,
 		"metricsHost", metricsHost,
 		"metricsPort", metricsPort,
+		"environment", environment,
+		"region", region,
+		"cloudProvider", cloudProvider,
 		"checkpointTableName", checkpointTableName,
 		"checkpointInterval", checkpointInterval,
 	)
@@ -257,9 +284,14 @@ func run(c *cli.Context) error {
 		sugar.Infof("end block height: %d", end)
 	}
 
-	// Initialize Prometheus metrics
+	// Initialize Prometheus metrics with labels for multi-instance filtering
 	registry := prometheus.NewRegistry()
-	m, err := metrics.New(registry)
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   environment,
+		Region:        region,
+		CloudProvider: cloudProvider,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
@@ -267,7 +299,11 @@ func run(c *cli.Context) error {
 	// Start metrics server
 	metricsServer := metrics.NewServer(metricsAddr, registry)
 	metricsErrCh := metricsServer.Start()
-	sugar.Infof("metrics server started at http://localhost%s/metrics", metricsAddr)
+	if metricsHost == "" {
+		sugar.Infof("metrics server listening on http://0.0.0.0:%d/metrics", metricsPort)
+	} else {
+		sugar.Infof("metrics server listening on http://%s/metrics", metricsAddr)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
