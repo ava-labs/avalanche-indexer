@@ -109,7 +109,7 @@ func CreateTopic(
 	return nil
 }
 
-// CreateTopicIfNotExists ensures a Kafka topic exists with the desired configuration.
+// EnsureTopic ensures a Kafka topic exists with the desired configuration.
 //
 // Behavior:
 //   - If topic doesn't exist: Creates it with the specified configuration
@@ -122,7 +122,7 @@ func CreateTopic(
 //
 // Note: Kafka does not support decreasing partitions or changing replication factor
 // through the admin API. These require manual intervention.
-func CreateTopicWithConfigIfNotExists(
+func EnsureTopic(
 	ctx context.Context,
 	admin *kafka.AdminClient,
 	config TopicConfig,
@@ -137,12 +137,10 @@ func CreateTopicWithConfigIfNotExists(
 		return fmt.Errorf("failed to check topic existence: %w", err)
 	}
 
-	// Topic doesn't exist - create it
 	if topicMetadata == nil {
 		return CreateTopic(ctx, admin, config, log)
 	}
 
-	// Topic exists - validate and adjust if needed
 	currentPartitions := len(topicMetadata.Partitions)
 	currentRF := getReplicationFactor(topicMetadata)
 
@@ -151,7 +149,6 @@ func CreateTopicWithConfigIfNotExists(
 		"currentPartitions", currentPartitions,
 		"currentReplicationFactor", currentRF)
 
-	// Check replication factor (informational only - cannot be changed)
 	if currentRF != config.ReplicationFactor {
 		log.Warnw("topic replication factor differs from config",
 			"topic", config.Name,
@@ -160,10 +157,8 @@ func CreateTopicWithConfigIfNotExists(
 			"note", "replication factor cannot be changed automatically - requires manual partition reassignment")
 	}
 
-	// Handle partition count differences
 	switch {
 	case currentPartitions < config.NumPartitions:
-		// Can increase partitions
 		log.Infow("increasing topic partitions",
 			"topic", config.Name,
 			"from", currentPartitions,
@@ -171,7 +166,6 @@ func CreateTopicWithConfigIfNotExists(
 		return increasePartitions(ctx, admin, config.Name, config.NumPartitions, log)
 
 	case currentPartitions > config.NumPartitions:
-		// Cannot decrease partitions - log warning but don't error
 		log.Warnw("topic has more partitions than configured",
 			"topic", config.Name,
 			"current", currentPartitions,
@@ -223,6 +217,5 @@ func getReplicationFactor(metadata *kafka.TopicMetadata) int {
 	if len(metadata.Partitions) == 0 {
 		return 0
 	}
-	// All partitions should have the same replication factor, so check the first one
 	return len(metadata.Partitions[0].Replicas)
 }

@@ -271,7 +271,7 @@ func TestCreateTopic(t *testing.T) {
 	})
 }
 
-func TestCreateTopicWithConfigIfNotExists(t *testing.T) {
+func TestEnsureTopic(t *testing.T) {
 	kc := setupAdminKafka(t)
 	defer kc.teardown(t)
 
@@ -287,7 +287,7 @@ func TestCreateTopicWithConfigIfNotExists(t *testing.T) {
 			ReplicationFactor: 1,
 		}
 
-		err := CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err := EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
 		// Verify topic exists
@@ -305,11 +305,11 @@ func TestCreateTopicWithConfigIfNotExists(t *testing.T) {
 		}
 
 		// Create first time
-		err := CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err := EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
 		// Call again with same config
-		err = CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err = EnsureTopic(ctx, admin, config, log)
 		assert.NoError(t, err)
 	})
 
@@ -321,7 +321,7 @@ func TestCreateTopicWithConfigIfNotExists(t *testing.T) {
 			ReplicationFactor: 1,
 		}
 
-		err := CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err := EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
 		// Verify initial partition count
@@ -332,7 +332,7 @@ func TestCreateTopicWithConfigIfNotExists(t *testing.T) {
 
 		// Request more partitions
 		config.NumPartitions = 5
-		err = CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err = EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
 		// Give Kafka time to increase partitions
@@ -353,12 +353,12 @@ func TestCreateTopicWithConfigIfNotExists(t *testing.T) {
 			ReplicationFactor: 1,
 		}
 
-		err := CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err := EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
 		// Request fewer partitions (should warn but not error)
 		config.NumPartitions = 2
-		err = CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err = EnsureTopic(ctx, admin, config, log)
 		assert.Error(t, err)
 
 		// Verify partition count unchanged (cannot decrease)
@@ -375,7 +375,7 @@ func TestCreateTopicWithConfigIfNotExists(t *testing.T) {
 			ReplicationFactor: 1,
 		}
 
-		err := CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err := EnsureTopic(ctx, admin, config, log)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid topic config")
 	})
@@ -520,12 +520,12 @@ func TestReplicationFactorWarning(t *testing.T) {
 			ReplicationFactor: 1,
 		}
 
-		err := CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err := EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
 		// Try to "change" RF to 3 (should warn but not fail)
 		config.ReplicationFactor = 3
-		err = CreateTopicWithConfigIfNotExists(ctx, admin, config, log)
+		err = EnsureTopic(ctx, admin, config, log)
 		assert.NoError(t, err, "should not error when RF differs")
 
 		// Verify RF is still 1 (unchanged)
