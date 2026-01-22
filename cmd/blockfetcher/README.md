@@ -64,6 +64,13 @@ All flags have environment variable equivalents:
 - `--kafka-client-id` → `KAFKA_CLIENT_ID` (default: blockfetcher)
 - `--verbose` / `-v` → none (pass `--verbose`)
 
+**Metrics flags:**
+- `--metrics-host` → `METRICS_HOST` (default: "" for all interfaces)
+- `--metrics-port` / `-m` → `METRICS_PORT` (default: 9090)
+- `--environment` / `-E` → `ENVIRONMENT` (optional, metrics label e.g., "production", "staging")
+- `--region` / `-R` → `REGION` (optional, metrics label e.g., "us-east-1")
+- `--cloud-provider` / `-P` → `CLOUD_PROVIDER` (optional, metrics label e.g., "aws", "oci", "gcp")
+
 
 ### Run the block fetcher using Docker
 
@@ -93,6 +100,10 @@ docker run --rm \
   -e CLICKHOUSE_DATABASE=test_db \
   -e CLICKHOUSE_USERNAME=default \
   -e CLICKHOUSE_PASSWORD= \
+  -e METRICS_PORT=9090 \
+  -e ENVIRONMENT=production \
+  -e REGION=us-east-1 \
+  -e CLOUD_PROVIDER=aws \
   indexer:latest run --verbose
 ```
 
