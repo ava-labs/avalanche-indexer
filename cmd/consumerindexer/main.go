@@ -381,7 +381,7 @@ func run(c *cli.Context) error {
 			ReplicationFactor: kafkaDLQTopicReplicationFactor,
 		}, sugar)
 		if err != nil {
-			return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+			return fmt.Errorf("failed to ensure kafka DLQ topic exists: %w", err)
 		}
 	}
 
