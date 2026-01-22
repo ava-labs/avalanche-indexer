@@ -35,30 +35,7 @@ func NewTransactions(ctx context.Context, client clickhouse.Client, tableName st
 
 // CreateTableIfNotExists creates the raw_transactions table if it doesn't exist
 func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			blockchain_id String,
-			evm_chain_id UInt256,
-			block_number UInt64,
-			block_hash String,
-			block_time DateTime64(3, 'UTC'),
-			hash String,
-			from_address String,
-			to_address Nullable(String),
-			nonce UInt64,
-			value UInt256,
-			gas UInt64,
-			gas_price UInt256,
-			max_fee_per_gas Nullable(UInt256),
-			max_priority_fee Nullable(UInt256),
-			input String,
-			type UInt8,
-			transaction_index UInt64
-		)
-		ENGINE = MergeTree
-		ORDER BY (blockchain_id, block_time, hash)
-		SETTINGS index_granularity = 8192
-	`, r.tableName)
+	query := CreateTransactionsTableQuery(r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create transactions table: %w", err)
 	}
@@ -74,13 +51,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	}
 
 	// Otherwise, use direct insert (for testing or table creation scenarios)
-	query := fmt.Sprintf(`
-		INSERT INTO %s (
-			blockchain_id, evm_chain_id, block_number, block_hash, block_time, hash,
-			from_address, to_address, nonce, value, gas, gas_price,
-			max_fee_per_gas, max_priority_fee, input, type, transaction_index
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.tableName)
+	query := TransactionInsertQuery(r.tableName)
 
 	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
 	var blockchainID interface{}
