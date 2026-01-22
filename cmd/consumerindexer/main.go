@@ -365,7 +365,7 @@ func run(c *cli.Context) error {
 	}
 	defer adminClient.Close()
 
-	err = kafka.CreateTopicWithConfigIfNotExists(ctx, adminClient, kafka.TopicConfig{
+	err = kafka.EnsureTopic(ctx, adminClient, kafka.TopicConfig{
 		Name:              topic,
 		NumPartitions:     kafkaTopicNumPartitions,
 		ReplicationFactor: kafkaTopicReplicationFactor,
@@ -375,7 +375,7 @@ func run(c *cli.Context) error {
 	}
 
 	if publishToDLQ {
-		err = kafka.CreateTopicWithConfigIfNotExists(ctx, adminClient, kafka.TopicConfig{
+		err = kafka.EnsureTopic(ctx, adminClient, kafka.TopicConfig{
 			Name:              dlqTopic,
 			NumPartitions:     kafkaDLQTopicNumPartitions,
 			ReplicationFactor: kafkaDLQTopicReplicationFactor,

@@ -285,7 +285,7 @@ func run(c *cli.Context) error {
 	}
 	defer kafkaAdminClient.Close()
 
-	err = kafka.CreateTopicWithConfigIfNotExists(ctx, kafkaAdminClient, kafka.TopicConfig{
+	err = kafka.EnsureTopic(ctx, kafkaAdminClient, kafka.TopicConfig{
 		Name:              kafkaTopic,
 		NumPartitions:     kafkaTopicNumPartitions,
 		ReplicationFactor: kafkaTopicReplicationFactor,
