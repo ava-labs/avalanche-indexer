@@ -338,7 +338,7 @@ func (bi *BatchInserter) AddTransaction(ctx context.Context, tx *TransactionRow)
 }
 
 // flushBlocksLocked sends the block batch to ClickHouse (must be called with blockBatchMux lock held)
-func (bi *BatchInserter) flushBlocksLocked(ctx context.Context) error {
+func (bi *BatchInserter) flushBlocksLocked() error {
 	if bi.blockBatch == nil || bi.blockCount == 0 {
 		return nil
 	}
@@ -354,7 +354,7 @@ func (bi *BatchInserter) flushBlocksLocked(ctx context.Context) error {
 		// Reset batch state even on failure so we can continue
 		bi.blockBatch = nil
 		bi.blockCount = 0
-		return fmt.Errorf("Failed to send block batch: %w", err)
+		return fmt.Errorf("failed to send block batch: %w", err)
 	}
 
 	bi.log.Debugw("flushed blocks to ClickHouse", "count", count)
@@ -364,7 +364,7 @@ func (bi *BatchInserter) flushBlocksLocked(ctx context.Context) error {
 }
 
 // flushTransactionsLocked sends the transaction batch to ClickHouse (must be called with txBatchMux lock held)
-func (bi *BatchInserter) flushTransactionsLocked(ctx context.Context) error {
+func (bi *BatchInserter) flushTransactionsLocked() error {
 	if bi.txBatch == nil || bi.txCount == 0 {
 		return nil
 	}
@@ -380,7 +380,7 @@ func (bi *BatchInserter) flushTransactionsLocked(ctx context.Context) error {
 		// Reset batch state even on failure so we can continue
 		bi.txBatch = nil
 		bi.txCount = 0
-		return fmt.Errorf("Failed to send transaction batch: %w", err)
+		return fmt.Errorf("failed to send transaction batch: %w", err)
 	}
 
 	bi.log.Debugw("flushed transactions to ClickHouse", "count", count)
@@ -404,10 +404,10 @@ func (bi *BatchInserter) FlushAll(ctx context.Context) error {
 // flushAllLocked flushes both batches (must be called with both locks held)
 func (bi *BatchInserter) flushAllLocked(ctx context.Context) error {
 	// Flush blocks first (locks already held, so call locked version directly)
-	blockErr := bi.flushBlocksLocked(ctx)
+	blockErr := bi.flushBlocksLocked()
 
 	// Flush transactions (even if block flush failed, we still try to flush transactions)
-	txErr := bi.flushTransactionsLocked(ctx)
+	txErr := bi.flushTransactionsLocked()
 
 	// Update last flush time
 	bi.flushMux.Lock()
