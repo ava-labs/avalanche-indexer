@@ -44,14 +44,14 @@ const queueFullErrorRetryDelay = time.Second
 //
 // Callers must call Close to flush messages and release resources.
 func NewProducer(ctx context.Context, conf *kafka.ConfigMap, log *zap.SugaredLogger) (*Producer, error) {
-	p, err := kafka.NewProducer(conf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
-	}
-
 	logsChEnabled, err := conf.Get("go.logs.channel.enable", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get go.logs.channel.enable: %w", err)
+	}
+
+	p, err := kafka.NewProducer(conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
 	}
 
 	kq := Producer{
