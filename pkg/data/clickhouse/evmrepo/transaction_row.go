@@ -31,4 +31,5 @@ type TransactionRow struct {
 	Input            string
 	Type             uint8
 	TransactionIndex uint64
+	Success          uint8 // 1 for success, 0 for failure (from transaction receipt)
 }
