@@ -118,18 +118,26 @@ func CreateTopic(
 
 // EnsureTopic ensures a Kafka topic exists with the desired configuration.
 //
+// This is the recommended function for production use. It provides idempotent topic
+// management with automatic partition scaling and strict validation.
+//
 // Behavior:
-//   - If topic doesn't exist: Creates it with the specified configuration
-//   - If topic exists with fewer partitions: Increases partition count (Kafka allows this)
-//   - If topic exists with more partitions: Returns ErrCannotDecreasePartitions (Kafka limitation)
-//   - If replication factor differs: Returns ErrReplicationFactorMismatch (cannot auto-change)
+//   - Topic doesn't exist: Creates it with the specified configuration
+//   - Topic has fewer partitions: Increases partition count automatically
+//   - Topic has more partitions: Returns ErrCannotDecreasePartitions
+//   - Replication factor differs: Returns ErrReplicationFactorMismatch
+//   - Configuration matches: Returns nil (idempotent)
 //
-// This is the recommended function for production use. It ensures the topic exists and
-// automatically increases partitions if needed, but fails fast if the existing configuration
-// cannot be reconciled with the desired configuration.
+// Error Handling:
+//   - Returns ErrCannotDecreasePartitions if existing partitions > desired (Kafka limitation)
+//   - Returns ErrReplicationFactorMismatch if replication factor differs (cannot be changed)
+//   - Returns wrapped error for validation failures or Kafka admin API errors
 //
-// Note: Kafka does not support decreasing partitions or changing replication factor
-// through the admin API. These require manual intervention.
+// Important:
+//   - Set auto.create.topics.enable=false in Kafka broker configuration to prevent
+//     automatic topic creation with default settings during metadata operations.
+//   - Decreasing partitions requires manual intervention (delete and recreate topic).
+//   - Changing replication factor requires manual partition reassignment.
 func EnsureTopic(
 	ctx context.Context,
 	admin *kafka.AdminClient,
