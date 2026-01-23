@@ -53,6 +53,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
+			tx.Success, // UInt8: success status
 		).
 		Return(nil).
 		Once()
@@ -100,6 +101,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
+			tx.Success, // UInt8: success status
 		).
 		Return(execErr).
 		Once()
@@ -152,6 +154,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
+			tx.Success, // UInt8: success status
 		).
 		Return(nil).
 		Once()
@@ -189,5 +192,6 @@ func createTestTransaction() *TransactionRow {
 		Input:            "0x",
 		Type:             2, // EIP-1559 transaction
 		TransactionIndex: 0,
+		Success:          1, // Default to success for tests
 	}
 }
