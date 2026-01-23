@@ -1,0 +1,52 @@
+name: Fuzz
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-long:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: FuzzHexToBytes32
+            package: ./pkg/utils/
+          - target: FuzzHexToBytes20
+            package: ./pkg/utils/
+          - target: FuzzHexToBytes8
+            package: ./pkg/utils/
+          - target: FuzzCorethBlockUnmarshal
+            package: ./pkg/kafka/messages/
+          - target: FuzzCorethTransactionUnmarshal
+            package: ./pkg/kafka/messages/
+          - target: FuzzCorethWithdrawalUnmarshal
+            package: ./pkg/kafka/messages/
+          - target: FuzzCorethBlockMarshalRoundtrip
+            package: ./pkg/kafka/messages/
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-go-for-project
+
+      - name: Fuzz ${{ matrix.target }}
+        shell: bash
+        run: go test -fuzz=${{ matrix.target }} -fuzztime=5m ${{ matrix.package }}
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers-${{ matrix.target }}
+          path: |
+            **/testdata/fuzz/**/
+          retention-days: 30

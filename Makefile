@@ -19,6 +19,30 @@ coverage-test:
 e2e-test:
 	go test -tags=e2e ./test/e2e -v
 
+# Fuzz testing - short duration for CI (30s per target)
+.PHONY: fuzz-test
+fuzz-test:
+	@echo "Running fuzz tests (30s each)..."
+	go test -fuzz=FuzzHexToBytes32 -fuzztime=30s ./pkg/utils/ -v
+	go test -fuzz=FuzzHexToBytes20 -fuzztime=30s ./pkg/utils/ -v
+	go test -fuzz=FuzzHexToBytes8 -fuzztime=30s ./pkg/utils/ -v
+	go test -fuzz=FuzzCorethBlockUnmarshal -fuzztime=30s ./pkg/kafka/messages/ -v
+	go test -fuzz=FuzzCorethTransactionUnmarshal -fuzztime=30s ./pkg/kafka/messages/ -v
+	go test -fuzz=FuzzCorethWithdrawalUnmarshal -fuzztime=30s ./pkg/kafka/messages/ -v
+	go test -fuzz=FuzzCorethBlockMarshalRoundtrip -fuzztime=30s ./pkg/kafka/messages/ -v
+
+# Fuzz testing - extended duration for scheduled runs (5m per target)
+.PHONY: fuzz-test-long
+fuzz-test-long:
+	@echo "Running extended fuzz tests (5m each)..."
+	go test -fuzz=FuzzHexToBytes32 -fuzztime=5m ./pkg/utils/ -v
+	go test -fuzz=FuzzHexToBytes20 -fuzztime=5m ./pkg/utils/ -v
+	go test -fuzz=FuzzHexToBytes8 -fuzztime=5m ./pkg/utils/ -v
+	go test -fuzz=FuzzCorethBlockUnmarshal -fuzztime=5m ./pkg/kafka/messages/ -v
+	go test -fuzz=FuzzCorethTransactionUnmarshal -fuzztime=5m ./pkg/kafka/messages/ -v
+	go test -fuzz=FuzzCorethWithdrawalUnmarshal -fuzztime=5m ./pkg/kafka/messages/ -v
+	go test -fuzz=FuzzCorethBlockMarshalRoundtrip -fuzztime=5m ./pkg/kafka/messages/ -v
+
 .PHONY: lint
 lint:
 	golangci-lint run --fix

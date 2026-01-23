@@ -89,3 +89,33 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=10m
+
+  Fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: FuzzHexToBytes32
+            package: ./pkg/utils/
+          - target: FuzzHexToBytes20
+            package: ./pkg/utils/
+          - target: FuzzHexToBytes8
+            package: ./pkg/utils/
+          - target: FuzzCorethBlockUnmarshal
+            package: ./pkg/kafka/messages/
+          - target: FuzzCorethTransactionUnmarshal
+            package: ./pkg/kafka/messages/
+          - target: FuzzCorethWithdrawalUnmarshal
+            package: ./pkg/kafka/messages/
+          - target: FuzzCorethBlockMarshalRoundtrip
+            package: ./pkg/kafka/messages/
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-go-for-project
+      - name: Fuzz ${{ matrix.target }}
+        shell: bash
+        run: go test -fuzz=${{ matrix.target }} -fuzztime=30s ${{ matrix.package }}
