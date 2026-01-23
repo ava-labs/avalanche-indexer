@@ -13,7 +13,9 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -253,6 +255,48 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
 						Value:   "default.raw_blocks",
 					},
+					// Metrics configuration flags
+					&cli.StringFlag{
+						Name:    "metrics-host",
+						Usage:   "Host for Prometheus metrics server (empty for all interfaces)",
+						EnvVars: []string{"METRICS_HOST"},
+						Value:   "",
+					},
+					&cli.IntFlag{
+						Name:    "metrics-port",
+						Aliases: []string{"m"},
+						Usage:   "Port for Prometheus metrics server",
+						EnvVars: []string{"METRICS_PORT"},
+						Value:   9090,
+					},
+					&cli.Uint64Flag{
+						Name:    "chain-id",
+						Aliases: []string{"C"},
+						Usage:   "EVM chain ID for metrics labels (e.g., 43114 for C-Chain mainnet)",
+						EnvVars: []string{"CHAIN_ID"},
+						Value:   0,
+					},
+					&cli.StringFlag{
+						Name:    "environment",
+						Aliases: []string{"E"},
+						Usage:   "Deployment environment for metrics labels (e.g., 'production', 'staging')",
+						EnvVars: []string{"ENVIRONMENT"},
+						Value:   "",
+					},
+					&cli.StringFlag{
+						Name:    "region",
+						Aliases: []string{"R"},
+						Usage:   "Cloud region for metrics labels (e.g., 'us-east-1')",
+						EnvVars: []string{"REGION"},
+						Value:   "",
+					},
+					&cli.StringFlag{
+						Name:    "cloud-provider",
+						Aliases: []string{"P"},
+						Usage:   "Cloud provider for metrics labels (e.g., 'aws', 'oci', 'gcp')",
+						EnvVars: []string{"CLOUD_PROVIDER"},
+						Value:   "",
+					},
 					&cli.StringFlag{
 						Name:    "raw-transactions-table-name",
 						Usage:   "ClickHouse table name for raw transactions",
@@ -286,6 +330,14 @@ func run(c *cli.Context) error {
 	flushTimeout := c.Duration("flush-timeout")
 	goroutineWaitTimeout := c.Duration("goroutine-wait-timeout")
 	pollInterval := c.Duration("poll-interval")
+	rawTableName := c.String("raw-blocks-table-name")
+	metricsHost := c.String("metrics-host")
+	metricsPort := c.Int("metrics-port")
+	chainID := c.Uint64("chain-id")
+	environment := c.String("environment")
+	region := c.String("region")
+	cloudProvider := c.String("cloud-provider")
+	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
 	publishToDLQ := c.Bool("publish-to-dlq")
@@ -322,6 +374,13 @@ func run(c *cli.Context) error {
 		"clickhouseDatabase", chCfg.Database,
 		"clickhouseUsername", chCfg.Username,
 		"clickhouseDebug", chCfg.Debug,
+		"rawTableName", rawTableName,
+		"metricsHost", metricsHost,
+		"metricsPort", metricsPort,
+		"chainID", chainID,
+		"environment", environment,
+		"region", region,
+		"cloudProvider", cloudProvider,
 		"rawBlocksTableName", rawBlocksTableName,
 		"rawTransactionsTableName", rawTransactionsTableName,
 		"publishToDLQ", publishToDLQ,
@@ -330,6 +389,27 @@ func run(c *cli.Context) error {
 		"kafkaDLQTopicNumPartitions", kafkaDLQTopicNumPartitions,
 		"kafkaDLQTopicReplicationFactor", kafkaDLQTopicReplicationFactor,
 	)
+
+	// Initialize Prometheus metrics with labels for multi-instance filtering
+	registry := prometheus.NewRegistry()
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    chainID,
+		Environment:   environment,
+		Region:        region,
+		CloudProvider: cloudProvider,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+
+	// Start metrics server
+	metricsServer := metrics.NewServer(metricsAddr, registry)
+	metricsErrCh := metricsServer.Start()
+	if metricsHost == "" {
+		sugar.Infof("metrics server listening on http://0.0.0.0:%d/metrics", metricsPort)
+	} else {
+		sugar.Infof("metrics server listening on http://%s/metrics", metricsAddr)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -356,8 +436,8 @@ func run(c *cli.Context) error {
 	}
 	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
 
-	// Create CorethProcessor with ClickHouse persistence
-	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo)
+	// Create CorethProcessor with ClickHouse persistence and metrics
+	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
 
 	adminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{"bootstrap.servers": bootstrapServers})
 	if err != nil {
@@ -415,14 +495,45 @@ func run(c *cli.Context) error {
 		"concurrency", concurrency,
 	)
 
-	// Start consumer (blocks until shutdown signal received)
-	// Consumer closes itself gracefully inside Start() before returning
-	if err := consumer.Start(ctx); err != nil {
-		return fmt.Errorf("consumer error: %w", err)
+	// Run consumer and metrics server error handling concurrently
+	errCh := make(chan error, 2)
+
+	go func() {
+		// Consumer.Start blocks until shutdown
+		if err := consumer.Start(ctx); err != nil {
+			errCh <- fmt.Errorf("consumer error: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			// Signal completion to avoid blocking on errCh read
+			errCh <- nil
+		case err := <-metricsErrCh:
+			if err != nil {
+				errCh <- fmt.Errorf("metrics server error: %w", err)
+			} else {
+				errCh <- nil
+			}
+		}
+	}()
+
+	// Wait for first error or completion
+	firstErr := <-errCh
+
+	// Gracefully shutdown metrics server
+	sugar.Info("shutting down metrics server")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		sugar.Warnw("metrics server shutdown error", "error", err)
 	}
 
-	sugar.Info("consumer shutdown complete")
-	return nil
+	sugar.Info("shutdown complete")
+	return firstErr
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags

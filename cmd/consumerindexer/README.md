@@ -80,6 +80,14 @@ All flags have environment variable equivalents:
 
 Tables are automatically created if they don't exist. See `--help` for additional ClickHouse connection tuning parameters.
 
+**Metrics flags:**
+- `--metrics-host` → `METRICS_HOST` (default: "" for all interfaces)
+- `--metrics-port` / `-m` → `METRICS_PORT` (default: 9090)
+- `--chain-id` / `-C` → `CHAIN_ID` (optional, metrics label e.g., 43114 for C-Chain mainnet)
+- `--environment` / `-E` → `ENVIRONMENT` (optional, metrics label e.g., "production", "staging")
+- `--region` / `-R` → `REGION` (optional, metrics label e.g., "us-east-1")
+- `--cloud-provider` / `-P` → `CLOUD_PROVIDER` (optional, metrics label e.g., "aws", "oci", "gcp")
+
 ### Docker
 
 Build the multi-binary image:
@@ -106,6 +114,11 @@ docker run --rm \
   -e KAFKA_DLQ_TOPIC_REPLICATION_FACTOR=3 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
   -e CLICKHOUSE_USERNAME=default \
+  -e METRICS_PORT=9090 \
+  -e CHAIN_ID=43114 \
+  -e ENVIRONMENT=production \
+  -e REGION=us-east-1 \
+  -e CLOUD_PROVIDER=aws \
   indexer:latest run --verbose
 ```
 

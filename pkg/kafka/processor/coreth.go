@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"go.uber.org/zap"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
@@ -22,6 +23,7 @@ type CorethProcessor struct {
 	log        *zap.SugaredLogger
 	blocksRepo evmrepo.Blocks
 	txsRepo    evmrepo.Transactions
+	metrics    *metrics.Metrics
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
@@ -30,24 +32,30 @@ func NewCorethProcessor(
 	log *zap.SugaredLogger,
 	blocksRepo evmrepo.Blocks,
 	txsRepo evmrepo.Transactions,
+	metrics *metrics.Metrics,
 ) *CorethProcessor {
 	return &CorethProcessor{
 		log:        log,
 		blocksRepo: blocksRepo,
 		txsRepo:    txsRepo,
+		metrics:    metrics,
 	}
 }
 
 // Process unmarshals msg.Value into a Coreth Block and logs its details.
 // Returns an error if msg or msg.Value is nil, or if unmarshaling fails.
-// Currently only logs block data - actual indexing/storage logic is TODO.
+// Records processing duration and errors to metrics if configured.
 func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) error {
+	start := time.Now()
+
 	if msg == nil || msg.Value == nil {
+		p.metrics.IncError("coreth_nil_message")
 		return errors.New("received nil message or empty value")
 	}
 
 	var block kafkamsg.CorethBlock
 	if err := block.Unmarshal(msg.Value); err != nil {
+		p.metrics.IncError("coreth_unmarshal_error")
 		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
 	}
 
@@ -67,10 +75,12 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	if p.blocksRepo != nil {
 		blockRow, err := CorethBlockToBlockRow(&block)
 		if err != nil {
-			return fmt.Errorf("failed to convert block for storage: %w", err)
+			p.metrics.IncError("coreth_parse_error")
+			return fmt.Errorf("failed to parse block for storage: %w", err)
 		}
 
 		if err := p.blocksRepo.WriteBlock(ctx, blockRow); err != nil {
+			p.metrics.IncError("coreth_write_error")
 			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
 		}
 
@@ -82,6 +92,8 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		)
 	}
 
+	// Record successful processing duration
+	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	// Persist transactions to ClickHouse if repository is configured
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
 		if err := p.processTransactions(ctx, &block); err != nil {

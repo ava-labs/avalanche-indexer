@@ -28,7 +28,7 @@ type ConsumerConfig struct {
 	GoroutineWaitTimeout        *time.Duration // Goroutine wait timeout while Closing the Kafka consumer
 	PollInterval                *time.Duration // Poll interval for Kafka consumer
 	EnableLogs                  bool           // Enable librdkafka client logs
-	PublishToDLQ                bool           // If true, failed messages are not re-sent to DLQ
+	PublishToDLQ                bool           // If true, failed messages are published to DLQ
 }
 
 // WithDefaults returns a copy of the config with default values filled in for any nil pointer fields.

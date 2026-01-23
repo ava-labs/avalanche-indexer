@@ -98,6 +98,10 @@ docker run --rm \
   -e CLICKHOUSE_DATABASE=test_db \
   -e CLICKHOUSE_USERNAME=default \
   -e CLICKHOUSE_PASSWORD= \
+  -e METRICS_PORT=9090 \
+  -e ENVIRONMENT=production \
+  -e REGION=us-east-1 \
+  -e CLOUD_PROVIDER=aws \
   indexer:latest run --verbose
 ```
 
