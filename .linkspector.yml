@@ -1,0 +1,12 @@
+dirs:
+  - .
+
+ignorePatterns:
+  - pattern: '^http://localhost.*$'
+    reason: "Localhost links are used for local development examples"
+  - pattern: '^http://127\.0\.0\.1.*$'
+    reason: "Localhost links are used for local development examples"
+  - pattern: '^http://host\.docker\.internal.*$'
+    reason: "Docker internal links are used in docker-compose examples"
+
+useGitIgnore: true

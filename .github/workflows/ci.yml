@@ -119,3 +119,13 @@ jobs:
       - name: Fuzz ${{ matrix.target }}
         shell: bash
         run: go test -fuzz=${{ matrix.target }} -fuzztime=30s ${{ matrix.package }}
+
+  Markdown-Links:
+    name: Markdown Links Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: umbrelladocs/action-linkspector@de84085e0f51452a470558693d7d308fbb2fa261 # v1.2.5
+        with:
+          fail_level: any
