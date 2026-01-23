@@ -178,7 +178,7 @@ func TestTopicConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestTopicExists(t *testing.T) {
+func TestTopicMetadata(t *testing.T) {
 	kc := setupAdminKafka(t)
 	defer kc.teardown(t)
 
@@ -188,7 +188,7 @@ func TestTopicExists(t *testing.T) {
 	defer admin.Close()
 
 	t.Run("non-existent topic returns nil metadata", func(t *testing.T) {
-		metadata, err := TopicExists(admin, "non-existent-topic")
+		metadata, err := TopicMetadata(admin, "non-existent-topic")
 		require.NoError(t, err)
 		assert.Nil(t, metadata)
 	})
@@ -208,7 +208,7 @@ func TestTopicExists(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// Check it exists
-		metadata, err := TopicExists(admin, "test-exists")
+		metadata, err := TopicMetadata(admin, "test-exists")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		assert.Equal(t, "test-exists", metadata.Topic)
@@ -236,13 +236,13 @@ func TestCreateTopic(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify topic was created
-		metadata, err := TopicExists(admin, "test-create-new")
+		metadata, err := TopicMetadata(admin, "test-create-new")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		assert.Len(t, metadata.Partitions, 3)
 	})
 
-	t.Run("creating existing topic does not error", func(t *testing.T) {
+	t.Run("creating existing topic returns ErrTopicAlreadyExists", func(t *testing.T) {
 		config := TopicConfig{
 			Name:              "test-create-existing",
 			NumPartitions:     1,
@@ -253,9 +253,10 @@ func TestCreateTopic(t *testing.T) {
 		err := CreateTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
-		// Create again - should not error (idempotent)
+		// Create again - should return ErrTopicAlreadyExists
 		err = CreateTopic(ctx, admin, config, log)
-		assert.NoError(t, err)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrTopicAlreadyExists, "should return ErrTopicAlreadyExists sentinel error")
 	})
 
 	t.Run("invalid config returns validation error", func(t *testing.T) {
@@ -291,7 +292,7 @@ func TestEnsureTopic(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify topic exists
-		metadata, err := TopicExists(admin, "test-ensure-new")
+		metadata, err := TopicMetadata(admin, "test-ensure-new")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		assert.Len(t, metadata.Partitions, 2)
@@ -325,7 +326,7 @@ func TestEnsureTopic(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify initial partition count
-		metadata, err := TopicExists(admin, "test-increase-partitions")
+		metadata, err := TopicMetadata(admin, "test-increase-partitions")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		assert.Len(t, metadata.Partitions, 2)
@@ -339,13 +340,13 @@ func TestEnsureTopic(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// Verify partition count increased
-		metadata, err = TopicExists(admin, "test-increase-partitions")
+		metadata, err = TopicMetadata(admin, "test-increase-partitions")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		assert.Len(t, metadata.Partitions, 5)
 	})
 
-	t.Run("error when topic has more partitions than requested", func(t *testing.T) {
+	t.Run("returns ErrCannotDecreasePartitions when topic has more partitions", func(t *testing.T) {
 		// Create topic with 5 partitions
 		config := TopicConfig{
 			Name:              "test-more-partitions",
@@ -356,13 +357,14 @@ func TestEnsureTopic(t *testing.T) {
 		err := EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
-		// Request fewer partitions (should warn but not error)
+		// Request fewer partitions - should return error
 		config.NumPartitions = 2
 		err = EnsureTopic(ctx, admin, config, log)
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCannotDecreasePartitions, "should return ErrCannotDecreasePartitions sentinel error")
 
 		// Verify partition count unchanged (cannot decrease)
-		metadata, err := TopicExists(admin, "test-more-partitions")
+		metadata, err := TopicMetadata(admin, "test-more-partitions")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		assert.Len(t, metadata.Partitions, 5)
@@ -409,7 +411,7 @@ func TestIncreasePartitions(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// Verify partition count
-		metadata, err := TopicExists(admin, "test-increase")
+		metadata, err := TopicMetadata(admin, "test-increase")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		assert.Len(t, metadata.Partitions, 3)
@@ -443,7 +445,7 @@ func TestGetReplicationFactor(t *testing.T) {
 		// Give Kafka time to create
 		time.Sleep(500 * time.Millisecond)
 
-		metadata, err := TopicExists(admin, "test-rf")
+		metadata, err := TopicMetadata(admin, "test-rf")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 
@@ -496,14 +498,14 @@ func TestConcurrentTopicOperations(t *testing.T) {
 		// Verify all topics exist
 		for i := 0; i < numTopics; i++ {
 			topicName := fmt.Sprintf("test-concurrent-%d", i)
-			metadata, err := TopicExists(admin, topicName)
+			metadata, err := TopicMetadata(admin, topicName)
 			require.NoError(t, err)
 			assert.NotNil(t, metadata, "topic %s should exist", topicName)
 		}
 	})
 }
 
-func TestReplicationFactorWarning(t *testing.T) {
+func TestReplicationFactorMismatch(t *testing.T) {
 	kc := setupAdminKafka(t)
 	defer kc.teardown(t)
 
@@ -512,7 +514,7 @@ func TestReplicationFactorWarning(t *testing.T) {
 	admin := createAdminClient(t, kc.brokers)
 	defer admin.Close()
 
-	t.Run("warns when replication factor differs", func(t *testing.T) {
+	t.Run("returns ErrReplicationFactorMismatch when RF differs", func(t *testing.T) {
 		// Create topic with RF=1
 		config := TopicConfig{
 			Name:              "test-rf-diff",
@@ -523,13 +525,14 @@ func TestReplicationFactorWarning(t *testing.T) {
 		err := EnsureTopic(ctx, admin, config, log)
 		require.NoError(t, err)
 
-		// Try to "change" RF to 3 (should warn but not fail)
+		// Try to "change" RF to 3 - should return error
 		config.ReplicationFactor = 3
 		err = EnsureTopic(ctx, admin, config, log)
-		assert.NoError(t, err, "should not error when RF differs")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrReplicationFactorMismatch, "should return ErrReplicationFactorMismatch sentinel error")
 
 		// Verify RF is still 1 (unchanged)
-		metadata, err := TopicExists(admin, "test-rf-diff")
+		metadata, err := TopicMetadata(admin, "test-rf-diff")
 		require.NoError(t, err)
 		require.NotNil(t, metadata)
 		rf := getReplicationFactor(metadata)

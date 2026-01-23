@@ -15,6 +15,12 @@ const (
 	metadataTimeout = 10 * time.Second
 )
 
+var (
+	ErrTopicAlreadyExists        = errors.New("topic already exists")
+	ErrCannotDecreasePartitions  = errors.New("cannot decrease partitions count")
+	ErrReplicationFactorMismatch = errors.New("replication factor mismatch")
+)
+
 // TopicConfig holds Kafka topic configuration options for creation or validation.
 type TopicConfig struct {
 	Name              string // Required: topic name
@@ -36,12 +42,12 @@ func (tc TopicConfig) Validate() error {
 	return nil
 }
 
-// TopicExists checks if a Kafka topic exists and returns its metadata if found.
+// TopicMetadata checks if a Kafka topic exists and returns its metadata if found.
 //
 // Returns:
 //   - metadata: Topic metadata if the topic exists, nil if it doesn't exist
 //   - error: Non-nil if there was an error checking topic existence (network, permission, etc.)
-func TopicExists(admin *kafka.AdminClient, topicName string) (*kafka.TopicMetadata, error) {
+func TopicMetadata(admin *kafka.AdminClient, topicName string) (*kafka.TopicMetadata, error) {
 	metadata, err := admin.GetMetadata(&topicName, false, int(metadataTimeout.Milliseconds()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata for topic %q: %w", topicName, err)
@@ -54,7 +60,7 @@ func TopicExists(admin *kafka.AdminClient, topicName string) (*kafka.TopicMetada
 	}
 
 	if topicMetadata.Error.Code() != kafka.ErrNoError {
-		return nil, fmt.Errorf("topic %q has error: %w", topicName, topicMetadata.Error)
+		return nil, fmt.Errorf("topic metadata for topic %q has error: %w", topicName, topicMetadata.Error)
 	}
 
 	return &topicMetadata, nil
@@ -62,8 +68,8 @@ func TopicExists(admin *kafka.AdminClient, topicName string) (*kafka.TopicMetada
 
 // CreateTopic creates a new Kafka topic with the given configuration.
 //
-// This function does NOT check if the topic already exists - use CreateTopicIfNotExists
-// if you need idempotent behavior. Returns ErrTopicAlreadyExists error if the topic exists.
+// If the topic already exists, returns ErrTopicAlreadyExists. Use EnsureTopic if you need
+// idempotent behavior that handles existing topics gracefully.
 //
 // The configuration is validated before topic creation. Returns an error if validation fails.
 func CreateTopic(
@@ -94,10 +100,11 @@ func CreateTopic(
 		}
 
 		if result.Error.Code() == kafka.ErrTopicAlreadyExists {
-			log.Infow("topic already exists",
+			log.Errorw("topic already exists",
 				"topic", result.Topic,
 				"partitions", config.NumPartitions,
 				"replicationFactor", config.ReplicationFactor)
+			return ErrTopicAlreadyExists
 		} else {
 			log.Infow("created topic",
 				"topic", result.Topic,
@@ -114,11 +121,12 @@ func CreateTopic(
 // Behavior:
 //   - If topic doesn't exist: Creates it with the specified configuration
 //   - If topic exists with fewer partitions: Increases partition count (Kafka allows this)
-//   - If topic exists with more partitions: Logs warning but continues (cannot decrease)
-//   - If replication factor differs: Logs warning (cannot be changed automatically)
+//   - If topic exists with more partitions: Returns ErrCannotDecreasePartitions (Kafka limitation)
+//   - If replication factor differs: Returns ErrReplicationFactorMismatch (cannot auto-change)
 //
-// This is the recommended function for production use as it handles common scenarios
-// gracefully. For strict validation, check the topic metadata after this call.
+// This is the recommended function for production use. It ensures the topic exists and
+// automatically increases partitions if needed, but fails fast if the existing configuration
+// cannot be reconciled with the desired configuration.
 //
 // Note: Kafka does not support decreasing partitions or changing replication factor
 // through the admin API. These require manual intervention.
@@ -132,7 +140,7 @@ func EnsureTopic(
 		return fmt.Errorf("invalid topic config: %w", err)
 	}
 
-	topicMetadata, err := TopicExists(admin, config.Name)
+	topicMetadata, err := TopicMetadata(admin, config.Name)
 	if err != nil {
 		return fmt.Errorf("failed to check topic existence: %w", err)
 	}
@@ -141,6 +149,18 @@ func EnsureTopic(
 		return CreateTopic(ctx, admin, config, log)
 	}
 
+	return ensureTopicConfiguration(ctx, admin, topicMetadata, log, config)
+}
+
+// ensureTopicConfiguration validates and adjusts topic configuration.
+//
+// Behavior:
+//   - If topic has fewer partitions: Increases partition count automatically
+//   - If topic has more partitions: Returns ErrCannotDecreasePartitions
+//   - If replication factor differs: Returns ErrReplicationFactorMismatch
+//
+// This is an internal helper function used by EnsureTopic.
+func ensureTopicConfiguration(ctx context.Context, admin *kafka.AdminClient, topicMetadata *kafka.TopicMetadata, log *zap.SugaredLogger, config TopicConfig) error {
 	currentPartitions := len(topicMetadata.Partitions)
 	currentRF := getReplicationFactor(topicMetadata)
 
@@ -150,11 +170,12 @@ func EnsureTopic(
 		"currentReplicationFactor", currentRF)
 
 	if currentRF != config.ReplicationFactor {
-		log.Warnw("topic replication factor differs from config",
+		log.Errorw("topic replication factor differs from config",
 			"topic", config.Name,
 			"current", currentRF,
 			"desired", config.ReplicationFactor,
-			"note", "replication factor cannot be changed automatically - requires manual partition reassignment")
+			"note", "replication factor cannot be changed automatically")
+		return ErrReplicationFactorMismatch
 	}
 
 	switch {
@@ -166,12 +187,12 @@ func EnsureTopic(
 		return increasePartitions(ctx, admin, config.Name, config.NumPartitions, log)
 
 	case currentPartitions > config.NumPartitions:
-		log.Warnw("topic has more partitions than configured",
+		log.Errorw("topic has more partitions than configured",
 			"topic", config.Name,
 			"current", currentPartitions,
 			"desired", config.NumPartitions,
 			"note", "Kafka does not support decreasing partition count - current count will be retained")
-		return errors.New("topic has more partitions than configured")
+		return ErrCannotDecreasePartitions
 
 	default:
 		return nil
