@@ -24,20 +24,30 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	block := createTestBlock()
 
 	// Convert hex strings to binary strings for FixedString fields (matching what WriteBlock does)
-	hashBytes, _ := utils.HexToBytes32(block.Hash)
-	parentHashBytes, _ := utils.HexToBytes32(block.ParentHash)
-	minerBytes, _ := utils.HexToBytes20(block.Miner)
-	stateRootBytes, _ := utils.HexToBytes32(block.StateRoot)
-	transactionsRootBytes, _ := utils.HexToBytes32(block.TransactionsRoot)
-	receiptsRootBytes, _ := utils.HexToBytes32(block.ReceiptsRoot)
-	extDataHashBytes, _ := utils.HexToBytes32(block.ExtDataHash)
-	mixHashBytes, _ := utils.HexToBytes32(block.MixHash)
-	sha3UnclesBytes, _ := utils.HexToBytes32(block.Sha3Uncles)
+	hashBytes, err := utils.HexToBytes32(block.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	parentHashBytes, err := utils.HexToBytes32(block.ParentHash)
+	require.NoError(t, err, "parentHash conversion should succeed")
+	minerBytes, err := utils.HexToBytes20(block.Miner)
+	require.NoError(t, err, "miner conversion should succeed")
+	stateRootBytes, err := utils.HexToBytes32(block.StateRoot)
+	require.NoError(t, err, "stateRoot conversion should succeed")
+	transactionsRootBytes, err := utils.HexToBytes32(block.TransactionsRoot)
+	require.NoError(t, err, "transactionsRoot conversion should succeed")
+	receiptsRootBytes, err := utils.HexToBytes32(block.ReceiptsRoot)
+	require.NoError(t, err, "receiptsRoot conversion should succeed")
+	extDataHashBytes, err := utils.HexToBytes32(block.ExtDataHash)
+	require.NoError(t, err, "extDataHash conversion should succeed")
+	mixHashBytes, err := utils.HexToBytes32(block.MixHash)
+	require.NoError(t, err, "mixHash conversion should succeed")
+	sha3UnclesBytes, err := utils.HexToBytes32(block.Sha3Uncles)
+	require.NoError(t, err, "sha3Uncles conversion should succeed")
 
 	// Convert uncles array
 	unclesStrings := make([]string, len(block.Uncles))
 	for i, uncle := range block.Uncles {
-		uncleBytes, _ := utils.HexToBytes32(uncle)
+		uncleBytes, err := utils.HexToBytes32(uncle)
+		require.NoError(t, err, "uncle %d conversion should succeed", i)
 		unclesStrings[i] = string(uncleBytes[:])
 	}
 
@@ -46,7 +56,8 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	if block.Nonce == "" {
 		nonceStr = nil
 	} else {
-		nonceBytes, _ := utils.HexToBytes8(block.Nonce)
+		nonceBytes, err := utils.HexToBytes8(block.Nonce)
+		require.NoError(t, err, "nonce conversion should succeed")
 		nonceStr = string(nonceBytes[:])
 	}
 
@@ -55,7 +66,8 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	if block.ParentBeaconBlockRoot == "" {
 		parentBeaconBlockRootStr = nil
 	} else {
-		beaconRootBytes, _ := utils.HexToBytes32(block.ParentBeaconBlockRoot)
+		beaconRootBytes, err := utils.HexToBytes32(block.ParentBeaconBlockRoot)
+		require.NoError(t, err, "parentBeaconBlockRoot conversion should succeed")
 		parentBeaconBlockRootStr = string(beaconRootBytes[:])
 	}
 
@@ -122,20 +134,30 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	execErr := errors.New("exec failed")
 
 	// Convert hex strings to binary strings for FixedString fields (matching what WriteBlock does)
-	hashBytes, _ := utils.HexToBytes32(block.Hash)
-	parentHashBytes, _ := utils.HexToBytes32(block.ParentHash)
-	minerBytes, _ := utils.HexToBytes20(block.Miner)
-	stateRootBytes, _ := utils.HexToBytes32(block.StateRoot)
-	transactionsRootBytes, _ := utils.HexToBytes32(block.TransactionsRoot)
-	receiptsRootBytes, _ := utils.HexToBytes32(block.ReceiptsRoot)
-	extDataHashBytes, _ := utils.HexToBytes32(block.ExtDataHash)
-	mixHashBytes, _ := utils.HexToBytes32(block.MixHash)
-	sha3UnclesBytes, _ := utils.HexToBytes32(block.Sha3Uncles)
+	hashBytes, err := utils.HexToBytes32(block.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	parentHashBytes, err := utils.HexToBytes32(block.ParentHash)
+	require.NoError(t, err, "parentHash conversion should succeed")
+	minerBytes, err := utils.HexToBytes20(block.Miner)
+	require.NoError(t, err, "miner conversion should succeed")
+	stateRootBytes, err := utils.HexToBytes32(block.StateRoot)
+	require.NoError(t, err, "stateRoot conversion should succeed")
+	transactionsRootBytes, err := utils.HexToBytes32(block.TransactionsRoot)
+	require.NoError(t, err, "transactionsRoot conversion should succeed")
+	receiptsRootBytes, err := utils.HexToBytes32(block.ReceiptsRoot)
+	require.NoError(t, err, "receiptsRoot conversion should succeed")
+	extDataHashBytes, err := utils.HexToBytes32(block.ExtDataHash)
+	require.NoError(t, err, "extDataHash conversion should succeed")
+	mixHashBytes, err := utils.HexToBytes32(block.MixHash)
+	require.NoError(t, err, "mixHash conversion should succeed")
+	sha3UnclesBytes, err := utils.HexToBytes32(block.Sha3Uncles)
+	require.NoError(t, err, "sha3Uncles conversion should succeed")
 
 	// Convert uncles array
 	unclesStrings := make([]string, len(block.Uncles))
 	for i, uncle := range block.Uncles {
-		uncleBytes, _ := utils.HexToBytes32(uncle)
+		uncleBytes, err := utils.HexToBytes32(uncle)
+		require.NoError(t, err, "uncle %d conversion should succeed", i)
 		unclesStrings[i] = string(uncleBytes[:])
 	}
 
@@ -144,7 +166,8 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	if block.Nonce == "" {
 		nonceStr = nil
 	} else {
-		nonceBytes, _ := utils.HexToBytes8(block.Nonce)
+		nonceBytes, err := utils.HexToBytes8(block.Nonce)
+		require.NoError(t, err, "nonce conversion should succeed")
 		nonceStr = string(nonceBytes[:])
 	}
 
@@ -153,7 +176,8 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	if block.ParentBeaconBlockRoot == "" {
 		parentBeaconBlockRootStr = nil
 	} else {
-		beaconRootBytes, _ := utils.HexToBytes32(block.ParentBeaconBlockRoot)
+		beaconRootBytes, err := utils.HexToBytes32(block.ParentBeaconBlockRoot)
+		require.NoError(t, err, "parentBeaconBlockRoot conversion should succeed")
 		parentBeaconBlockRootStr = string(beaconRootBytes[:])
 	}
 

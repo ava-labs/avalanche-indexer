@@ -22,14 +22,18 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	tx := createTestTransaction()
 
 	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
-	blockHashBytes, _ := utils.HexToBytes32(tx.BlockHash)
-	hashBytes, _ := utils.HexToBytes32(tx.Hash)
-	fromBytes, _ := utils.HexToBytes20(tx.From)
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	require.NoError(t, err, "blockHash conversion should succeed")
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	require.NoError(t, err, "fromAddress conversion should succeed")
 	var toBytes interface{}
 	if tx.To == nil || *tx.To == "" {
 		toBytes = nil
 	} else {
-		toBytesVal, _ := utils.HexToBytes20(*tx.To)
+		toBytesVal, err := utils.HexToBytes20(*tx.To)
+		require.NoError(t, err, "toAddress conversion should succeed")
 		toBytes = string(toBytesVal[:])
 	}
 
@@ -85,14 +89,18 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	execErr := errors.New("exec failed")
 
 	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
-	blockHashBytes, _ := utils.HexToBytes32(tx.BlockHash)
-	hashBytes, _ := utils.HexToBytes32(tx.Hash)
-	fromBytes, _ := utils.HexToBytes20(tx.From)
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	require.NoError(t, err, "blockHash conversion should succeed")
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	require.NoError(t, err, "fromAddress conversion should succeed")
 	var toBytes interface{}
 	if tx.To == nil || *tx.To == "" {
 		toBytes = nil
 	} else {
-		toBytesVal, _ := utils.HexToBytes20(*tx.To)
+		toBytesVal, err := utils.HexToBytes20(*tx.To)
+		require.NoError(t, err, "toAddress conversion should succeed")
 		toBytes = string(toBytesVal[:])
 	}
 
@@ -148,9 +156,12 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	tx.To = nil
 
 	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
-	blockHashBytes, _ := utils.HexToBytes32(tx.BlockHash)
-	hashBytes, _ := utils.HexToBytes32(tx.Hash)
-	fromBytes, _ := utils.HexToBytes20(tx.From)
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	require.NoError(t, err, "blockHash conversion should succeed")
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	require.NoError(t, err, "fromAddress conversion should succeed")
 	// To is nil, so toBytes should be nil
 	var toBytes interface{} = nil
 
