@@ -26,7 +26,7 @@ func FuzzCorethBlockUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"number": "-999999999999999999999999999999"}`))
 	f.Add([]byte(`{"gasLimit": -1}`))
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		block := &CorethBlock{}
 		// Should never panic, only return errors for invalid input
 		_ = block.Unmarshal(data)
@@ -46,7 +46,7 @@ func FuzzCorethTransactionUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"nonce": -1}`))
 	f.Add([]byte(`{"gas": 999999999999999999}`))
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		tx := &CorethTransaction{}
 		_ = tx.Unmarshal(data)
 	})
@@ -63,7 +63,7 @@ func FuzzCorethWithdrawalUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"index": -1}`))
 	f.Add([]byte(`{"amount": 999999999999999999999999}`))
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		w := &CorethWithdrawal{}
 		_ = w.Unmarshal(data)
 	})
@@ -75,7 +75,7 @@ func FuzzCorethBlockMarshalRoundtrip(f *testing.F) {
 	f.Add([]byte(`{"number": "123", "hash": "0xabc"}`))
 	f.Add([]byte(`{"evmChainId": "43114", "number": "1000000"}`))
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		block := &CorethBlock{}
 		if err := block.Unmarshal(data); err == nil {
 			// If unmarshal succeeded, marshal should not panic

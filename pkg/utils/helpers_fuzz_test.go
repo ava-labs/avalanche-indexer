@@ -2,6 +2,8 @@ package utils
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // FuzzHexToBytes32 tests HexToBytes32 with random inputs to find panics or crashes.
@@ -13,7 +15,7 @@ func FuzzHexToBytes32(f *testing.F) {
 	f.Add("0x0")
 	f.Add("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
 	f.Add("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
-	f.Add("0xGGGG") // invalid hex
+	f.Add("0xGGGG")                          // invalid hex
 	f.Add("0x" + string(make([]byte, 1000))) // very long input
 
 	f.Fuzz(func(t *testing.T, input string) {
@@ -21,9 +23,7 @@ func FuzzHexToBytes32(f *testing.F) {
 		result, err := HexToBytes32(input)
 		if err == nil {
 			// If no error, result should be a valid 32-byte array
-			if len(result) != 32 {
-				t.Errorf("expected 32 bytes, got %d", len(result))
-			}
+			require.Len(t, result, 32)
 		}
 	})
 }
@@ -37,15 +37,13 @@ func FuzzHexToBytes20(f *testing.F) {
 	f.Add("0x0")
 	f.Add("0x1234567890abcdef12345678901234567890abcd")
 	f.Add("1234567890abcdef12345678901234567890abcd")
-	f.Add("0xGGGG") // invalid hex
+	f.Add("0xGGGG")                          // invalid hex
 	f.Add("0x" + string(make([]byte, 1000))) // very long input
 
 	f.Fuzz(func(t *testing.T, input string) {
 		result, err := HexToBytes20(input)
 		if err == nil {
-			if len(result) != 20 {
-				t.Errorf("expected 20 bytes, got %d", len(result))
-			}
+			require.Len(t, result, 20)
 		}
 	})
 }
@@ -59,15 +57,13 @@ func FuzzHexToBytes8(f *testing.F) {
 	f.Add("0x0")
 	f.Add("0x1234567890abcdef")
 	f.Add("1234567890abcdef")
-	f.Add("0xGGGG") // invalid hex
+	f.Add("0xGGGG")                          // invalid hex
 	f.Add("0x" + string(make([]byte, 1000))) // very long input
 
 	f.Fuzz(func(t *testing.T, input string) {
 		result, err := HexToBytes8(input)
 		if err == nil {
-			if len(result) != 8 {
-				t.Errorf("expected 8 bytes, got %d", len(result))
-			}
+			require.Len(t, result, 8)
 		}
 	})
 }
