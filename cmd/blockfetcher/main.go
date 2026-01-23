@@ -114,7 +114,7 @@ func main() {
 						Aliases: []string{"m"},
 						Usage:   "Port for Prometheus metrics server",
 						EnvVars: []string{"METRICS_PORT"},
-						Value:   9098,
+						Value:   9090,
 					},
 					&cli.StringFlag{
 						Name:    "environment",
