@@ -25,7 +25,10 @@ jobs:
       - uses: ./.github/actions/setup-go-for-project
       - name: Run tests with coverage
         shell: bash
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          # Dynamically build coverage package list, excluding cmd/* and testutils
+          COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
+          go test -race -coverprofile=coverage.out -covermode=atomic -coverpkg="$COVERPKGS" ./...
       - name: Coverage report
         shell: bash
         run: |

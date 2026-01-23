@@ -6,9 +6,13 @@ BIN_DIR ?= bin
 unit-test:
 	go test -v -cover -race ./...
 
+# Packages to exclude from coverage (entry points, test utilities)
+COVER_EXCLUDE := /cmd/|/testutils
+
 .PHONY: coverage-test
 coverage-test:
-	go test -race -coverprofile=coverage.out -covermode=atomic ./...
+	@COVERPKGS=$$(go list ./... | grep -vE '$(COVER_EXCLUDE)' | tr '\n' ',' | sed 's/,$$//'); \
+	go test -race -coverprofile=coverage.out -covermode=atomic -coverpkg="$$COVERPKGS" ./...
 	@echo ""
 	@echo "Coverage by function:"
 	@go tool cover -func=coverage.out | tail -20

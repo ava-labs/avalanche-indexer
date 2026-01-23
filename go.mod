@@ -64,6 +64,7 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
