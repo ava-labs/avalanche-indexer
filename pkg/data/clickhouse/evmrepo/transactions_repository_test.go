@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,18 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 
 	// Create a test transaction
 	tx := createTestTransaction()
+
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
+	blockHashBytes, _ := utils.HexToBytes32(tx.BlockHash)
+	hashBytes, _ := utils.HexToBytes32(tx.Hash)
+	fromBytes, _ := utils.HexToBytes20(tx.From)
+	var toBytes interface{}
+	if tx.To == nil || *tx.To == "" {
+		toBytes = nil
+	} else {
+		toBytesVal, _ := utils.HexToBytes20(*tx.To)
+		toBytes = string(toBytesVal[:])
+	}
 
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
@@ -39,11 +52,11 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
-			tx.BlockHash,
+			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
-			tx.Hash,
-			tx.From,
-			tx.To,
+			string(hashBytes[:]), // string: 32-byte binary string
+			string(fromBytes[:]), // string: 20-byte binary string
+			toBytes,              // string or nil: 20-byte binary string
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
@@ -73,6 +86,18 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	tx := createTestTransaction()
 	execErr := errors.New("exec failed")
 
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
+	blockHashBytes, _ := utils.HexToBytes32(tx.BlockHash)
+	hashBytes, _ := utils.HexToBytes32(tx.Hash)
+	fromBytes, _ := utils.HexToBytes20(tx.From)
+	var toBytes interface{}
+	if tx.To == nil || *tx.To == "" {
+		toBytes = nil
+	} else {
+		toBytesVal, _ := utils.HexToBytes20(*tx.To)
+		toBytes = string(toBytesVal[:])
+	}
+
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -87,11 +112,11 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
-			tx.BlockHash,
+			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
-			tx.Hash,
-			tx.From,
-			tx.To,
+			string(hashBytes[:]), // string: 32-byte binary string
+			string(fromBytes[:]), // string: 20-byte binary string
+			toBytes,              // string or nil: 20-byte binary string
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
@@ -124,6 +149,13 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	tx := createTestTransaction()
 	tx.To = nil
 
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
+	blockHashBytes, _ := utils.HexToBytes32(tx.BlockHash)
+	hashBytes, _ := utils.HexToBytes32(tx.Hash)
+	fromBytes, _ := utils.HexToBytes20(tx.From)
+	// To is nil, so toBytes should be nil
+	var toBytes interface{} = nil
+
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -140,11 +172,11 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
-			tx.BlockHash,
+			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
-			tx.Hash,
-			tx.From,
-			mock.Anything, // To can be nil or *string
+			string(hashBytes[:]), // string: 32-byte binary string
+			string(fromBytes[:]), // string: 20-byte binary string
+			toBytes,              // nil for contract creation
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
