@@ -44,15 +44,20 @@ func (tc TopicConfig) Validate() error {
 
 // TopicMetadata checks if a Kafka topic exists and returns its metadata if found.
 //
+// This function uses ListTopics + GetMetadata to avoid triggering auto-creation.
+// When auto.create.topics.enable=false, GetMetadata alone would fail for non-existent topics.
+//
 // Returns:
 //   - metadata: Topic metadata if the topic exists, nil if it doesn't exist
 //   - error: Non-nil if there was an error checking topic existence (network, permission, etc.)
 func TopicMetadata(admin *kafka.AdminClient, topicName string) (*kafka.TopicMetadata, error) {
-	metadata, err := admin.GetMetadata(&topicName, false, int(metadataTimeout.Milliseconds()))
+	// First, list all topics to check existence without triggering auto-creation
+	metadata, err := admin.GetMetadata(nil, false, int(metadataTimeout.Milliseconds()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata for topic %q: %w", topicName, err)
+		return nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
 
+	// Check if topic exists in the list
 	topicMetadata, exists := metadata.Topics[topicName]
 	if !exists || topicMetadata.Error.Code() == kafka.ErrUnknownTopicOrPart {
 		// Topic doesn't exist - this is not an error condition
@@ -134,8 +139,9 @@ func CreateTopic(
 //   - Returns wrapped error for validation failures or Kafka admin API errors
 //
 // Important:
-//   - Set auto.create.topics.enable=false in Kafka broker configuration to prevent
-//     automatic topic creation with default settings during metadata operations.
+//   - TopicMetadata uses GetMetadata(nil, ...) to list all topics, avoiding auto-creation.
+//   - This allows auto.create.topics.enable=true for internal topics (__consumer_offsets)
+//     while preventing accidental auto-creation of user topics with default settings.
 //   - Decreasing partitions requires manual intervention (delete and recreate topic).
 //   - Changing replication factor requires manual partition reassignment.
 func EnsureTopic(

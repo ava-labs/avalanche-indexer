@@ -121,6 +121,7 @@ func NewConsumer(
 // On shutdown, waits up to 30s for in-flight messages to complete processing.
 // Returns an error if subscription fails or if consumer/producer close fails.
 func (c *Consumer) Start(ctx context.Context) error {
+	c.log.Infow("starting consumer for topic", "topic", c.cfg.Topic)
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -136,10 +137,13 @@ func (c *Consumer) Start(ctx context.Context) error {
 		close(c.logsDone)
 	}
 
+	c.log.Infow("subscribing to topic", "topic", c.cfg.Topic)
+
 	if err := c.consumer.SubscribeTopics([]string{c.cfg.Topic}, c.getRebalanceCallback(ctxWithCancel)); err != nil {
 		return fmt.Errorf("failed to subscribe to topics: %w", err)
 	}
 
+	c.log.Info("consumer subscribed to topic, starting to poll for messages...")
 	run := true
 	for run {
 		select {
@@ -184,6 +188,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 		}
 	}
 
+	c.log.Info("consumer shutting down...")
 	err := c.close()
 	if err != nil {
 		c.log.Errorw("failed to close consumer", "error", err)

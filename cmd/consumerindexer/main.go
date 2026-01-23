@@ -17,6 +17,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
 
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -428,13 +429,13 @@ func run(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create blocks repository: %w", err)
 	}
-	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
+	sugar.Infow("Blocks table ready", "tableName", rawBlocksTableName)
 
 	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create transactions repository: %w", err)
 	}
-	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
+	sugar.Infow("Transactions table ready", "tableName", rawTransactionsTableName)
 
 	// Create CorethProcessor with ClickHouse persistence and metrics
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
@@ -495,45 +496,43 @@ func run(c *cli.Context) error {
 		"concurrency", concurrency,
 	)
 
-	// Run consumer and metrics server error handling concurrently
-	errCh := make(chan error, 2)
+	// Run consumer and metrics server error handling concurrently using errgroup
+	g, gctx := errgroup.WithContext(ctx)
 
-	go func() {
-		// Consumer.Start blocks until shutdown
-		if err := consumer.Start(ctx); err != nil {
-			errCh <- fmt.Errorf("consumer error: %w", err)
-			return
+	// Consumer goroutine - blocks until shutdown or error
+	g.Go(func() error {
+		if err := consumer.Start(gctx); err != nil {
+			return fmt.Errorf("consumer error: %w", err)
 		}
-		errCh <- nil
-	}()
+		return nil
+	})
 
-	go func() {
+	// Metrics server error monitoring goroutine
+	g.Go(func() error {
 		select {
-		case <-ctx.Done():
-			// Signal completion to avoid blocking on errCh read
-			errCh <- nil
+		case <-gctx.Done():
+			return gctx.Err()
 		case err := <-metricsErrCh:
 			if err != nil {
-				errCh <- fmt.Errorf("metrics server error: %w", err)
-			} else {
-				errCh <- nil
+				return fmt.Errorf("metrics server error: %w", err)
 			}
+			return nil
 		}
-	}()
+	})
 
-	// Wait for first error or completion
-	firstErr := <-errCh
+	// Wait for first error or completion from any goroutine
+	err = g.Wait()
 
 	// Gracefully shutdown metrics server
 	sugar.Info("shutting down metrics server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-		sugar.Warnw("metrics server shutdown error", "error", err)
+	if shutdownErr := metricsServer.Shutdown(shutdownCtx); shutdownErr != nil {
+		sugar.Warnw("metrics server shutdown error", "error", shutdownErr)
 	}
 
 	sugar.Info("shutdown complete")
-	return firstErr
+	return err
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags
