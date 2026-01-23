@@ -256,7 +256,7 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 						*e.TopicPartition.Topic, e.TopicPartition.Partition, e.TopicPartition.Offset)
 				}
 			case *kafka.Stats:
-				q.log.Infow("kafka stats event received", "stats", e.String())
+				q.log.Debugw("kafka stats event received", "stats", e.String())
 			case kafka.Error:
 				if e.IsFatal() || e.Code() == kafka.ErrAllBrokersDown {
 					err := fmt.Errorf("fatal err or ErrAllBrokersDown: %#x, %w", e.Code(), e)
