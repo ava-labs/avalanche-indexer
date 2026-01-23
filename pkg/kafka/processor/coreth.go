@@ -226,6 +226,7 @@ func CorethTransactionToTransactionRow(
 		Input:            tx.Input,
 		Type:             tx.Type,
 		TransactionIndex: txIndex,
+		Success:          0, // TODO: Extract from transaction receipt when available in CorethBlock
 	}
 
 	// Handle nullable To field

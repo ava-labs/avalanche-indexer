@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
 // Blocks provides methods to write blocks to ClickHouse
@@ -37,10 +38,10 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 			blockchain_id String,
 			evm_chain_id UInt256,
 			block_number UInt64,
-			hash String,
-			parent_hash String,
+			hash FixedString(32),
+			parent_hash FixedString(32),
 			block_time DateTime64(3, 'UTC'),
-			miner String,
+			miner FixedString(20),
 			difficulty UInt256,
 			total_difficulty UInt256,
 			size UInt64,
@@ -48,20 +49,20 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 			gas_used UInt64,
 			base_fee_per_gas UInt256,
 			block_gas_cost UInt256,
-			state_root String,
-			transactions_root String,
-			receipts_root String,
+			state_root FixedString(32),
+			transactions_root FixedString(32),
+			receipts_root FixedString(32),
 			extra_data String,
 			block_extra_data String,
-			ext_data_hash String,
+			ext_data_hash FixedString(32),
 			ext_data_gas_used UInt32,
-			mix_hash String,
-			nonce Nullable(String),
-			sha3_uncles String,
-			uncles Array(String),
+			mix_hash FixedString(32),
+			nonce Nullable(FixedString(8)),
+			sha3_uncles FixedString(32),
+			uncles Array(FixedString(32)),
 			blob_gas_used UInt64,
 			excess_blob_gas UInt64,
-			parent_beacon_block_root Nullable(String),
+			parent_beacon_block_root Nullable(FixedString(32)),
 			min_delay_excess UInt64
 		)
 		ENGINE = MergeTree
@@ -87,20 +88,76 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
-	// For nullable nonce - convert empty string to nil
-	var nonceStr interface{}
-	if block.Nonce == "" {
-		nonceStr = nil
-	} else {
-		nonceStr = block.Nonce
+	// Convert hex strings to bytes for FixedString fields
+	hashBytes, err := utils.HexToBytes32(block.Hash)
+	if err != nil {
+		return fmt.Errorf("failed to convert hash to bytes: %w", err)
+	}
+	parentHashBytes, err := utils.HexToBytes32(block.ParentHash)
+	if err != nil {
+		return fmt.Errorf("failed to convert parent_hash to bytes: %w", err)
+	}
+	minerBytes, err := utils.HexToBytes20(block.Miner)
+	if err != nil {
+		return fmt.Errorf("failed to convert miner to bytes: %w", err)
+	}
+	stateRootBytes, err := utils.HexToBytes32(block.StateRoot)
+	if err != nil {
+		return fmt.Errorf("failed to convert state_root to bytes: %w", err)
+	}
+	transactionsRootBytes, err := utils.HexToBytes32(block.TransactionsRoot)
+	if err != nil {
+		return fmt.Errorf("failed to convert transactions_root to bytes: %w", err)
+	}
+	receiptsRootBytes, err := utils.HexToBytes32(block.ReceiptsRoot)
+	if err != nil {
+		return fmt.Errorf("failed to convert receipts_root to bytes: %w", err)
+	}
+	extDataHashBytes, err := utils.HexToBytes32(block.ExtDataHash)
+	if err != nil {
+		return fmt.Errorf("failed to convert ext_data_hash to bytes: %w", err)
+	}
+	mixHashBytes, err := utils.HexToBytes32(block.MixHash)
+	if err != nil {
+		return fmt.Errorf("failed to convert mix_hash to bytes: %w", err)
+	}
+	sha3UnclesBytes, err := utils.HexToBytes32(block.Sha3Uncles)
+	if err != nil {
+		return fmt.Errorf("failed to convert sha3_uncles to bytes: %w", err)
 	}
 
-	// For nullable parent_beacon_block_root - convert empty string to nil
-	var parentBeaconBlockRootStr interface{}
-	if block.ParentBeaconBlockRoot == "" {
-		parentBeaconBlockRootStr = nil
+	// Convert uncles array
+	unclesBytes := make([][32]byte, len(block.Uncles))
+	for i, uncle := range block.Uncles {
+		uncleBytes, err := utils.HexToBytes32(uncle)
+		if err != nil {
+			return fmt.Errorf("failed to convert uncle %d to bytes: %w", i, err)
+		}
+		unclesBytes[i] = uncleBytes
+	}
+
+	// For nullable nonce - convert empty string to nil, otherwise convert to bytes then string
+	var nonceBytes interface{}
+	if block.Nonce == "" {
+		nonceBytes = nil
 	} else {
-		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
+		nonce, err := utils.HexToBytes8(block.Nonce)
+		if err != nil {
+			return fmt.Errorf("failed to convert nonce to bytes: %w", err)
+		}
+		nonceBytes = string(nonce[:])
+	}
+
+	// For nullable parent_beacon_block_root - convert empty string to nil, otherwise convert to bytes then string
+	var parentBeaconBlockRootBytes interface{}
+	if block.ParentBeaconBlockRoot == "" {
+		parentBeaconBlockRootBytes = nil
+	} else {
+		beaconRoot, err := utils.HexToBytes32(block.ParentBeaconBlockRoot)
+		if err != nil {
+			return fmt.Errorf("failed to convert parent_beacon_block_root to bytes: %w", err)
+		}
+		parentBeaconBlockRootBytes = string(beaconRoot[:])
 	}
 
 	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
@@ -142,14 +199,21 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		blockGasCostStr = block.BlockGasCost.String()
 	}
 
-	err := r.client.Conn().Exec(ctx, query,
+	// Convert byte arrays to strings for ClickHouse FixedString columns
+	// ClickHouse FixedString expects strings of exact length, not byte slices
+	unclesStrings := make([]string, len(unclesBytes))
+	for i, uncle := range unclesBytes {
+		unclesStrings[i] = string(uncle[:])
+	}
+
+	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
 		evmChainIDStr,
 		blockNumber,
-		block.Hash,
-		block.ParentHash,
+		string(hashBytes[:]),
+		string(parentHashBytes[:]),
 		block.BlockTime,
-		block.Miner,
+		string(minerBytes[:]),
 		difficultyStr,
 		totalDifficultyStr,
 		block.Size,
@@ -157,20 +221,20 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		block.GasUsed,
 		baseFeeStr,
 		blockGasCostStr,
-		block.StateRoot,
-		block.TransactionsRoot,
-		block.ReceiptsRoot,
+		string(stateRootBytes[:]),
+		string(transactionsRootBytes[:]),
+		string(receiptsRootBytes[:]),
 		block.ExtraData,
 		block.BlockExtraData,
-		block.ExtDataHash,
+		string(extDataHashBytes[:]),
 		block.ExtDataGasUsed,
-		block.MixHash,
-		nonceStr,
-		block.Sha3Uncles,
-		block.Uncles,
+		string(mixHashBytes[:]),
+		nonceBytes,
+		string(sha3UnclesBytes[:]),
+		unclesStrings,
 		block.BlobGasUsed,
 		block.ExcessBlobGas,
-		parentBeaconBlockRootStr,
+		parentBeaconBlockRootBytes,
 		block.MinDelayExcess,
 	)
 	if err != nil {

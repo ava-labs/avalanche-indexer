@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
 // Transactions provides methods to write transactions to ClickHouse
@@ -37,11 +38,11 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 			blockchain_id String,
 			evm_chain_id UInt256,
 			block_number UInt64,
-			block_hash String,
+			block_hash FixedString(32),
 			block_time DateTime64(3, 'UTC'),
-			hash String,
-			from_address String,
-			to_address Nullable(String),
+			hash FixedString(32),
+			from_address FixedString(20),
+			to_address Nullable(FixedString(20)),
 			nonce UInt64,
 			value UInt256,
 			gas UInt64,
@@ -50,7 +51,8 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 			max_priority_fee Nullable(UInt256),
 			input String,
 			type UInt8,
-			transaction_index UInt64
+			transaction_index UInt64,
+			success UInt8
 		)
 		ENGINE = MergeTree
 		ORDER BY (blockchain_id, block_time, hash)
@@ -68,8 +70,8 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		INSERT INTO %s (
 			blockchain_id, evm_chain_id, block_number, block_hash, block_time, hash,
 			from_address, to_address, nonce, value, gas, gas_price,
-			max_fee_per_gas, max_priority_fee, input, type, transaction_index
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			max_fee_per_gas, max_priority_fee, input, type, transaction_index, success
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
 	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
@@ -84,6 +86,32 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	evmChainIDStr := "0"
 	if tx.EVMChainID != nil {
 		evmChainIDStr = tx.EVMChainID.String()
+	}
+
+	// Convert hex strings to bytes for FixedString fields
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	if err != nil {
+		return fmt.Errorf("failed to convert block_hash to bytes: %w", err)
+	}
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	if err != nil {
+		return fmt.Errorf("failed to convert hash to bytes: %w", err)
+	}
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	if err != nil {
+		return fmt.Errorf("failed to convert from_address to bytes: %w", err)
+	}
+
+	// For nullable to_address - convert empty string to nil, otherwise convert to bytes then string
+	var toBytes interface{}
+	if tx.To == nil || *tx.To == "" {
+		toBytes = nil
+	} else {
+		to, err := utils.HexToBytes20(*tx.To)
+		if err != nil {
+			return fmt.Errorf("failed to convert to_address to bytes: %w", err)
+		}
+		toBytes = string(to[:])
 	}
 
 	// Convert *big.Int to string for ClickHouse UInt256 fields
@@ -109,15 +137,15 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		maxPriorityFeeStr = nil
 	}
 
-	err := r.client.Conn().Exec(ctx, query,
+	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
 		evmChainIDStr,
 		tx.BlockNumber,
-		tx.BlockHash,
+		string(blockHashBytes[:]),
 		tx.BlockTime,
-		tx.Hash,
-		tx.From,
-		tx.To,
+		string(hashBytes[:]),
+		string(fromBytes[:]),
+		toBytes,
 		tx.Nonce,
 		valueStr,
 		tx.Gas,
@@ -127,6 +155,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		tx.Input,
 		tx.Type,
 		tx.TransactionIndex,
+		tx.Success,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write transaction: %w", err)
