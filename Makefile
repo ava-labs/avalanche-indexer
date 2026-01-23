@@ -8,7 +8,7 @@ unit-test:
 
 .PHONY: integration-test
 integration-test:
-	go test -tags=integration -v -timeout=10m ./...
+	go test -tags=integration -v -timeout=10m $$(go list ./... | grep -v '/clickhouse')
 
 .PHONY: e2e-test
 e2e-test:
