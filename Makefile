@@ -6,6 +6,15 @@ BIN_DIR ?= bin
 unit-test:
 	go test -v -cover -race ./...
 
+.PHONY: coverage-test
+coverage-test:
+	go test -race -coverprofile=coverage.out -covermode=atomic ./...
+	@echo ""
+	@echo "Coverage by function:"
+	@go tool cover -func=coverage.out | tail -20
+	@echo ""
+	@go tool cover -func=coverage.out | grep total
+
 .PHONY: e2e-test
 e2e-test:
 	go test -tags=e2e ./test/e2e -v

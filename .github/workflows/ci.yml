@@ -23,9 +23,37 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-go-for-project
-      - name: test-unit
+      - name: Run tests with coverage
         shell: bash
-        run: make unit-test
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Coverage report
+        shell: bash
+        run: |
+          # Write coverage report to job summary
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Coverage by function (click to expand)</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Extract and display total coverage
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          echo "**Total Coverage: ${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
+
+          # Check coverage threshold (set to 50% and warn to start, adjust higher and fail CI once testing is more mature)
+          THRESHOLD=50
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "::warning::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            echo "Coverage is below ${THRESHOLD}% threshold" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Coverage meets ${THRESHOLD}% threshold" >> $GITHUB_STEP_SUMMARY
+          fi
 
   E2E:
     runs-on: ubuntu-latest
