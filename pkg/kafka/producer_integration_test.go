@@ -280,7 +280,7 @@ func TestProducer_NewProducer(t *testing.T) {
 				t.Fatal("Monitor exited but no error was sent")
 			}
 		case <-time.After(100 * time.Millisecond):
-			require.True(t, true, "eventsDone  should be open after producer creation, indicating that the monitor goroutine is running")
+			require.True(t, true, "eventsDone should be open after producer creation, indicating that the monitor goroutine is running")
 		}
 
 		producer.Close(flushTimeout)
