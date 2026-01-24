@@ -151,12 +151,12 @@ func main() {
 						EnvVars:  []string{"KAFKA_TOPIC"},
 						Required: true,
 					},
-					&cli.StringFlag{
+					&cli.BoolFlag{
 						Name:    "kafka-enable-logs",
 						Aliases: []string{"l"},
 						Usage:   "Enable Kafka logs",
 						EnvVars: []string{"KAFKA_ENABLE_LOGS"},
-						Value:   "false",
+						Value:   false,
 					},
 					&cli.StringFlag{
 						Name:    "kafka-client-id",
