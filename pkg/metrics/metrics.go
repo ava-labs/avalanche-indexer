@@ -307,7 +307,7 @@ func (m *Metrics) RecordReceiptFetch(err error, durationSeconds float64, logCoun
 
 // AddLogsProcessed records logs that have been processed and persisted.
 func (m *Metrics) AddLogsProcessed(count int) {
-	if m == nil {
+	if m == nil || count <= 0 {
 		return
 	}
 	m.logsProcessed.Add(float64(count))

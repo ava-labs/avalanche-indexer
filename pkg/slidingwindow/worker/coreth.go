@@ -169,7 +169,24 @@ func (cw *CorethWorker) tryFetchReceipt(
 	// ctxTimeout used to set timeouts separate from global context, rpc calls are prone to infinitely hang
 	ctxTimeout, cancel := context.WithTimeout(ctx, cw.receiptTimeout)
 	defer cancel()
+
+	start := time.Now()
+	if cw.metrics != nil {
+		cw.metrics.IncReceiptFetchInFlight()
+		defer cw.metrics.DecReceiptFetchInFlight()
+	}
+
 	r, err := cw.client.TransactionReceipt(ctxTimeout, txHash)
+
+	// Record metrics for this receipt fetch
+	logCount := 0
+	if r != nil {
+		logCount = len(r.Logs)
+	}
+	if cw.metrics != nil {
+		cw.metrics.RecordReceiptFetch(err, time.Since(start).Seconds(), logCount)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("fetch receipt failed %s: %w", tx, err)
 	}
