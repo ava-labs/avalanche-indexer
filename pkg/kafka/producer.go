@@ -206,7 +206,7 @@ func (q *Producer) produceWithRetry(
 
 		switch kafkaErr.Code() {
 		case kafka.ErrQueueFull:
-			q.log.Warnf("producer queue full, retrying in %s", queueFullErrorRetryDelay)
+			q.log.Warnf("producer queue full, retrying in %v", queueFullErrorRetryDelay)
 			time.Sleep(queueFullErrorRetryDelay)
 			continue
 		case kafka.ErrBrokerNotAvailable:
