@@ -16,6 +16,18 @@ const (
 	maxBlockBufferSize = 255
 )
 
+// validateBlockBufferSize validates that the block buffer size is within uint8 range (0-255)
+// and returns the validated uint8 value or an error
+func validateBlockBufferSize(size int) (uint8, error) {
+	if size < minBlockBufferSize || size > maxBlockBufferSize {
+		return 0, fmt.Errorf(
+			"clickhouse-block-buffer-size must be between %d and %d, got %d",
+			minBlockBufferSize, maxBlockBufferSize, size,
+		)
+	}
+	return uint8(size), nil
+}
+
 // Config holds all configuration for the consumerindexer application
 type Config struct {
 	// Application settings
@@ -115,11 +127,9 @@ func buildClickHouseConfig(c *cli.Context) (clickhouse.Config, error) {
 
 	// Validate and convert block buffer size to uint8 range
 	blockBufferSize := c.Int("clickhouse-block-buffer-size")
-	if blockBufferSize < minBlockBufferSize || blockBufferSize > maxBlockBufferSize {
-		return clickhouse.Config{}, fmt.Errorf(
-			"clickhouse-block-buffer-size must be between %d and %d, got %d",
-			minBlockBufferSize, maxBlockBufferSize, blockBufferSize,
-		)
+	validatedSize, err := validateBlockBufferSize(blockBufferSize)
+	if err != nil {
+		return clickhouse.Config{}, err
 	}
 
 	return clickhouse.Config{
@@ -134,7 +144,7 @@ func buildClickHouseConfig(c *cli.Context) (clickhouse.Config, error) {
 		MaxOpenConns:         c.Int("clickhouse-max-open-conns"),
 		MaxIdleConns:         c.Int("clickhouse-max-idle-conns"),
 		ConnMaxLifetime:      c.Int("clickhouse-conn-max-lifetime"),
-		BlockBufferSize:      uint8(blockBufferSize),
+		BlockBufferSize:      validatedSize,
 		MaxBlockSize:         c.Int("clickhouse-max-block-size"),
 		MaxCompressionBuffer: c.Int("clickhouse-max-compression-buffer"),
 		ClientName:           c.String("clickhouse-client-name"),

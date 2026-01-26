@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/urfave/cli/v2"
+
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Config holds all configuration for the blockfetcher application
