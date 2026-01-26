@@ -14,11 +14,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/coreth/rpc"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	dto "github.com/prometheus/client_model/go"
 )
 
 type rpcRequest struct {
@@ -350,7 +350,7 @@ func TestFetchBlockReceipts_MetricsError(t *testing.T) {
 	}
 	ctx := t.Context()
 	err = w.FetchBlockReceipts(ctx, txs, 123)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrReceiptFetchFailed)
 
 	require.Equal(t, 0.0, getGaugeValue(t, reg, "indexer_receipts_fetches_in_flight", nil))
 	require.Equal(t, 1.0, getCounterValue(t, reg, "indexer_receipts_fetched_total", map[string]string{"status": "error"}))
@@ -395,8 +395,7 @@ func TestFetchBlockReceipts_CountMismatch(t *testing.T) {
 	err = w.FetchBlockReceipts(ctx, txs, 1)
 
 	// Should fail with count mismatch error
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "receipt count mismatch")
+	require.ErrorIs(t, err, ErrReceiptCountMismatch)
 	require.Contains(t, err.Error(), "got 1 receipts")
 	require.Contains(t, err.Error(), "expected 2 transactions")
 
