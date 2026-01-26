@@ -112,7 +112,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil, 10, 10*time.Second)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
 	require.NoError(t, err)
 
 	state, err := slidingwindow.NewState(seed.Lowest, latest)
@@ -266,7 +266,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil, 10, 10*time.Second)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
 	require.NoError(t, err)
 
 	state, err := slidingwindow.NewState(start, end)

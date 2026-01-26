@@ -24,7 +24,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const flushTimeoutOnClose = 15 * time.Second
@@ -81,13 +81,6 @@ func main() {
 						Usage:    "The number of concurrent workers to use",
 						EnvVars:  []string{"CONCURRENCY"},
 						Required: true,
-					},
-					&cli.Int64Flag{
-						Name:    "receipt-concurrency-limit",
-						Aliases: []string{"rc"},
-						Usage:   "The number of concurrent receipt fetches to use per block",
-						EnvVars: []string{"RECEIPT_CONCURRENCY_LIMIT"},
-						Value:   10,
 					},
 					&cli.DurationFlag{
 						Name:    "receipt-timeout",
@@ -165,18 +158,30 @@ func main() {
 						EnvVars:  []string{"KAFKA_TOPIC"},
 						Required: true,
 					},
-					&cli.StringFlag{
+					&cli.BoolFlag{
 						Name:    "kafka-enable-logs",
 						Aliases: []string{"l"},
 						Usage:   "Enable Kafka logs",
 						EnvVars: []string{"KAFKA_ENABLE_LOGS"},
-						Value:   "false",
+						Value:   false,
 					},
 					&cli.StringFlag{
 						Name:    "kafka-client-id",
 						Usage:   "The Kafka client ID to use",
 						EnvVars: []string{"KAFKA_CLIENT_ID"},
 						Value:   "blockfetcher",
+					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-num-partitions",
+						Usage:   "The number of partitions to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_NUM_PARTITIONS"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-replication-factor",
+						Usage:   "The replication factor to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_REPLICATION_FACTOR"},
+						Value:   1,
 					},
 					&cli.StringFlag{
 						Name:    "checkpoint-table-name",
@@ -226,7 +231,6 @@ func run(c *cli.Context) error {
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
 	concurrency := c.Int64("concurrency")
-	receiptConcurrencyLimit := c.Int64("receipt-concurrency-limit")
 	receiptTimeout := c.Duration("receipt-timeout")
 	backfill := c.Int64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
@@ -241,6 +245,8 @@ func run(c *cli.Context) error {
 	kafkaTopic := c.String("kafka-topic")
 	kafkaEnableLogs := c.Bool("kafka-enable-logs")
 	kafkaClientID := c.String("kafka-client-id")
+	kafkaTopicNumPartitions := c.Int("kafka-topic-num-partitions")
+	kafkaTopicReplicationFactor := c.Int("kafka-topic-replication-factor")
 	checkpointTableName := c.String("checkpoint-table-name")
 	checkpointInterval := c.Duration("checkpoint-interval")
 	gapWatchdogInterval := c.Duration("gap-watchdog-interval")
@@ -250,6 +256,7 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
+
 	sugar.Infow("config",
 		"verbose", verbose,
 		"evmChainID", evmChainID,
@@ -258,7 +265,6 @@ func run(c *cli.Context) error {
 		"start", start,
 		"end", end,
 		"concurrency", concurrency,
-		"receiptConcurrencyLimit", receiptConcurrencyLimit,
 		"receiptTimeout", receiptTimeout,
 		"backfill", backfill,
 		"blocksCap", blocksCap,
@@ -318,8 +324,24 @@ func run(c *cli.Context) error {
 	}
 	defer client.Close()
 
+	// Create Kafka admin client to ensure topic exists
+	kafkaAdminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{"bootstrap.servers": kafkaBrokers})
+	if err != nil {
+		return fmt.Errorf("failed to create kafka admin client: %w", err)
+	}
+	defer kafkaAdminClient.Close()
+
+	err = kafka.EnsureTopic(ctx, kafkaAdminClient, kafka.TopicConfig{
+		Name:              kafkaTopic,
+		NumPartitions:     kafkaTopicNumPartitions,
+		ReplicationFactor: kafkaTopicReplicationFactor,
+	}, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+	}
+
 	// Kafka producer configuration
-	kafkaConfig := &confluentKafka.ConfigMap{
+	kafkaConfig := &cKafka.ConfigMap{
 		// Required
 		"bootstrap.servers": kafkaBrokers,
 		"client.id":         kafkaClientID,
@@ -345,7 +367,7 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, sugar, m, receiptConcurrencyLimit, receiptTimeout)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, sugar, m, receiptTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}

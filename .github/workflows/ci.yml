@@ -27,6 +27,18 @@ jobs:
         shell: bash
         run: make unit-test
 
+  Integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-go-for-project
+      - name: Run integration tests
+        shell: bash
+        run: make integration-test
+
   E2E:
     runs-on: ubuntu-latest
     timeout-minutes: 15

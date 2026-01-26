@@ -6,6 +6,10 @@ BIN_DIR ?= bin
 unit-test:
 	go test -v -cover -race ./...
 
+.PHONY: integration-test
+integration-test:
+	go test -tags=integration -v -timeout=10m $$(go list ./... | grep -v '/clickhouse')
+
 .PHONY: e2e-test
 e2e-test:
 	go test -tags=e2e ./test/e2e -v

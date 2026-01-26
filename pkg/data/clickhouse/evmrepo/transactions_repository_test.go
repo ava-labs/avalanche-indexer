@@ -7,12 +7,11 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-const testBlockHash = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 
 func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	t.Parallel()
@@ -21,6 +20,22 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 
 	// Create a test transaction
 	tx := createTestTransaction()
+
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	require.NoError(t, err, "blockHash conversion should succeed")
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	require.NoError(t, err, "fromAddress conversion should succeed")
+	var toBytes interface{}
+	if tx.To == nil || *tx.To == "" {
+		toBytes = nil
+	} else {
+		toBytesVal, err := utils.HexToBytes20(*tx.To)
+		require.NoError(t, err, "toAddress conversion should succeed")
+		toBytes = string(toBytesVal[:])
+	}
 
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
@@ -39,11 +54,11 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
-			tx.BlockHash,
+			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
-			tx.Hash,
-			tx.From,
-			tx.To,
+			string(hashBytes[:]), // string: 32-byte binary string
+			string(fromBytes[:]), // string: 20-byte binary string
+			toBytes,              // string or nil: 20-byte binary string
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
@@ -53,6 +68,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
+			tx.Success, // UInt8: success status
 		).
 		Return(nil).
 		Once()
@@ -72,6 +88,22 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	tx := createTestTransaction()
 	execErr := errors.New("exec failed")
 
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	require.NoError(t, err, "blockHash conversion should succeed")
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	require.NoError(t, err, "fromAddress conversion should succeed")
+	var toBytes interface{}
+	if tx.To == nil || *tx.To == "" {
+		toBytes = nil
+	} else {
+		toBytesVal, err := utils.HexToBytes20(*tx.To)
+		require.NoError(t, err, "toAddress conversion should succeed")
+		toBytes = string(toBytesVal[:])
+	}
+
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -86,11 +118,11 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
-			tx.BlockHash,
+			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
-			tx.Hash,
-			tx.From,
-			tx.To,
+			string(hashBytes[:]), // string: 32-byte binary string
+			string(fromBytes[:]), // string: 20-byte binary string
+			toBytes,              // string or nil: 20-byte binary string
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
@@ -100,6 +132,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
+			tx.Success, // UInt8: success status
 		).
 		Return(execErr).
 		Once()
@@ -122,6 +155,16 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	tx := createTestTransaction()
 	tx.To = nil
 
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteTransaction does)
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	require.NoError(t, err, "blockHash conversion should succeed")
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	require.NoError(t, err, "fromAddress conversion should succeed")
+	// To is nil, so toBytes should be nil
+	var toBytes interface{} = nil
+
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -138,11 +181,11 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
-			tx.BlockHash,
+			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
-			tx.Hash,
-			tx.From,
-			mock.Anything, // To can be nil or *string
+			string(hashBytes[:]), // string: 32-byte binary string
+			string(fromBytes[:]), // string: 20-byte binary string
+			toBytes,              // nil for contract creation
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
@@ -152,6 +195,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
+			tx.Success, // UInt8: success status
 		).
 		Return(nil).
 		Once()
@@ -189,5 +233,6 @@ func createTestTransaction() *TransactionRow {
 		Input:            "0x",
 		Type:             2, // EIP-1559 transaction
 		TransactionIndex: 0,
+		Success:          1, // Default to success for tests
 	}
 }

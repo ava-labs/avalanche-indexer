@@ -17,6 +17,9 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 func main() {
@@ -114,6 +117,36 @@ func main() {
 						Usage:   "Poll interval for Kafka consumer",
 						EnvVars: []string{"KAFKA_POLL_INTERVAL"},
 						Value:   100 * time.Millisecond,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-num-partitions",
+						Usage:   "The number of partitions to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_NUM_PARTITIONS"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-dlq-topic-num-partitions",
+						Usage:   "The number of partitions to use for the Kafka DLQ topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_DLQ_TOPIC_NUM_PARTITIONS"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-topic-replication-factor",
+						Usage:   "The replication factor to use for the Kafka topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_TOPIC_REPLICATION_FACTOR"},
+						Value:   1,
+					},
+					&cli.IntFlag{
+						Name:    "kafka-dlq-topic-replication-factor",
+						Usage:   "The replication factor to use for the Kafka DLQ topic (must be greater than 0)",
+						EnvVars: []string{"KAFKA_DLQ_TOPIC_REPLICATION_FACTOR"},
+						Value:   1,
+					},
+					&cli.BoolFlag{
+						Name:    "publish-to-dlq",
+						Usage:   "Publish failed messages to DLQ",
+						EnvVars: []string{"KAFKA_PUBLISH_TO_DLQ"},
+						Value:   false,
 					},
 					// ClickHouse configuration flags
 					&cli.StringSliceFlag{
@@ -308,6 +341,11 @@ func run(c *cli.Context) error {
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
+	publishToDLQ := c.Bool("publish-to-dlq")
+	kafkaTopicNumPartitions := c.Int("kafka-topic-num-partitions")
+	kafkaTopicReplicationFactor := c.Int("kafka-topic-replication-factor")
+	kafkaDLQTopicNumPartitions := c.Int("kafka-dlq-topic-num-partitions")
+	kafkaDLQTopicReplicationFactor := c.Int("kafka-dlq-topic-replication-factor")
 
 	sugar, err := utils.NewSugaredLogger(verbose)
 	if err != nil {
@@ -346,6 +384,11 @@ func run(c *cli.Context) error {
 		"cloudProvider", cloudProvider,
 		"rawBlocksTableName", rawBlocksTableName,
 		"rawTransactionsTableName", rawTransactionsTableName,
+		"publishToDLQ", publishToDLQ,
+		"kafkaTopicNumPartitions", kafkaTopicNumPartitions,
+		"kafkaTopicReplicationFactor", kafkaTopicReplicationFactor,
+		"kafkaDLQTopicNumPartitions", kafkaDLQTopicNumPartitions,
+		"kafkaDLQTopicReplicationFactor", kafkaDLQTopicReplicationFactor,
 	)
 
 	// Initialize Prometheus metrics with labels for multi-instance filtering
@@ -386,23 +429,49 @@ func run(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create blocks repository: %w", err)
 	}
-	sugar.Info("Blocks table ready", "tableName", rawBlocksTableName)
+	sugar.Infow("Blocks table ready", "tableName", rawBlocksTableName)
 
 	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTransactionsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create transactions repository: %w", err)
 	}
-	sugar.Info("Transactions table ready", "tableName", rawTransactionsTableName)
+	sugar.Infow("Transactions table ready", "tableName", rawTransactionsTableName)
 
 	// Create CorethProcessor with ClickHouse persistence and metrics
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
+
+	adminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{"bootstrap.servers": bootstrapServers})
+	if err != nil {
+		return fmt.Errorf("failed to create kafka admin client: %w", err)
+	}
+	defer adminClient.Close()
+
+	err = kafka.EnsureTopic(ctx, adminClient, kafka.TopicConfig{
+		Name:              topic,
+		NumPartitions:     kafkaTopicNumPartitions,
+		ReplicationFactor: kafkaTopicReplicationFactor,
+	}, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+	}
+
+	if publishToDLQ {
+		err = kafka.EnsureTopic(ctx, adminClient, kafka.TopicConfig{
+			Name:              dlqTopic,
+			NumPartitions:     kafkaDLQTopicNumPartitions,
+			ReplicationFactor: kafkaDLQTopicReplicationFactor,
+		}, sugar)
+		if err != nil {
+			return fmt.Errorf("failed to ensure kafka DLQ topic exists: %w", err)
+		}
+	}
 
 	// Configure consumer
 	consumerCfg := kafka.ConsumerConfig{
 		DLQTopic:                    dlqTopic,
 		Topic:                       topic,
 		Concurrency:                 concurrency,
-		IsDLQConsumer:               false,
+		PublishToDLQ:                publishToDLQ,
 		BootstrapServers:            bootstrapServers,
 		GroupID:                     groupID,
 		AutoOffsetReset:             autoOffsetReset,
@@ -427,45 +496,43 @@ func run(c *cli.Context) error {
 		"concurrency", concurrency,
 	)
 
-	// Run consumer and metrics server error handling concurrently
-	errCh := make(chan error, 2)
+	// Run consumer and metrics server error handling concurrently using errgroup
+	g, gctx := errgroup.WithContext(ctx)
 
-	go func() {
-		// Consumer.Start blocks until shutdown
-		if err := consumer.Start(ctx); err != nil {
-			errCh <- fmt.Errorf("consumer error: %w", err)
-			return
+	// Consumer goroutine - blocks until shutdown or error
+	g.Go(func() error {
+		if err := consumer.Start(gctx); err != nil {
+			return fmt.Errorf("consumer error: %w", err)
 		}
-		errCh <- nil
-	}()
+		return nil
+	})
 
-	go func() {
+	// Metrics server error monitoring goroutine
+	g.Go(func() error {
 		select {
-		case <-ctx.Done():
-			// Signal completion to avoid blocking on errCh read
-			errCh <- nil
+		case <-gctx.Done():
+			return gctx.Err()
 		case err := <-metricsErrCh:
 			if err != nil {
-				errCh <- fmt.Errorf("metrics server error: %w", err)
-			} else {
-				errCh <- nil
+				return fmt.Errorf("metrics server error: %w", err)
 			}
+			return nil
 		}
-	}()
+	})
 
-	// Wait for first error or completion
-	firstErr := <-errCh
+	// Wait for first error or completion from any goroutine
+	err = g.Wait()
 
 	// Gracefully shutdown metrics server
 	sugar.Info("shutting down metrics server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-		sugar.Warnw("metrics server shutdown error", "error", err)
+	if shutdownErr := metricsServer.Shutdown(shutdownCtx); shutdownErr != nil {
+		sugar.Warnw("metrics server shutdown error", "error", shutdownErr)
 	}
 
 	sugar.Info("shutdown complete")
-	return firstErr
+	return err
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags

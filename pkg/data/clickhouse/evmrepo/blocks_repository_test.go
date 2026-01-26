@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+const testBlockHash = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 
 func TestRepository_WriteBlock_Success(t *testing.T) {
 	t.Parallel()
@@ -20,22 +23,52 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	// Create a test block
 	block := createTestBlock()
 
-	// Expect Exec with query and all block fields
-	// Match specific values where we can, use mock.Anything for complex types
-	// For nullable nonce - convert empty string to nil
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteBlock does)
+	hashBytes, err := utils.HexToBytes32(block.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	parentHashBytes, err := utils.HexToBytes32(block.ParentHash)
+	require.NoError(t, err, "parentHash conversion should succeed")
+	minerBytes, err := utils.HexToBytes20(block.Miner)
+	require.NoError(t, err, "miner conversion should succeed")
+	stateRootBytes, err := utils.HexToBytes32(block.StateRoot)
+	require.NoError(t, err, "stateRoot conversion should succeed")
+	transactionsRootBytes, err := utils.HexToBytes32(block.TransactionsRoot)
+	require.NoError(t, err, "transactionsRoot conversion should succeed")
+	receiptsRootBytes, err := utils.HexToBytes32(block.ReceiptsRoot)
+	require.NoError(t, err, "receiptsRoot conversion should succeed")
+	extDataHashBytes, err := utils.HexToBytes32(block.ExtDataHash)
+	require.NoError(t, err, "extDataHash conversion should succeed")
+	mixHashBytes, err := utils.HexToBytes32(block.MixHash)
+	require.NoError(t, err, "mixHash conversion should succeed")
+	sha3UnclesBytes, err := utils.HexToBytes32(block.Sha3Uncles)
+	require.NoError(t, err, "sha3Uncles conversion should succeed")
+
+	// Convert uncles array
+	unclesStrings := make([]string, len(block.Uncles))
+	for i, uncle := range block.Uncles {
+		uncleBytes, err := utils.HexToBytes32(uncle)
+		require.NoError(t, err, "uncle %d conversion should succeed", i)
+		unclesStrings[i] = string(uncleBytes[:])
+	}
+
+	// For nullable nonce - convert empty string to nil, otherwise convert to binary string
 	var nonceStr interface{}
 	if block.Nonce == "" {
 		nonceStr = nil
 	} else {
-		nonceStr = block.Nonce
+		nonceBytes, err := utils.HexToBytes8(block.Nonce)
+		require.NoError(t, err, "nonce conversion should succeed")
+		nonceStr = string(nonceBytes[:])
 	}
 
-	// For nullable parent_beacon_block_root - convert empty string to nil
+	// For nullable parent_beacon_block_root - convert empty string to nil, otherwise convert to binary string
 	var parentBeaconBlockRootStr interface{}
 	if block.ParentBeaconBlockRoot == "" {
 		parentBeaconBlockRootStr = nil
 	} else {
-		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
+		beaconRootBytes, err := utils.HexToBytes32(block.ParentBeaconBlockRoot)
+		require.NoError(t, err, "parentBeaconBlockRoot conversion should succeed")
+		parentBeaconBlockRootStr = string(beaconRootBytes[:])
 	}
 
 	// Expect CreateTableIfNotExists call during initialization
@@ -52,35 +85,35 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			// Verify the query contains INSERT INTO and the table name
 			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
 		}),
-			*block.BlockchainID,            // string: "11111111111111111111111111111111LpoYY"
-			block.EVMChainID.String(),      // string: "43113" (UInt256)
-			block.BlockNumber.Uint64(),     // uint64: 1647
-			block.Hash,                     // string
-			block.ParentHash,               // string
-			block.BlockTime,                // time.Time
-			block.Miner,                    // string
-			block.Difficulty.String(),      // string: "1" (UInt256)
-			block.TotalDifficulty.String(), // string: "1000" (UInt256)
-			block.Size,                     // uint64: 1331
-			block.GasLimit,                 // uint64: 20006296
-			block.GasUsed,                  // uint64: 183061
-			block.BaseFeePerGas.String(),   // string: "470000000000" (UInt256)
-			block.BlockGasCost.String(),    // string: "0" (UInt256)
-			block.StateRoot,                // string
-			block.TransactionsRoot,         // string
-			block.ReceiptsRoot,             // string
-			block.ExtraData,                // string
-			block.BlockExtraData,           // string
-			block.ExtDataHash,              // string
-			block.ExtDataGasUsed,           // uint32
-			block.MixHash,                  // string
-			nonceStr,                       // string or nil
-			block.Sha3Uncles,               // string
-			block.Uncles,                   // []string
-			block.BlobGasUsed,              // uint64
-			block.ExcessBlobGas,            // uint64
-			parentBeaconBlockRootStr,       // string or nil
-			block.MinDelayExcess,           // uint64
+			*block.BlockchainID,              // string: "11111111111111111111111111111111LpoYY"
+			block.EVMChainID.String(),        // string: "43113" (UInt256)
+			block.BlockNumber.Uint64(),       // uint64: 1647
+			string(hashBytes[:]),             // string: 32-byte binary string
+			string(parentHashBytes[:]),       // string: 32-byte binary string
+			block.BlockTime,                  // time.Time
+			string(minerBytes[:]),            // string: 20-byte binary string
+			block.Difficulty.String(),        // string: "1" (UInt256)
+			block.TotalDifficulty.String(),   // string: "1000" (UInt256)
+			block.Size,                       // uint64: 1331
+			block.GasLimit,                   // uint64: 20006296
+			block.GasUsed,                    // uint64: 183061
+			block.BaseFeePerGas.String(),     // string: "470000000000" (UInt256)
+			block.BlockGasCost.String(),      // string: "0" (UInt256)
+			string(stateRootBytes[:]),        // string: 32-byte binary string
+			string(transactionsRootBytes[:]), // string: 32-byte binary string
+			string(receiptsRootBytes[:]),     // string: 32-byte binary string
+			block.ExtraData,                  // string
+			block.BlockExtraData,             // string
+			string(extDataHashBytes[:]),      // string: 32-byte binary string
+			block.ExtDataGasUsed,             // uint32
+			string(mixHashBytes[:]),          // string: 32-byte binary string
+			nonceStr,                         // string or nil
+			string(sha3UnclesBytes[:]),       // string: 32-byte binary string
+			unclesStrings,                    // []string: array of 32-byte binary strings
+			block.BlobGasUsed,                // uint64
+			block.ExcessBlobGas,              // uint64
+			parentBeaconBlockRootStr,         // string or nil
+			block.MinDelayExcess,             // uint64
 		).
 		Return(nil).
 		Once()
@@ -100,20 +133,52 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	block := createTestBlock()
 	execErr := errors.New("exec failed")
 
-	// For nullable nonce - convert empty string to nil
+	// Convert hex strings to binary strings for FixedString fields (matching what WriteBlock does)
+	hashBytes, err := utils.HexToBytes32(block.Hash)
+	require.NoError(t, err, "hash conversion should succeed")
+	parentHashBytes, err := utils.HexToBytes32(block.ParentHash)
+	require.NoError(t, err, "parentHash conversion should succeed")
+	minerBytes, err := utils.HexToBytes20(block.Miner)
+	require.NoError(t, err, "miner conversion should succeed")
+	stateRootBytes, err := utils.HexToBytes32(block.StateRoot)
+	require.NoError(t, err, "stateRoot conversion should succeed")
+	transactionsRootBytes, err := utils.HexToBytes32(block.TransactionsRoot)
+	require.NoError(t, err, "transactionsRoot conversion should succeed")
+	receiptsRootBytes, err := utils.HexToBytes32(block.ReceiptsRoot)
+	require.NoError(t, err, "receiptsRoot conversion should succeed")
+	extDataHashBytes, err := utils.HexToBytes32(block.ExtDataHash)
+	require.NoError(t, err, "extDataHash conversion should succeed")
+	mixHashBytes, err := utils.HexToBytes32(block.MixHash)
+	require.NoError(t, err, "mixHash conversion should succeed")
+	sha3UnclesBytes, err := utils.HexToBytes32(block.Sha3Uncles)
+	require.NoError(t, err, "sha3Uncles conversion should succeed")
+
+	// Convert uncles array
+	unclesStrings := make([]string, len(block.Uncles))
+	for i, uncle := range block.Uncles {
+		uncleBytes, err := utils.HexToBytes32(uncle)
+		require.NoError(t, err, "uncle %d conversion should succeed", i)
+		unclesStrings[i] = string(uncleBytes[:])
+	}
+
+	// For nullable nonce - convert empty string to nil, otherwise convert to binary string
 	var nonceStr interface{}
 	if block.Nonce == "" {
 		nonceStr = nil
 	} else {
-		nonceStr = block.Nonce
+		nonceBytes, err := utils.HexToBytes8(block.Nonce)
+		require.NoError(t, err, "nonce conversion should succeed")
+		nonceStr = string(nonceBytes[:])
 	}
 
-	// For nullable parent_beacon_block_root - convert empty string to nil
+	// For nullable parent_beacon_block_root - convert empty string to nil, otherwise convert to binary string
 	var parentBeaconBlockRootStr interface{}
 	if block.ParentBeaconBlockRoot == "" {
 		parentBeaconBlockRootStr = nil
 	} else {
-		parentBeaconBlockRootStr = block.ParentBeaconBlockRoot
+		beaconRootBytes, err := utils.HexToBytes32(block.ParentBeaconBlockRoot)
+		require.NoError(t, err, "parentBeaconBlockRoot conversion should succeed")
+		parentBeaconBlockRootStr = string(beaconRootBytes[:])
 	}
 
 	// Expect CreateTableIfNotExists call during initialization
@@ -130,10 +195,10 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			*block.BlockchainID,        // string: blockchain ID
 			block.EVMChainID.String(),  // string: evmChainID (UInt256)
 			block.BlockNumber.Uint64(), // uint64: block number
-			block.Hash,
-			block.ParentHash,
+			string(hashBytes[:]),
+			string(parentHashBytes[:]),
 			block.BlockTime,
-			block.Miner,
+			string(minerBytes[:]),
 			block.Difficulty.String(),
 			block.TotalDifficulty.String(),
 			block.Size,
@@ -141,17 +206,17 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			block.GasUsed,
 			block.BaseFeePerGas.String(),
 			block.BlockGasCost.String(),
-			block.StateRoot,
-			block.TransactionsRoot,
-			block.ReceiptsRoot,
+			string(stateRootBytes[:]),
+			string(transactionsRootBytes[:]),
+			string(receiptsRootBytes[:]),
 			block.ExtraData,
 			block.BlockExtraData,
-			block.ExtDataHash,
+			string(extDataHashBytes[:]),
 			block.ExtDataGasUsed,
-			block.MixHash,
+			string(mixHashBytes[:]),
 			nonceStr,
-			block.Sha3Uncles,
-			block.Uncles,
+			string(sha3UnclesBytes[:]),
+			unclesStrings,
 			block.BlobGasUsed,
 			block.ExcessBlobGas,
 			parentBeaconBlockRootStr,

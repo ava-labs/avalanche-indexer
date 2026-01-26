@@ -12,10 +12,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
-	"github.com/ava-labs/libevm/common"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
@@ -23,15 +20,14 @@ import (
 var registerCustomTypesOnce sync.Once
 
 type CorethWorker struct {
-	client                  *evmclient.Client
-	producer                *kafka.Producer
-	topic                   string
-	evmChainID              *big.Int
-	blockchainID            *string
-	log                     *zap.SugaredLogger
-	metrics                 *metrics.Metrics
-	receiptConcurrencyLimit int64         // Maximum number of concurrent receipt fetches per block
-	receiptTimeout          time.Duration // Timeout for fetching a transaction receipt
+	client         *evmclient.Client
+	producer       *kafka.Producer
+	topic          string
+	evmChainID     *big.Int
+	blockchainID   *string
+	log            *zap.SugaredLogger
+	metrics        *metrics.Metrics
+	receiptTimeout time.Duration // Timeout for fetching block receipts
 }
 
 func NewCorethWorker(
@@ -43,7 +39,6 @@ func NewCorethWorker(
 	blockchainID string,
 	log *zap.SugaredLogger,
 	metrics *metrics.Metrics,
-	receiptConcurrencyLimit int64,
 	receiptTimeout time.Duration,
 ) (*CorethWorker, error) {
 	registerCustomTypesOnce.Do(func() {
@@ -56,22 +51,21 @@ func NewCorethWorker(
 	}
 
 	return &CorethWorker{
-		client:                  evmclient.New(c),
-		producer:                producer,
-		topic:                   topic,
-		evmChainID:              new(big.Int).SetUint64(evmChainID),
-		blockchainID:            &blockchainID,
-		log:                     log,
-		metrics:                 metrics,
-		receiptConcurrencyLimit: receiptConcurrencyLimit,
-		receiptTimeout:          receiptTimeout,
+		client:         evmclient.New(c),
+		producer:       producer,
+		topic:          topic,
+		evmChainID:     new(big.Int).SetUint64(evmChainID),
+		blockchainID:   &blockchainID,
+		log:            log,
+		metrics:        metrics,
+		receiptTimeout: receiptTimeout,
 	}, nil
 }
 
 func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 	corethBlock, err := cw.GetBlock(ctx, height)
 	if err != nil {
-		return fmt.Errorf("fetch block %d: %w", height, err)
+		return fmt.Errorf("fetch block failed %d: %w", height, err)
 	}
 
 	bytes, err := corethBlock.Marshal()
@@ -124,68 +118,27 @@ func (cw *CorethWorker) GetBlock(ctx context.Context, height uint64) (*messages.
 		return nil, fmt.Errorf("convert block failed %d: %w", height, err)
 	}
 
-	err = cw.FetchReceipts(ctx, corethBlock.Transactions)
+	err = cw.FetchBlockReceipts(ctx, corethBlock.Transactions, block.Number().Int64())
 	if err != nil {
-		return nil, fmt.Errorf("fetch receipts failed %d: %w", height, err)
+		return nil, err
 	}
 	return corethBlock, nil
 }
 
-// FetchReceipts fetches the receipts for the given transactions
-// and populates the Receipt field of the transactions.
-// It returns an error if any of the receipts fail to fetch.
-func (cw *CorethWorker) FetchReceipts(
-	ctx context.Context,
-	txs []*messages.CorethTransaction,
-) error {
-	concurrencyLimiter := semaphore.NewWeighted(cw.receiptConcurrencyLimit)
-
-	g, gctx := errgroup.WithContext(ctx)
-	for _, tx := range txs {
-		if err := concurrencyLimiter.Acquire(gctx, 1); err != nil {
-			return err
-		}
-		thisTx := tx
-		g.Go(func() error {
-			defer concurrencyLimiter.Release(1)
-			r, err := cw.tryFetchReceipt(gctx, thisTx.Hash)
-			if err != nil {
-				return err
-			}
-			thisTx.Receipt = r
-			return nil
-		})
-	}
-	return g.Wait()
-}
-
-// tryFetchReceipt performs the call to the coreth rpc to fetch
-// the receipt for the given transaction hash.
-func (cw *CorethWorker) tryFetchReceipt(
-	ctx context.Context,
-	tx string,
-) (*messages.CorethTxReceipt, error) {
-	txHash := common.HexToHash(tx)
-	// ctxTimeout used to set timeouts separate from global context, rpc calls are prone to infinitely hang
+// FetchBlockReceipts fetches the receipts for the given transactions and block number.
+func (cw *CorethWorker) FetchBlockReceipts(ctx context.Context, transactions []*messages.CorethTransaction, blockNumber int64) error {
 	ctxTimeout, cancel := context.WithTimeout(ctx, cw.receiptTimeout)
 	defer cancel()
-
-	start := time.Now()
-	if cw.metrics != nil {
-		cw.metrics.IncReceiptFetchInFlight()
-		defer cw.metrics.DecReceiptFetchInFlight()
-	}
-
-	r, err := cw.client.TransactionReceipt(ctxTimeout, txHash)
-	if cw.metrics != nil {
-		logCount := 0
-		if r != nil {
-			logCount = len(r.Logs)
-		}
-		cw.metrics.RecordReceiptFetch(err, time.Since(start).Seconds(), logCount)
-	}
+	bn := rpc.BlockNumber(blockNumber)
+	r, err := cw.client.BlockReceipts(ctxTimeout, rpc.BlockNumberOrHash{
+		BlockNumber: &bn,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("fetch receipt failed %s: %w", tx, err)
+		return fmt.Errorf("fetch block receipts failed for block %d: %w", blockNumber, err)
 	}
-	return messages.CorethTxReceiptFromLibevm(r), nil
+
+	for i, receipt := range r {
+		transactions[i].Receipt = messages.CorethTxReceiptFromLibevm(receipt)
+	}
+	return nil
 }
