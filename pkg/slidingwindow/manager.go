@@ -191,7 +191,12 @@ func (m *Manager) handleNewHeight(ctx context.Context, h uint64) {
 // process is the main worker function for backfill and realtime heights.
 // It acquires semaphores, processes the block height, and releases them.
 // It also signals the backfill ready channel when the window advances.
+// NOTE: this function has a delay before processing the block height that
+// is equal to the failure count of the block height in seconds.
+// It is used as a timeout between queries for the same block height.
 func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
+	count := m.state.GetFailureCount(h)
+	time.Sleep(time.Duration(count) * time.Second)
 	start := time.Now()
 
 	defer func() {
@@ -209,7 +214,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
 			return
 		}
-		m.log.Warnw("failed processing block height", "height", h, "error", err)
+		m.log.Debugw("failed processing block height", "height", h, "error", err)
 		m.handleFailure(h)
 		return
 	}
