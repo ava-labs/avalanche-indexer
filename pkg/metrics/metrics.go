@@ -300,7 +300,7 @@ func (m *Metrics) RecordReceiptFetch(err error, durationSeconds float64, logCoun
 	}
 	m.receiptsFetched.WithLabelValues(status).Inc()
 	m.receiptFetchDuration.Observe(durationSeconds)
-	if err == nil && logCount > 0 {
+	if logCount > 0 {
 		m.logsFetched.Add(float64(logCount))
 	}
 }

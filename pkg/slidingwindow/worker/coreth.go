@@ -177,16 +177,13 @@ func (cw *CorethWorker) tryFetchReceipt(
 	}
 
 	r, err := cw.client.TransactionReceipt(ctxTimeout, txHash)
-
-	// Record metrics for this receipt fetch
-	logCount := 0
-	if r != nil {
-		logCount = len(r.Logs)
-	}
 	if cw.metrics != nil {
+		logCount := 0
+		if r != nil {
+			logCount = len(r.Logs)
+		}
 		cw.metrics.RecordReceiptFetch(err, time.Since(start).Seconds(), logCount)
 	}
-
 	if err != nil {
 		return nil, fmt.Errorf("fetch receipt failed %s: %w", tx, err)
 	}

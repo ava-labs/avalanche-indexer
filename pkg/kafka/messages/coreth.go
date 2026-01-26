@@ -207,10 +207,9 @@ func CorethTxReceiptFromLibevm(tx *libevmtypes.Receipt) *CorethTxReceipt {
 }
 
 func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
-	logWrappers := make([]*CorethLog, len(logs))
-
+	result := make([]*CorethLog, len(logs))
 	for i, log := range logs {
-		logWrappers[i] = &CorethLog{
+		result[i] = &CorethLog{
 			Address:     log.Address,
 			Topics:      log.Topics,
 			Data:        log.Data,
@@ -222,7 +221,7 @@ func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
 			Removed:     log.Removed,
 		}
 	}
-	return logWrappers
+	return result
 }
 
 func (b *CorethBlock) Marshal() ([]byte, error) {
