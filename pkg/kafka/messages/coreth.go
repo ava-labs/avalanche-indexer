@@ -197,19 +197,28 @@ func CorethWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*Coreth
 	return result
 }
 
-func CorethTxReceiptFromLibevm(tx *libevmtypes.Receipt) *CorethTxReceipt {
+func CorethTxReceiptFromLibevm(receipt *libevmtypes.Receipt) *CorethTxReceipt {
+	if receipt == nil {
+		return nil
+	}
 	return &CorethTxReceipt{
-		ContractAddress: tx.ContractAddress,
-		Status:          tx.Status,
-		GasUsed:         tx.GasUsed,
-		Logs:            CorethLogsFromLibevm(tx.Logs),
+		ContractAddress: receipt.ContractAddress,
+		Status:          receipt.Status,
+		GasUsed:         receipt.GasUsed,
+		Logs:            CorethLogsFromLibevm(receipt.Logs),
 	}
 }
 
 func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
-	result := make([]*CorethLog, len(logs))
-	for i, log := range logs {
-		result[i] = &CorethLog{
+	if logs == nil {
+		return nil
+	}
+	result := make([]*CorethLog, 0, len(logs))
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		result = append(result, &CorethLog{
 			Address:     log.Address,
 			Topics:      log.Topics,
 			Data:        log.Data,
@@ -219,7 +228,7 @@ func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
 			BlockHash:   log.BlockHash,
 			Index:       log.Index,
 			Removed:     log.Removed,
-		}
+		})
 	}
 	return result
 }

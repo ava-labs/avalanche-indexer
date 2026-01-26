@@ -358,6 +358,57 @@ func TestFetchBlockReceipts_MetricsError(t *testing.T) {
 	require.Equal(t, 0.0, getCounterValue(t, reg, "indexer_logs_fetched_total", nil))
 }
 
+func TestFetchBlockReceipts_CountMismatch(t *testing.T) {
+	// Server returns 1 receipt but we have 2 transactions - this is a data integrity error
+	receipts := []map[string]interface{}{
+		{
+			"status":            "0x1",
+			"gasUsed":           "0x5208",
+			"cumulativeGasUsed": "0x5208",
+			"contractAddress":   "0x0000000000000000000000000000000000000001",
+			"logs":              []interface{}{},
+			"type":              "0x2",
+			"transactionHash":   "0x" + strings.Repeat("1", 64),
+			"transactionIndex":  "0x0",
+			"blockHash":         "0x" + strings.Repeat("a", 64),
+			"blockNumber":       "0x1",
+			"logsBloom":         "0x" + strings.Repeat("0", 512),
+		},
+	}
+	server := testRPCServerForBlockReceipts(t, receipts, nil, 0)
+	defer server.Close()
+
+	reg := prometheus.NewRegistry()
+	m, err := metrics.New(reg)
+	require.NoError(t, err)
+
+	w := newTestWorker(t, server.URL)
+	w.metrics = m
+	w.receiptTimeout = 2 * time.Second
+
+	// 2 transactions but only 1 receipt returned
+	txs := []*messages.CorethTransaction{
+		{Hash: "0x" + strings.Repeat("1", 64)},
+		{Hash: "0x" + strings.Repeat("2", 64)},
+	}
+	ctx := t.Context()
+	err = w.FetchBlockReceipts(ctx, txs, 1)
+
+	// Should fail with count mismatch error
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "receipt count mismatch")
+	require.Contains(t, err.Error(), "got 1 receipts")
+	require.Contains(t, err.Error(), "expected 2 transactions")
+
+	// Verify receipts were NOT assigned (data integrity preserved)
+	require.Nil(t, txs[0].Receipt, "receipt should not be assigned on mismatch")
+	require.Nil(t, txs[1].Receipt, "receipt should not be assigned on mismatch")
+
+	// Verify error metrics were recorded
+	require.Equal(t, 1.0, getCounterValue(t, reg, "indexer_receipts_fetched_total", map[string]string{"status": "error"}))
+	require.Equal(t, 0.0, getCounterValue(t, reg, "indexer_logs_fetched_total", nil))
+}
+
 func getCounterValue(t *testing.T, reg *prometheus.Registry, name string, labels map[string]string) float64 {
 	t.Helper()
 	metric := findMetric(t, reg, name, labels)

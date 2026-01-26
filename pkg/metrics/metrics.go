@@ -155,7 +155,7 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Namespace: Namespace,
 			Subsystem: "receipts",
 			Name:      "fetch_duration_seconds",
-			Help:      "Time to fetch a single transaction receipt",
+			Help:      "Time to fetch all receipts for a block",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
 		receiptFetchesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{

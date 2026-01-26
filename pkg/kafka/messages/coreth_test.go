@@ -400,6 +400,32 @@ func TestCorethTxReceiptFromLibevm(t *testing.T) {
 	assert.Equal(t, logs[0].Removed, got.Logs[0].Removed)
 }
 
+func TestCorethTxReceiptFromLibevm_NilInput(t *testing.T) {
+	t.Parallel()
+
+	got := CorethTxReceiptFromLibevm(nil)
+
+	assert.Nil(t, got, "nil receipt input should return nil")
+}
+
+func TestCorethTxReceiptFromLibevm_NilLogs(t *testing.T) {
+	t.Parallel()
+
+	receipt := &libevmtypes.Receipt{
+		ContractAddress: common.HexToAddress("0x1111111111111111111111111111111111111111"),
+		Status:          1,
+		GasUsed:         21000,
+		Logs:            nil,
+	}
+
+	got := CorethTxReceiptFromLibevm(receipt)
+
+	require.NotNil(t, got)
+	assert.Nil(t, got.Logs, "nil logs should return nil logs slice")
+	assert.Equal(t, uint64(1), got.Status)
+	assert.Equal(t, uint64(21000), got.GasUsed)
+}
+
 func TestCorethLogsFromLibevm(t *testing.T) {
 	t.Parallel()
 
@@ -429,6 +455,42 @@ func TestCorethLogsFromLibevm(t *testing.T) {
 	assert.Equal(t, logs[0].BlockHash, got[0].BlockHash)
 	assert.Equal(t, logs[0].Index, got[0].Index)
 	assert.Equal(t, logs[0].Removed, got[0].Removed)
+}
+
+func TestCorethLogsFromLibevm_NilAndEmpty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil logs", func(t *testing.T) {
+		t.Parallel()
+		got := CorethLogsFromLibevm(nil)
+		assert.Nil(t, got, "nil input should return nil")
+	})
+
+	t.Run("empty logs", func(t *testing.T) {
+		t.Parallel()
+		got := CorethLogsFromLibevm([]*libevmtypes.Log{})
+		require.NotNil(t, got, "empty slice should return empty slice, not nil")
+		assert.Empty(t, got)
+	})
+
+	t.Run("slice with nil element", func(t *testing.T) {
+		t.Parallel()
+		logs := []*libevmtypes.Log{
+			{
+				Address: common.HexToAddress("0x1111111111111111111111111111111111111111"),
+				Topics:  []common.Hash{},
+			},
+			nil, // nil element should be skipped
+			{
+				Address: common.HexToAddress("0x2222222222222222222222222222222222222222"),
+				Topics:  []common.Hash{},
+			},
+		}
+		got := CorethLogsFromLibevm(logs)
+		require.Len(t, got, 2, "nil elements should be skipped")
+		assert.Equal(t, logs[0].Address, got[0].Address)
+		assert.Equal(t, logs[2].Address, got[1].Address)
+	})
 }
 
 func TestCorethWithdrawalsFromLibevm(t *testing.T) {
