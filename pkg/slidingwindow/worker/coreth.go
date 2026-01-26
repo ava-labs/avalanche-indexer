@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -17,7 +18,11 @@ import (
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
 
-var registerCustomTypesOnce sync.Once
+var (
+	registerCustomTypesOnce sync.Once
+	ErrReceiptCountMismatch = errors.New("receipt count mismatch")
+	ErrReceiptFetchFailed   = errors.New("fetch block receipts failed")
+)
 
 type CorethWorker struct {
 	client         *evmclient.Client
@@ -127,6 +132,12 @@ func (cw *CorethWorker) GetBlock(ctx context.Context, height uint64) (*messages.
 
 // FetchBlockReceipts fetches the receipts for the given transactions and block number.
 func (cw *CorethWorker) FetchBlockReceipts(ctx context.Context, transactions []*messages.CorethTransaction, blockNumber int64) error {
+	start := time.Now()
+	if cw.metrics != nil {
+		cw.metrics.IncReceiptFetchInFlight()
+		defer cw.metrics.DecReceiptFetchInFlight()
+	}
+
 	ctxTimeout, cancel := context.WithTimeout(ctx, cw.receiptTimeout)
 	defer cancel()
 	bn := rpc.BlockNumber(blockNumber)
@@ -134,11 +145,29 @@ func (cw *CorethWorker) FetchBlockReceipts(ctx context.Context, transactions []*
 		BlockNumber: &bn,
 	})
 	if err != nil {
-		return fmt.Errorf("fetch block receipts failed for block %d: %w", blockNumber, err)
+		if cw.metrics != nil {
+			cw.metrics.RecordReceiptFetch(err, time.Since(start).Seconds(), 0)
+		}
+		return fmt.Errorf("%w for block %d: %w", ErrReceiptFetchFailed, blockNumber, err)
 	}
 
+	if len(r) != len(transactions) {
+		err := fmt.Errorf("%w for block %d: got %d receipts, expected %d transactions",
+			ErrReceiptCountMismatch, blockNumber, len(r), len(transactions))
+		if cw.metrics != nil {
+			cw.metrics.RecordReceiptFetch(err, time.Since(start).Seconds(), 0)
+		}
+		return err
+	}
+
+	logCount := 0
 	for i, receipt := range r {
 		transactions[i].Receipt = messages.CorethTxReceiptFromLibevm(receipt)
+		logCount += len(receipt.Logs)
+	}
+
+	if cw.metrics != nil {
+		cw.metrics.RecordReceiptFetch(nil, time.Since(start).Seconds(), logCount)
 	}
 	return nil
 }

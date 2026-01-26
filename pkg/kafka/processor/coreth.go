@@ -268,6 +268,7 @@ func (p *CorethProcessor) processTransactions(
 ) error {
 	// Convert and write each transaction
 	// TODO: Add batching (in a future PR)
+	totalLogs := 0
 	for i, tx := range block.Transactions {
 		txRow, err := CorethTransactionToTransactionRow(tx, block, uint64(i))
 		if err != nil {
@@ -277,7 +278,15 @@ func (p *CorethProcessor) processTransactions(
 		if err := p.txsRepo.WriteTransaction(ctx, txRow); err != nil {
 			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
 		}
+
+		// Count logs from this transaction's receipt
+		if tx.Receipt != nil {
+			totalLogs += len(tx.Receipt.Logs)
+		}
 	}
+
+	// Record logs processed metric
+	p.metrics.AddLogsProcessed(totalLogs)
 
 	var blockNumber uint64
 	if block.Number != nil {
@@ -289,6 +298,7 @@ func (p *CorethProcessor) processTransactions(
 		"evmChainID", block.EVMChainID,
 		"blockNumber", blockNumber,
 		"transactionCount", len(block.Transactions),
+		"logCount", totalLogs,
 	)
 
 	return nil
