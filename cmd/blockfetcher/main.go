@@ -82,6 +82,13 @@ func main() {
 						EnvVars:  []string{"CONCURRENCY"},
 						Required: true,
 					},
+					&cli.DurationFlag{
+						Name:    "receipt-timeout",
+						Aliases: []string{"rt"},
+						Usage:   "The timeout for fetching a transaction receipt",
+						EnvVars: []string{"RECEIPT_TIMEOUT"},
+						Value:   10 * time.Second,
+					},
 					&cli.Uint64Flag{
 						Name:     "backfill-priority",
 						Aliases:  []string{"b"},
@@ -224,6 +231,7 @@ func run(c *cli.Context) error {
 	start := c.Uint64("start-height")
 	end := c.Uint64("end-height")
 	concurrency := c.Int64("concurrency")
+	receiptTimeout := c.Duration("receipt-timeout")
 	backfill := c.Int64("backfill-priority")
 	blocksCap := c.Int("blocks-ch-capacity")
 	maxFailures := c.Int("max-failures")
@@ -248,6 +256,7 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
+
 	sugar.Infow("config",
 		"verbose", verbose,
 		"evmChainID", evmChainID,
@@ -256,6 +265,7 @@ func run(c *cli.Context) error {
 		"start", start,
 		"end", end,
 		"concurrency", concurrency,
+		"receiptTimeout", receiptTimeout,
 		"backfill", backfill,
 		"blocksCap", blocksCap,
 		"maxFailures", maxFailures,
@@ -357,7 +367,7 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, sugar, m)
+	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, sugar, m, receiptTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
