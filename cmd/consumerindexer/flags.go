@@ -97,6 +97,36 @@ func flags() []cli.Flag {
 			EnvVars: []string{"KAFKA_POLL_INTERVAL"},
 			Value:   100 * time.Millisecond,
 		},
+		&cli.IntFlag{
+			Name:    "kafka-topic-num-partitions",
+			Usage:   "The number of partitions to use for the Kafka topic (must be greater than 0)",
+			EnvVars: []string{"KAFKA_TOPIC_NUM_PARTITIONS"},
+			Value:   1,
+		},
+		&cli.IntFlag{
+			Name:    "kafka-dlq-topic-num-partitions",
+			Usage:   "The number of partitions to use for the Kafka DLQ topic (must be greater than 0)",
+			EnvVars: []string{"KAFKA_DLQ_TOPIC_NUM_PARTITIONS"},
+			Value:   1,
+		},
+		&cli.IntFlag{
+			Name:    "kafka-topic-replication-factor",
+			Usage:   "The replication factor to use for the Kafka topic (must be greater than 0)",
+			EnvVars: []string{"KAFKA_TOPIC_REPLICATION_FACTOR"},
+			Value:   1,
+		},
+		&cli.IntFlag{
+			Name:    "kafka-dlq-topic-replication-factor",
+			Usage:   "The replication factor to use for the Kafka DLQ topic (must be greater than 0)",
+			EnvVars: []string{"KAFKA_DLQ_TOPIC_REPLICATION_FACTOR"},
+			Value:   1,
+		},
+		&cli.BoolFlag{
+			Name:    "publish-to-dlq",
+			Usage:   "Publish failed messages to DLQ",
+			EnvVars: []string{"KAFKA_PUBLISH_TO_DLQ"},
+			Value:   false,
+		},
 		// ClickHouse configuration flags
 		&cli.StringSliceFlag{
 			Name:    "clickhouse-hosts",

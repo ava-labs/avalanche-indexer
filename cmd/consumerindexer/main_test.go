@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
+	"strconv"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v2"
 	"go.uber.org/zap"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
@@ -329,4 +332,218 @@ func createTestTransaction() *kafkamsg.CorethTransaction {
 // Helper function to create a uint64 pointer
 func uintPtr(u uint64) *uint64 {
 	return &u
+}
+
+func TestBuildClickHouseConfig_BlockBufferSize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		blockBufSize  int
+		expectedValue uint8
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "valid minimum value (0)",
+			blockBufSize:  0,
+			expectedValue: 0,
+			expectError:   false,
+		},
+		{
+			name:          "valid maximum value (255)",
+			blockBufSize:  255,
+			expectedValue: 255,
+			expectError:   false,
+		},
+		{
+			name:          "valid middle value (128)",
+			blockBufSize:  128,
+			expectedValue: 128,
+			expectError:   false,
+		},
+		{
+			name:          "valid default value (10)",
+			blockBufSize:  10,
+			expectedValue: 10,
+			expectError:   false,
+		},
+		{
+			name:          "invalid: too large (256)",
+			blockBufSize:  256,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+		{
+			name:          "invalid: too large (1000)",
+			blockBufSize:  1000,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+		{
+			name:          "invalid: negative value (-1)",
+			blockBufSize:  -1,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+		{
+			name:          "invalid: very negative value (-100)",
+			blockBufSize:  -100,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &cli.App{
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "clickhouse-hosts"},
+					&cli.StringFlag{Name: "clickhouse-database"},
+					&cli.StringFlag{Name: "clickhouse-username"},
+					&cli.StringFlag{Name: "clickhouse-password"},
+					&cli.BoolFlag{Name: "clickhouse-debug"},
+					&cli.BoolFlag{Name: "clickhouse-insecure-skip-verify"},
+					&cli.IntFlag{Name: "clickhouse-max-execution-time"},
+					&cli.IntFlag{Name: "clickhouse-dial-timeout"},
+					&cli.IntFlag{Name: "clickhouse-max-open-conns"},
+					&cli.IntFlag{Name: "clickhouse-max-idle-conns"},
+					&cli.IntFlag{Name: "clickhouse-conn-max-lifetime"},
+					&cli.IntFlag{Name: "clickhouse-block-buffer-size"},
+					&cli.IntFlag{Name: "clickhouse-max-block-size"},
+					&cli.IntFlag{Name: "clickhouse-max-compression-buffer"},
+					&cli.StringFlag{Name: "clickhouse-client-name"},
+					&cli.StringFlag{Name: "clickhouse-client-version"},
+					&cli.BoolFlag{Name: "clickhouse-use-http"},
+				},
+			}
+
+			ctx := cli.NewContext(app, nil, nil)
+			ctx.Set("clickhouse-block-buffer-size", strconv.Itoa(tt.blockBufSize))
+
+			cfg, err := buildClickHouseConfig(ctx)
+
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedValue, cfg.BlockBufferSize, "BlockBufferSize should match expected value")
+		})
+	}
+}
+
+func TestBuildClickHouseConfig_BlockBufferSize_Overflow(t *testing.T) {
+	t.Parallel()
+
+	// Test that values > 255 don't silently wrap to 0
+	// This is the specific edge case the user asked about
+	tests := []struct {
+		name         string
+		blockBufSize int
+	}{
+		{
+			name:         "256 should error, not wrap to 0",
+			blockBufSize: 256,
+		},
+		{
+			name:         "257 should error, not wrap to 1",
+			blockBufSize: 257,
+		},
+		{
+			name:         "512 should error, not wrap to 0",
+			blockBufSize: 512,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &cli.App{
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "clickhouse-hosts"},
+					&cli.StringFlag{Name: "clickhouse-database"},
+					&cli.StringFlag{Name: "clickhouse-username"},
+					&cli.StringFlag{Name: "clickhouse-password"},
+					&cli.BoolFlag{Name: "clickhouse-debug"},
+					&cli.BoolFlag{Name: "clickhouse-insecure-skip-verify"},
+					&cli.IntFlag{Name: "clickhouse-max-execution-time"},
+					&cli.IntFlag{Name: "clickhouse-dial-timeout"},
+					&cli.IntFlag{Name: "clickhouse-max-open-conns"},
+					&cli.IntFlag{Name: "clickhouse-max-idle-conns"},
+					&cli.IntFlag{Name: "clickhouse-conn-max-lifetime"},
+					&cli.IntFlag{Name: "clickhouse-block-buffer-size"},
+					&cli.IntFlag{Name: "clickhouse-max-block-size"},
+					&cli.IntFlag{Name: "clickhouse-max-compression-buffer"},
+					&cli.StringFlag{Name: "clickhouse-client-name"},
+					&cli.StringFlag{Name: "clickhouse-client-version"},
+					&cli.BoolFlag{Name: "clickhouse-use-http"},
+				},
+			}
+
+			ctx := cli.NewContext(app, nil, nil)
+			ctx.Set("clickhouse-block-buffer-size", strconv.Itoa(tt.blockBufSize))
+
+			cfg, err := buildClickHouseConfig(ctx)
+
+			// Should return an error, not silently wrap
+			require.Error(t, err, "should error on overflow value %d", tt.blockBufSize)
+			assert.Contains(t, err.Error(), "must be between 0 and 255")
+
+			// If somehow we got a config, verify it's not the wrapped value
+			if cfg.BlockBufferSize != 0 {
+				// This should never happen if error checking works, but verify
+				wrappedValue := uint8(tt.blockBufSize)
+				assert.NotEqual(t, wrappedValue, cfg.BlockBufferSize,
+					"config should not contain wrapped value %d (would be %d after uint8 conversion)",
+					tt.blockBufSize, wrappedValue)
+			}
+		})
+	}
+}
+
+func TestBuildClickHouseConfig_BlockBufferSize_AllValidValues(t *testing.T) {
+	t.Parallel()
+
+	// Test all valid uint8 values to ensure conversion works correctly
+	app := &cli.App{
+		Flags: []cli.Flag{
+			&cli.StringSliceFlag{Name: "clickhouse-hosts"},
+			&cli.StringFlag{Name: "clickhouse-database"},
+			&cli.StringFlag{Name: "clickhouse-username"},
+			&cli.StringFlag{Name: "clickhouse-password"},
+			&cli.BoolFlag{Name: "clickhouse-debug"},
+			&cli.BoolFlag{Name: "clickhouse-insecure-skip-verify"},
+			&cli.IntFlag{Name: "clickhouse-max-execution-time"},
+			&cli.IntFlag{Name: "clickhouse-dial-timeout"},
+			&cli.IntFlag{Name: "clickhouse-max-open-conns"},
+			&cli.IntFlag{Name: "clickhouse-max-idle-conns"},
+			&cli.IntFlag{Name: "clickhouse-conn-max-lifetime"},
+			&cli.IntFlag{Name: "clickhouse-block-buffer-size"},
+			&cli.IntFlag{Name: "clickhouse-max-block-size"},
+			&cli.IntFlag{Name: "clickhouse-max-compression-buffer"},
+			&cli.StringFlag{Name: "clickhouse-client-name"},
+			&cli.StringFlag{Name: "clickhouse-client-version"},
+			&cli.BoolFlag{Name: "clickhouse-use-http"},
+		},
+	}
+
+	// Test boundary values and a few in between
+	testValues := []int{0, 1, 10, 128, 254, 255}
+
+	for _, val := range testValues {
+		t.Run(fmt.Sprintf("value_%d", val), func(t *testing.T) {
+			ctx := cli.NewContext(app, nil, nil)
+			ctx.Set("clickhouse-block-buffer-size", strconv.Itoa(val))
+
+			cfg, err := buildClickHouseConfig(ctx)
+
+			require.NoError(t, err)
+			assert.Equal(t, uint8(val), cfg.BlockBufferSize,
+				"BlockBufferSize should correctly convert %d to uint8", val)
+		})
+	}
 }

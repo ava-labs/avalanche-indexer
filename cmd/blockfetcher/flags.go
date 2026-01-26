@@ -53,6 +53,13 @@ func flags() []cli.Flag {
 			EnvVars:  []string{"CONCURRENCY"},
 			Required: true,
 		},
+		&cli.DurationFlag{
+			Name:    "receipt-timeout",
+			Aliases: []string{"rt"},
+			Usage:   "The timeout for fetching a transaction receipt",
+			EnvVars: []string{"RECEIPT_TIMEOUT"},
+			Value:   10 * time.Second,
+		},
 		&cli.Uint64Flag{
 			Name:     "backfill-priority",
 			Aliases:  []string{"b"},
@@ -122,18 +129,30 @@ func flags() []cli.Flag {
 			EnvVars:  []string{"KAFKA_TOPIC"},
 			Required: true,
 		},
-		&cli.StringFlag{
+		&cli.BoolFlag{
 			Name:    "kafka-enable-logs",
 			Aliases: []string{"l"},
 			Usage:   "Enable Kafka logs",
 			EnvVars: []string{"KAFKA_ENABLE_LOGS"},
-			Value:   "false",
+			Value:   false,
 		},
 		&cli.StringFlag{
 			Name:    "kafka-client-id",
 			Usage:   "The Kafka client ID to use",
 			EnvVars: []string{"KAFKA_CLIENT_ID"},
 			Value:   "blockfetcher",
+		},
+		&cli.IntFlag{
+			Name:    "kafka-topic-num-partitions",
+			Usage:   "The number of partitions to use for the Kafka topic (must be greater than 0)",
+			EnvVars: []string{"KAFKA_TOPIC_NUM_PARTITIONS"},
+			Value:   1,
+		},
+		&cli.IntFlag{
+			Name:    "kafka-topic-replication-factor",
+			Usage:   "The replication factor to use for the Kafka topic (must be greater than 0)",
+			EnvVars: []string{"KAFKA_TOPIC_REPLICATION_FACTOR"},
+			Value:   1,
 		},
 		&cli.StringFlag{
 			Name:    "checkpoint-table-name",

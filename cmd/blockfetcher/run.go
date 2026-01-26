@@ -20,6 +20,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
@@ -28,56 +29,38 @@ import (
 const flushTimeoutOnClose = 15 * time.Second
 
 func run(c *cli.Context) error {
-	verbose := c.Bool("verbose")
-	evmChainID := c.Uint64("evm-chain-id")
-	bcID := c.String("bc-id")
-	rpcURL := c.String("rpc-url")
-	start := c.Uint64("start-height")
-	end := c.Uint64("end-height")
-	concurrency := c.Int64("concurrency")
-	backfill := c.Int64("backfill-priority")
-	blocksCap := c.Int("blocks-ch-capacity")
-	maxFailures := c.Int("max-failures")
-	metricsHost := c.String("metrics-host")
-	metricsPort := c.Int("metrics-port")
-	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
-	environment := c.String("environment")
-	region := c.String("region")
-	cloudProvider := c.String("cloud-provider")
-	kafkaBrokers := c.String("kafka-brokers")
-	kafkaTopic := c.String("kafka-topic")
-	kafkaEnableLogs := c.Bool("kafka-enable-logs")
-	kafkaClientID := c.String("kafka-client-id")
-	checkpointTableName := c.String("checkpoint-table-name")
-	checkpointInterval := c.Duration("checkpoint-interval")
-	gapWatchdogInterval := c.Duration("gap-watchdog-interval")
-	gapWatchdogMaxGap := c.Uint64("gap-watchdog-max-gap")
-	sugar, err := utils.NewSugaredLogger(verbose)
+	// Build configuration from CLI flags
+	cfg := buildConfig(c)
+
+	sugar, err := utils.NewSugaredLogger(cfg.Verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
+
 	sugar.Infow("config",
-		"verbose", verbose,
-		"evmChainID", evmChainID,
-		"bcID", bcID,
-		"rpcURL", rpcURL,
-		"start", start,
-		"end", end,
-		"concurrency", concurrency,
-		"backfill", backfill,
-		"blocksCap", blocksCap,
-		"maxFailures", maxFailures,
-		"metricsHost", metricsHost,
-		"metricsPort", metricsPort,
-		"environment", environment,
-		"region", region,
-		"cloudProvider", cloudProvider,
-		"checkpointTableName", checkpointTableName,
-		"checkpointInterval", checkpointInterval,
+		"verbose", cfg.Verbose,
+		"evmChainID", cfg.EVMChainID,
+		"bcID", cfg.BCID,
+		"rpcURL", cfg.RPCURL,
+		"start", cfg.Start,
+		"end", cfg.End,
+		"concurrency", cfg.Concurrency,
+		"receiptTimeout", cfg.ReceiptTimeout,
+		"backfill", cfg.Backfill,
+		"blocksCap", cfg.BlocksCap,
+		"maxFailures", cfg.MaxFailures,
+		"metricsHost", cfg.MetricsHost,
+		"metricsPort", cfg.MetricsPort,
+		"environment", cfg.Environment,
+		"region", cfg.Region,
+		"cloudProvider", cfg.CloudProvider,
+		"checkpointTableName", cfg.CheckpointTableName,
+		"checkpointInterval", cfg.CheckpointInterval,
 	)
 
 	var fetchStartHeight bool
+	start := cfg.Start
 	if start == 0 {
 		sugar.Infof("start block height: not specified, will fetch from the latest checkpoint")
 		fetchStartHeight = true
@@ -86,6 +69,7 @@ func run(c *cli.Context) error {
 	}
 
 	var fetchLatestHeight bool
+	end := cfg.End
 	if end == 0 {
 		sugar.Infof("end block height: not specified, will fetch until the latest block")
 		fetchLatestHeight = true
@@ -96,35 +80,51 @@ func run(c *cli.Context) error {
 	// Initialize Prometheus metrics with labels for multi-instance filtering
 	registry := prometheus.NewRegistry()
 	m, err := metrics.NewWithLabels(registry, metrics.Labels{
-		EVMChainID:    evmChainID,
-		Environment:   environment,
-		Region:        region,
-		CloudProvider: cloudProvider,
+		EVMChainID:    cfg.EVMChainID,
+		Environment:   cfg.Environment,
+		Region:        cfg.Region,
+		CloudProvider: cfg.CloudProvider,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
 
 	// Start metrics server
-	metricsServer := metrics.NewServer(metricsAddr, registry)
+	metricsServer := metrics.NewServer(cfg.MetricsAddr(), registry)
 	metricsErrCh := metricsServer.Start()
-	if metricsHost == "" {
-		sugar.Infof("metrics server listening on http://0.0.0.0:%d/metrics", metricsPort)
+	if cfg.MetricsHost == "" {
+		sugar.Infof("metrics server listening on http://0.0.0.0:%d/metrics", cfg.MetricsPort)
 	} else {
-		sugar.Infof("metrics server listening on http://%s/metrics", metricsAddr)
+		sugar.Infof("metrics server listening on http://%s/metrics", cfg.MetricsAddr())
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	client, err := rpc.DialContext(ctx, rpcURL)
+	client, err := rpc.DialContext(ctx, cfg.RPCURL)
 	if err != nil {
 		return fmt.Errorf("failed to dial rpc: %w", err)
 	}
 	defer client.Close()
 
+	// Create Kafka admin client to ensure topic exists
+	kafkaAdminClient, err := confluentKafka.NewAdminClient(&confluentKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers})
+	if err != nil {
+		return fmt.Errorf("failed to create kafka admin client: %w", err)
+	}
+	defer kafkaAdminClient.Close()
+
+	err = kafka.EnsureTopic(ctx, kafkaAdminClient, kafka.TopicConfig{
+		Name:              cfg.KafkaTopic,
+		NumPartitions:     cfg.KafkaTopicNumPartitions,
+		ReplicationFactor: cfg.KafkaTopicReplicationFactor,
+	}, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+	}
+
 	// Build Kafka producer configuration
-	kafkaConfig := buildKafkaProducerConfig(kafkaBrokers, kafkaClientID, kafkaEnableLogs)
+	kafkaConfig := cfg.KafkaProducerConfig()
 
 	producer, err := kafka.NewProducer(ctx, kafkaConfig, sugar)
 	if err != nil {
@@ -132,7 +132,7 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, sugar, m)
+	w, err := worker.NewCorethWorker(ctx, cfg.RPCURL, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to create worker: %w", err)
 	}
@@ -155,7 +155,7 @@ func run(c *cli.Context) error {
 		sugar.Infof("latest block height: %d", end)
 	}
 
-	repo := checkpoint.NewRepository(chClient, checkpointTableName)
+	repo := checkpoint.NewRepository(chClient, cfg.CheckpointTableName)
 
 	err = repo.CreateTableIfNotExists(ctx)
 	if err != nil {
@@ -163,7 +163,7 @@ func run(c *cli.Context) error {
 	}
 
 	if fetchStartHeight {
-		checkpoint, err := repo.ReadCheckpoint(ctx, evmChainID)
+		checkpoint, err := repo.ReadCheckpoint(ctx, cfg.EVMChainID)
 		if err != nil {
 			return fmt.Errorf("failed to read checkpoint: %w", err)
 		}
@@ -181,7 +181,7 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create state: %w", err)
 	}
 
-	mgr, err := slidingwindow.NewManager(sugar, s, w, concurrency, backfill, blocksCap, maxFailures, m)
+	mgr, err := slidingwindow.NewManager(sugar, s, w, cfg.Concurrency, cfg.Backfill, cfg.BlocksCap, cfg.MaxFailures, m)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
@@ -192,7 +192,7 @@ func run(c *cli.Context) error {
 	sub := subscriber.NewCoreth(sugar, customethclient.New(client))
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return sub.Subscribe(gctx, blocksCap, mgr)
+		return sub.Subscribe(gctx, cfg.BlocksCap, mgr)
 	})
 	g.Go(func() error {
 		return mgr.Run(gctx)
@@ -217,10 +217,10 @@ func run(c *cli.Context) error {
 		}
 	})
 	g.Go(func() error {
-		return scheduler.Start(gctx, s, repo, checkpointInterval, evmChainID)
+		return scheduler.Start(gctx, s, repo, cfg.CheckpointInterval, cfg.EVMChainID)
 	})
 
-	go slidingwindow.StartGapWatchdog(gctx, sugar, s, gapWatchdogInterval, gapWatchdogMaxGap)
+	go slidingwindow.StartGapWatchdog(gctx, sugar, s, cfg.GapWatchdogInterval, cfg.GapWatchdogMaxGap)
 
 	err = g.Wait()
 	if errors.Is(err, context.Canceled) {
