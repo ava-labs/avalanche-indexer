@@ -50,16 +50,16 @@ All metrics use the `indexer` namespace.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `indexer_receipts_fetched_total` | Counter | `status` | Total transaction receipts fetched (success/error) |
-| `indexer_receipts_fetch_duration_seconds` | Histogram | - | Time to fetch a single transaction receipt |
-| `indexer_receipts_fetches_in_flight` | Gauge | - | Number of receipt fetches currently in progress |
+| `indexer_receipts_fetched_total` | Counter | `status` | Total receipt fetch RPC calls (success/error) |
+| `indexer_receipts_fetch_duration_seconds` | Histogram | - | Time to fetch receipts for a block |
+| `indexer_receipts_fetches_in_flight` | Gauge | - | Number of receipt fetch RPC calls in progress |
 
 ### Log Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
 | `indexer_logs_fetched_total` | Counter | Total transaction logs extracted from receipts |
-| `indexer_logs_processed_total` | Counter | Total transaction logs processed and persisted |
+| `indexer_logs_processed_total` | Counter | Total transaction logs processed during transaction persistence |
 
 ## Example Queries
 
@@ -90,7 +90,7 @@ histogram_quantile(0.95, rate(indexer_receipts_fetch_duration_seconds_bucket[5m]
 # Logs processed per second
 rate(indexer_logs_processed_total[5m])
 
-# Average logs per transaction (fetched)
+# Average logs per receipt fetch call (block)
 rate(indexer_logs_fetched_total[5m]) / rate(indexer_receipts_fetched_total{status="success"}[5m])
 ```
 

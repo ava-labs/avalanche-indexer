@@ -57,8 +57,8 @@ type Metrics struct {
 	blockProcessingDuration prometheus.Histogram
 
 	// Receipt metrics
-	receiptsFetched       *prometheus.CounterVec
-	receiptFetchDuration  prometheus.Histogram
+	receiptsFetched        *prometheus.CounterVec
+	receiptFetchDuration   prometheus.Histogram
 	receiptFetchesInFlight prometheus.Gauge
 
 	// Log metrics
@@ -289,7 +289,7 @@ func (m *Metrics) DecReceiptFetchInFlight() {
 	m.receiptFetchesInFlight.Dec()
 }
 
-// RecordReceiptFetch records a receipt fetch outcome with duration and log count.
+// RecordReceiptFetch records a receipt fetch RPC call outcome with duration and log count.
 func (m *Metrics) RecordReceiptFetch(err error, durationSeconds float64, logCount int) {
 	if m == nil {
 		return
