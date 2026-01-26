@@ -20,10 +20,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
+
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const flushTimeoutOnClose = 15 * time.Second

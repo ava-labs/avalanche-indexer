@@ -334,6 +334,55 @@ func uintPtr(u uint64) *uint64 {
 	return &u
 }
 
+// createTestContext creates a cli.Context with the given block buffer size value
+func createTestContext(blockBufSize int) (*cli.Context, error) {
+	var testCtx *cli.Context
+
+	app := &cli.App{
+		Commands: []*cli.Command{
+			{
+				Name: "test",
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "clickhouse-hosts", Value: cli.NewStringSlice("localhost:9000")},
+					&cli.StringFlag{Name: "clickhouse-database", Value: "default"},
+					&cli.StringFlag{Name: "clickhouse-username", Value: "default"},
+					&cli.StringFlag{Name: "clickhouse-password"},
+					&cli.BoolFlag{Name: "clickhouse-debug"},
+					&cli.BoolFlag{Name: "clickhouse-insecure-skip-verify", Value: true},
+					&cli.IntFlag{Name: "clickhouse-max-execution-time", Value: 60},
+					&cli.IntFlag{Name: "clickhouse-dial-timeout", Value: 30},
+					&cli.IntFlag{Name: "clickhouse-max-open-conns", Value: 5},
+					&cli.IntFlag{Name: "clickhouse-max-idle-conns", Value: 5},
+					&cli.IntFlag{Name: "clickhouse-conn-max-lifetime", Value: 10},
+					&cli.IntFlag{Name: "clickhouse-block-buffer-size", Value: 10},
+					&cli.IntFlag{Name: "clickhouse-max-block-size", Value: 1000},
+					&cli.IntFlag{Name: "clickhouse-max-compression-buffer", Value: 10240},
+					&cli.StringFlag{Name: "clickhouse-client-name", Value: "ac-client-name"},
+					&cli.StringFlag{Name: "clickhouse-client-version", Value: "1.0"},
+					&cli.BoolFlag{Name: "clickhouse-use-http"},
+				},
+				Action: func(c *cli.Context) error {
+					testCtx = c
+					return nil
+				},
+			},
+		},
+	}
+
+	args := []string{"app", "test", "--clickhouse-block-buffer-size", strconv.Itoa(blockBufSize)}
+
+	err := app.Run(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if testCtx == nil {
+		return nil, fmt.Errorf("failed to create context")
+	}
+
+	return testCtx, nil
+}
+
 func TestBuildClickHouseConfig_BlockBufferSize(t *testing.T) {
 	t.Parallel()
 
@@ -396,35 +445,13 @@ func TestBuildClickHouseConfig_BlockBufferSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := &cli.App{
-				Flags: []cli.Flag{
-					&cli.StringSliceFlag{Name: "clickhouse-hosts"},
-					&cli.StringFlag{Name: "clickhouse-database"},
-					&cli.StringFlag{Name: "clickhouse-username"},
-					&cli.StringFlag{Name: "clickhouse-password"},
-					&cli.BoolFlag{Name: "clickhouse-debug"},
-					&cli.BoolFlag{Name: "clickhouse-insecure-skip-verify"},
-					&cli.IntFlag{Name: "clickhouse-max-execution-time"},
-					&cli.IntFlag{Name: "clickhouse-dial-timeout"},
-					&cli.IntFlag{Name: "clickhouse-max-open-conns"},
-					&cli.IntFlag{Name: "clickhouse-max-idle-conns"},
-					&cli.IntFlag{Name: "clickhouse-conn-max-lifetime"},
-					&cli.IntFlag{Name: "clickhouse-block-buffer-size"},
-					&cli.IntFlag{Name: "clickhouse-max-block-size"},
-					&cli.IntFlag{Name: "clickhouse-max-compression-buffer"},
-					&cli.StringFlag{Name: "clickhouse-client-name"},
-					&cli.StringFlag{Name: "clickhouse-client-version"},
-					&cli.BoolFlag{Name: "clickhouse-use-http"},
-				},
-			}
-
-			ctx := cli.NewContext(app, nil, nil)
-			ctx.Set("clickhouse-block-buffer-size", strconv.Itoa(tt.blockBufSize))
+			ctx, err := createTestContext(tt.blockBufSize)
+			require.NoError(t, err, "failed to create test context")
 
 			cfg, err := buildClickHouseConfig(ctx)
 
 			if tt.expectError {
-				require.Error(t, err)
+				require.Error(t, err) //nolint:forbidigo // ErrorIs not appropriate here, checking error message with Contains
 				if tt.errorContains != "" {
 					assert.Contains(t, err.Error(), tt.errorContains)
 				}
@@ -462,35 +489,13 @@ func TestBuildClickHouseConfig_BlockBufferSize_Overflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := &cli.App{
-				Flags: []cli.Flag{
-					&cli.StringSliceFlag{Name: "clickhouse-hosts"},
-					&cli.StringFlag{Name: "clickhouse-database"},
-					&cli.StringFlag{Name: "clickhouse-username"},
-					&cli.StringFlag{Name: "clickhouse-password"},
-					&cli.BoolFlag{Name: "clickhouse-debug"},
-					&cli.BoolFlag{Name: "clickhouse-insecure-skip-verify"},
-					&cli.IntFlag{Name: "clickhouse-max-execution-time"},
-					&cli.IntFlag{Name: "clickhouse-dial-timeout"},
-					&cli.IntFlag{Name: "clickhouse-max-open-conns"},
-					&cli.IntFlag{Name: "clickhouse-max-idle-conns"},
-					&cli.IntFlag{Name: "clickhouse-conn-max-lifetime"},
-					&cli.IntFlag{Name: "clickhouse-block-buffer-size"},
-					&cli.IntFlag{Name: "clickhouse-max-block-size"},
-					&cli.IntFlag{Name: "clickhouse-max-compression-buffer"},
-					&cli.StringFlag{Name: "clickhouse-client-name"},
-					&cli.StringFlag{Name: "clickhouse-client-version"},
-					&cli.BoolFlag{Name: "clickhouse-use-http"},
-				},
-			}
-
-			ctx := cli.NewContext(app, nil, nil)
-			ctx.Set("clickhouse-block-buffer-size", strconv.Itoa(tt.blockBufSize))
+			ctx, err := createTestContext(tt.blockBufSize)
+			require.NoError(t, err, "failed to create test context")
 
 			cfg, err := buildClickHouseConfig(ctx)
 
 			// Should return an error, not silently wrap
-			require.Error(t, err, "should error on overflow value %d", tt.blockBufSize)
+			require.Error(t, err, "should error on overflow value %d", tt.blockBufSize) //nolint:forbidigo // ErrorIs not appropriate here, checking error message with Contains
 			assert.Contains(t, err.Error(), "must be between 0 and 255")
 
 			// If somehow we got a config, verify it's not the wrapped value
@@ -508,36 +513,13 @@ func TestBuildClickHouseConfig_BlockBufferSize_Overflow(t *testing.T) {
 func TestBuildClickHouseConfig_BlockBufferSize_AllValidValues(t *testing.T) {
 	t.Parallel()
 
-	// Test all valid uint8 values to ensure conversion works correctly
-	app := &cli.App{
-		Flags: []cli.Flag{
-			&cli.StringSliceFlag{Name: "clickhouse-hosts"},
-			&cli.StringFlag{Name: "clickhouse-database"},
-			&cli.StringFlag{Name: "clickhouse-username"},
-			&cli.StringFlag{Name: "clickhouse-password"},
-			&cli.BoolFlag{Name: "clickhouse-debug"},
-			&cli.BoolFlag{Name: "clickhouse-insecure-skip-verify"},
-			&cli.IntFlag{Name: "clickhouse-max-execution-time"},
-			&cli.IntFlag{Name: "clickhouse-dial-timeout"},
-			&cli.IntFlag{Name: "clickhouse-max-open-conns"},
-			&cli.IntFlag{Name: "clickhouse-max-idle-conns"},
-			&cli.IntFlag{Name: "clickhouse-conn-max-lifetime"},
-			&cli.IntFlag{Name: "clickhouse-block-buffer-size"},
-			&cli.IntFlag{Name: "clickhouse-max-block-size"},
-			&cli.IntFlag{Name: "clickhouse-max-compression-buffer"},
-			&cli.StringFlag{Name: "clickhouse-client-name"},
-			&cli.StringFlag{Name: "clickhouse-client-version"},
-			&cli.BoolFlag{Name: "clickhouse-use-http"},
-		},
-	}
-
 	// Test boundary values and a few in between
 	testValues := []int{0, 1, 10, 128, 254, 255}
 
 	for _, val := range testValues {
 		t.Run(fmt.Sprintf("value_%d", val), func(t *testing.T) {
-			ctx := cli.NewContext(app, nil, nil)
-			ctx.Set("clickhouse-block-buffer-size", strconv.Itoa(val))
+			ctx, err := createTestContext(val)
+			require.NoError(t, err, "failed to create test context")
 
 			cfg, err := buildClickHouseConfig(ctx)
 

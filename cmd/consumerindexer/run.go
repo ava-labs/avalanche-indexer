@@ -8,17 +8,17 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
+
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 func run(c *cli.Context) error {
