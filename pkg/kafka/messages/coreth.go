@@ -197,28 +197,20 @@ func CorethWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*Coreth
 	return result
 }
 
-func CorethTxReceiptFromLibevm(receipt *libevmtypes.Receipt) *CorethTxReceipt {
-	if receipt == nil {
-		return nil
-	}
+func CorethTxReceiptFromLibevm(tx *libevmtypes.Receipt) *CorethTxReceipt {
 	return &CorethTxReceipt{
-		ContractAddress: receipt.ContractAddress,
-		Status:          receipt.Status,
-		GasUsed:         receipt.GasUsed,
-		Logs:            CorethLogsFromLibevm(receipt.Logs),
+		ContractAddress: tx.ContractAddress,
+		Status:          tx.Status,
+		GasUsed:         tx.GasUsed,
+		Logs:            CorethLogsFromLibevm(tx.Logs),
 	}
 }
 
 func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
-	if logs == nil {
-		return nil
-	}
-	result := make([]*CorethLog, 0, len(logs))
-	for _, log := range logs {
-		if log == nil {
-			continue
-		}
-		result = append(result, &CorethLog{
+	logWrappers := make([]*CorethLog, len(logs))
+
+	for i, log := range logs {
+		logWrappers[i] = &CorethLog{
 			Address:     log.Address,
 			Topics:      log.Topics,
 			Data:        log.Data,
@@ -228,9 +220,9 @@ func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
 			BlockHash:   log.BlockHash,
 			Index:       log.Index,
 			Removed:     log.Removed,
-		})
+		}
 	}
-	return result
+	return logWrappers
 }
 
 func (b *CorethBlock) Marshal() ([]byte, error) {
