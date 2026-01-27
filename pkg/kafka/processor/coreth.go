@@ -23,6 +23,7 @@ type CorethProcessor struct {
 	log        *zap.SugaredLogger
 	blocksRepo evmrepo.Blocks
 	txsRepo    evmrepo.Transactions
+	logsRepo   evmrepo.Logs
 	metrics    *metrics.Metrics
 }
 
@@ -32,12 +33,14 @@ func NewCorethProcessor(
 	log *zap.SugaredLogger,
 	blocksRepo evmrepo.Blocks,
 	txsRepo evmrepo.Transactions,
+	logsRepo evmrepo.Logs,
 	metrics *metrics.Metrics,
 ) *CorethProcessor {
 	return &CorethProcessor{
 		log:        log,
 		blocksRepo: blocksRepo,
 		txsRepo:    txsRepo,
+		logsRepo:   logsRepo,
 		metrics:    metrics,
 	}
 }
@@ -98,6 +101,13 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
 		if err := p.processTransactions(ctx, &block); err != nil {
 			return fmt.Errorf("failed to process transactions: %w", err)
+		}
+	}
+
+	// Persist logs to ClickHouse if repository is configured
+	if p.logsRepo != nil && len(block.Transactions) > 0 {
+		if err := p.processLogs(ctx, &block); err != nil {
+			return fmt.Errorf("failed to process logs: %w", err)
 		}
 	}
 
@@ -302,6 +312,90 @@ func (p *CorethProcessor) processTransactions(
 	)
 
 	return nil
+}
+
+// processLogs extracts logs from transaction receipts and writes them to ClickHouse
+func (p *CorethProcessor) processLogs(
+	ctx context.Context,
+	block *kafkamsg.CorethBlock,
+) error {
+	totalLogs := 0
+	for _, tx := range block.Transactions {
+		if tx.Receipt == nil || len(tx.Receipt.Logs) == 0 {
+			continue
+		}
+
+		for _, log := range tx.Receipt.Logs {
+			logRow, err := CorethLogToLogRow(log, block)
+			if err != nil {
+				return fmt.Errorf("failed to convert log: %w", err)
+			}
+
+			if err := p.logsRepo.WriteLog(ctx, logRow); err != nil {
+				return fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err)
+			}
+			totalLogs++
+		}
+	}
+
+	var blockNumber uint64
+	if block.Number != nil {
+		blockNumber = block.Number.Uint64()
+	}
+
+	p.log.Debugw("successfully wrote logs",
+		"blockchainID", block.BlockchainID,
+		"evmChainID", block.EVMChainID,
+		"blockNumber", blockNumber,
+		"logCount", totalLogs,
+	)
+
+	return nil
+}
+
+// CorethLogToLogRow converts a CorethLog to LogRow
+// Exported for testing purposes
+func CorethLogToLogRow(
+	log *kafkamsg.CorethLog,
+	block *kafkamsg.CorethBlock,
+) (*evmrepo.LogRow, error) {
+	if block.BlockchainID == nil {
+		return nil, evmrepo.ErrBlockChainIDRequired
+	}
+
+	// Set BlockchainID and EVMChainID from block (default EVMChainID to 0 if not set)
+	blockchainID := block.BlockchainID
+	evmChainID := block.EVMChainID
+	if evmChainID == nil {
+		evmChainID = big.NewInt(0)
+	}
+
+	// Convert topics from []common.Hash to []string (hex)
+	topics := make([]string, len(log.Topics))
+	for i, topic := range log.Topics {
+		topics[i] = topic.Hex()
+	}
+
+	// Determine removed flag
+	var removed uint8
+	if log.Removed {
+		removed = 1
+	}
+
+	return &evmrepo.LogRow{
+		BlockchainID: blockchainID,
+		EVMChainID:   evmChainID,
+		BlockNumber:  log.BlockNumber,
+		BlockHash:    log.BlockHash.Hex(),
+		BlockTime:    time.Unix(int64(block.Timestamp), 0).UTC(),
+		TxHash:       log.TxHash.Hex(),
+		TxIndex:      uint32(log.TxIndex),
+		Address:      log.Address.Hex(),
+		Topics:       topics,
+		Data:         log.Data,
+		LogIndex:     uint32(log.Index),
+		Removed:      removed,
+	}, nil
 }
 
 // Compile-time check that CorethProcessor implements Processor.

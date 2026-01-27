@@ -304,6 +304,12 @@ func main() {
 						EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
 						Value:   "default.raw_transactions",
 					},
+					&cli.StringFlag{
+						Name:    "raw-logs-table-name",
+						Usage:   "ClickHouse table name for raw logs",
+						EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
+						Value:   "default.raw_logs",
+					},
 				},
 				Action: run,
 			},
@@ -341,6 +347,7 @@ func run(c *cli.Context) error {
 	metricsAddr := fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
+	rawLogsTableName := c.String("raw-logs-table-name")
 	publishToDLQ := c.Bool("publish-to-dlq")
 	kafkaTopicNumPartitions := c.Int("kafka-topic-num-partitions")
 	kafkaTopicReplicationFactor := c.Int("kafka-topic-replication-factor")
@@ -384,6 +391,7 @@ func run(c *cli.Context) error {
 		"cloudProvider", cloudProvider,
 		"rawBlocksTableName", rawBlocksTableName,
 		"rawTransactionsTableName", rawTransactionsTableName,
+		"rawLogsTableName", rawLogsTableName,
 		"publishToDLQ", publishToDLQ,
 		"kafkaTopicNumPartitions", kafkaTopicNumPartitions,
 		"kafkaTopicReplicationFactor", kafkaTopicReplicationFactor,
@@ -437,8 +445,14 @@ func run(c *cli.Context) error {
 	}
 	sugar.Infow("Transactions table ready", "tableName", rawTransactionsTableName)
 
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, rawLogsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create logs repository: %w", err)
+	}
+	sugar.Infow("Logs table ready", "tableName", rawLogsTableName)
+
 	// Create CorethProcessor with ClickHouse persistence and metrics
-	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
+	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
 
 	adminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{"bootstrap.servers": bootstrapServers})
 	if err != nil {
