@@ -49,7 +49,9 @@ Kafka Topic (blocks)
    make build-all
    ```
 
-### Run Locally
+### Run Locally (Development)
+
+**Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. 
 
 ```bash
 bin/blockfetcher run \
@@ -68,7 +70,7 @@ bin/blockfetcher run \
   --verbose
 ```
 
-### Run with Docker
+### Run with Docker (Development)
 
 Build the multi-binary image:
 

@@ -10,7 +10,9 @@ Consumes blocks from Kafka pipeline with concurrent processing, automatic offset
 
 ### Usage
 
-Run locally (from repo root after build):
+### Run Locally (Development)
+
+**Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. 
 
 ```bash
 bin/consumerindexer run \
