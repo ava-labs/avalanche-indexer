@@ -1,0 +1,243 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
+	"github.com/ava-labs/coreth/plugin/evm/customethclient"
+	"github.com/ava-labs/coreth/rpc"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
+
+	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+)
+
+const flushTimeoutOnClose = 15 * time.Second
+
+func run(c *cli.Context) error {
+	// Build configuration from CLI flags
+	cfg := buildConfig(c)
+
+	sugar, err := utils.NewSugaredLogger(cfg.Verbose)
+	if err != nil {
+		return fmt.Errorf("failed to create logger: %w", err)
+	}
+	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
+
+	sugar.Infow("config",
+		"verbose", cfg.Verbose,
+		"evmChainID", cfg.EVMChainID,
+		"bcID", cfg.BCID,
+		"rpcURL", cfg.RPCURL,
+		"start", cfg.Start,
+		"end", cfg.End,
+		"concurrency", cfg.Concurrency,
+		"receiptTimeout", cfg.ReceiptTimeout,
+		"backfill", cfg.Backfill,
+		"blocksCap", cfg.BlocksCap,
+		"maxFailures", cfg.MaxFailures,
+		"metricsHost", cfg.MetricsHost,
+		"metricsPort", cfg.MetricsPort,
+		"environment", cfg.Environment,
+		"region", cfg.Region,
+		"cloudProvider", cfg.CloudProvider,
+		"checkpointTableName", cfg.CheckpointTableName,
+		"checkpointInterval", cfg.CheckpointInterval,
+	)
+
+	var fetchStartHeight bool
+	start := cfg.Start
+	if start == 0 {
+		sugar.Infof("start block height: not specified, will fetch from the latest checkpoint")
+		fetchStartHeight = true
+	} else {
+		sugar.Infof("start block height: %d", start)
+	}
+
+	var fetchLatestHeight bool
+	end := cfg.End
+	if end == 0 {
+		sugar.Infof("end block height: not specified, will fetch until the latest block")
+		fetchLatestHeight = true
+	} else {
+		sugar.Infof("end block height: %d", end)
+	}
+
+	// Initialize Prometheus metrics with labels for multi-instance filtering
+	registry := prometheus.NewRegistry()
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    cfg.EVMChainID,
+		Environment:   cfg.Environment,
+		Region:        cfg.Region,
+		CloudProvider: cfg.CloudProvider,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+
+	// Start metrics server
+	metricsServer := metrics.NewServer(cfg.MetricsAddr(), registry)
+	metricsErrCh := metricsServer.Start()
+	if cfg.MetricsHost == "" {
+		sugar.Infof("metrics server listening on http://0.0.0.0:%d/metrics", cfg.MetricsPort)
+	} else {
+		sugar.Infof("metrics server listening on http://%s/metrics", cfg.MetricsAddr())
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	client, err := rpc.DialContext(ctx, cfg.RPCURL)
+	if err != nil {
+		return fmt.Errorf("failed to dial rpc: %w", err)
+	}
+	defer client.Close()
+
+	// Create Kafka admin client to ensure topic exists
+	kafkaAdminClient, err := confluentKafka.NewAdminClient(&confluentKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers})
+	if err != nil {
+		return fmt.Errorf("failed to create kafka admin client: %w", err)
+	}
+	defer kafkaAdminClient.Close()
+
+	err = kafka.EnsureTopic(ctx, kafkaAdminClient, kafka.TopicConfig{
+		Name:              cfg.KafkaTopic,
+		NumPartitions:     cfg.KafkaTopicNumPartitions,
+		ReplicationFactor: cfg.KafkaTopicReplicationFactor,
+	}, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
+	}
+
+	// Build Kafka producer configuration
+	kafkaConfig := cfg.KafkaProducerConfig()
+
+	producer, err := kafka.NewProducer(ctx, kafkaConfig, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to create kafka producer: %w", err)
+	}
+	defer producer.Close(flushTimeoutOnClose)
+
+	w, err := worker.NewCorethWorker(ctx, cfg.RPCURL, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to create worker: %w", err)
+	}
+
+	// Initialize ClickHouse client
+	chCfg := clickhouse.Load()
+	chClient, err := clickhouse.New(chCfg, sugar)
+	if err != nil {
+		return fmt.Errorf("failed to create ClickHouse client: %w", err)
+	}
+	defer chClient.Close()
+
+	sugar.Info("ClickHouse client created successfully")
+
+	if fetchLatestHeight {
+		end, err = customethclient.New(client).BlockNumber(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get latest block height: %w", err)
+		}
+		sugar.Infof("latest block height: %d", end)
+	}
+
+	repo := checkpoint.NewRepository(chClient, cfg.CheckpointTableName)
+
+	err = repo.CreateTableIfNotExists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check existence or create checkpoints table: %w", err)
+	}
+
+	if fetchStartHeight {
+		checkpoint, err := repo.ReadCheckpoint(ctx, cfg.EVMChainID)
+		if err != nil {
+			return fmt.Errorf("failed to read checkpoint: %w", err)
+		}
+		if checkpoint == nil {
+			sugar.Infof("checkpoint not found, will start from block height 0")
+			start = 0
+		} else {
+			start = checkpoint.Lowest
+			sugar.Infof("start block height: %d", start)
+		}
+	}
+
+	s, err := slidingwindow.NewState(start, end)
+	if err != nil {
+		return fmt.Errorf("failed to create state: %w", err)
+	}
+
+	mgr, err := slidingwindow.NewManager(sugar, s, w, cfg.Concurrency, cfg.Backfill, cfg.BlocksCap, cfg.MaxFailures, m)
+	if err != nil {
+		return fmt.Errorf("failed to create manager: %w", err)
+	}
+
+	// Initialize window metrics with starting state
+	m.UpdateWindowMetrics(start, end, 0)
+
+	sub := subscriber.NewCoreth(sugar, customethclient.New(client))
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return sub.Subscribe(gctx, cfg.BlocksCap, mgr)
+	})
+	g.Go(func() error {
+		return mgr.Run(gctx)
+	})
+	g.Go(func() error {
+		select {
+		case <-gctx.Done():
+			return nil
+		case err := <-metricsErrCh:
+			if err != nil {
+				return fmt.Errorf("metrics server failed: %w", err)
+			}
+			return nil
+		}
+	})
+	g.Go(func() error {
+		select {
+		case <-gctx.Done():
+			return gctx.Err()
+		case err := <-producer.Errors():
+			return err
+		}
+	})
+	g.Go(func() error {
+		return scheduler.Start(gctx, s, repo, cfg.CheckpointInterval, cfg.EVMChainID)
+	})
+
+	go slidingwindow.StartGapWatchdog(gctx, sugar, s, cfg.GapWatchdogInterval, cfg.GapWatchdogMaxGap)
+
+	err = g.Wait()
+	if errors.Is(err, context.Canceled) {
+		sugar.Infow("exiting due to context cancellation")
+	} else if err != nil {
+		sugar.Errorw("run failed", "error", err)
+	}
+
+	// Gracefully shutdown metrics server
+	sugar.Info("shutting down metrics server")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		sugar.Warnw("metrics server shutdown error", "error", err)
+	}
+
+	sugar.Info("shutdown complete")
+	return err
+}
