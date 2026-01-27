@@ -209,7 +209,7 @@ func createTestLog() *LogRow {
 	topic1 := "0x0000000000000000000000004142434445464748494a4b4c4d4e4f5051525354" // from address
 	topic2 := "0x00000000000000000000000055565758595a5b5c5d5e5f6061626364656667"   // to address
 
-	blockchainID := "11111111111111111111111111111111LpoYY"
+	blockchainID := testBlockchainID
 	return &LogRow{
 		BlockchainID: &blockchainID,
 		EVMChainID:   big.NewInt(43113),

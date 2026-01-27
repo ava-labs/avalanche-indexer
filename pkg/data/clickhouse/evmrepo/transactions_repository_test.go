@@ -214,7 +214,7 @@ func createTestTransaction() *TransactionRow {
 	from := "0x4142434445464748494a4b4c4d4e4f5051525354"
 	to := "0x55565758595a5b5c5d5e5f6061626364656667"
 
-	blockchainID := "11111111111111111111111111111111LpoYY"
+	blockchainID := testBlockchainID
 	return &TransactionRow{
 		BlockchainID:     &blockchainID,
 		EVMChainID:       big.NewInt(0),
