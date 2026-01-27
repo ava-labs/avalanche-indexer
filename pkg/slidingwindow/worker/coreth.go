@@ -2,31 +2,37 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
 
-	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
 
-var registerCustomTypesOnce sync.Once
+var (
+	registerCustomTypesOnce sync.Once
+	ErrReceiptCountMismatch = errors.New("receipt count mismatch")
+	ErrReceiptFetchFailed   = errors.New("fetch block receipts failed")
+)
 
 type CorethWorker struct {
-	client       *evmclient.Client
-	producer     *kafka.Producer
-	topic        string
-	evmChainID   *big.Int
-	blockchainID *string
-	log          *zap.SugaredLogger
-	metrics      *metrics.Metrics
+	client         *evmclient.Client
+	producer       *kafka.Producer
+	topic          string
+	evmChainID     *big.Int
+	blockchainID   *string
+	log            *zap.SugaredLogger
+	metrics        *metrics.Metrics
+	receiptTimeout time.Duration // Timeout for fetching block receipts
 }
 
 func NewCorethWorker(
@@ -38,6 +44,7 @@ func NewCorethWorker(
 	blockchainID string,
 	log *zap.SugaredLogger,
 	metrics *metrics.Metrics,
+	receiptTimeout time.Duration,
 ) (*CorethWorker, error) {
 	registerCustomTypesOnce.Do(func() {
 		customtypes.Register()
@@ -49,60 +56,118 @@ func NewCorethWorker(
 	}
 
 	return &CorethWorker{
-		client:       evmclient.New(c),
-		producer:     producer,
-		topic:        topic,
-		evmChainID:   new(big.Int).SetUint64(evmChainID),
-		blockchainID: &blockchainID,
-		log:          log,
-		metrics:      metrics,
+		client:         evmclient.New(c),
+		producer:       producer,
+		topic:          topic,
+		evmChainID:     new(big.Int).SetUint64(evmChainID),
+		blockchainID:   &blockchainID,
+		log:            log,
+		metrics:        metrics,
+		receiptTimeout: receiptTimeout,
 	}, nil
 }
 
-func (w *CorethWorker) Process(ctx context.Context, height uint64) error {
-	const method = "eth_getBlockByNumber"
-	start := time.Now()
-
-	if w.metrics != nil {
-		w.metrics.IncRPCInFlight()
-		defer w.metrics.DecRPCInFlight()
-	}
-
-	h := new(big.Int).SetUint64(height)
-	block, err := w.client.BlockByNumber(ctx, h)
-
-	if w.metrics != nil {
-		w.metrics.RecordRPCCall(method, err, time.Since(start).Seconds())
-	}
-
+func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
+	corethBlock, err := cw.GetBlock(ctx, height)
 	if err != nil {
-		return fmt.Errorf("fetch block %d: %w", height, err)
-	}
-
-	corethBlock, err := kafkamsg.CorethBlockFromLibevm(block, w.evmChainID, w.blockchainID)
-	if err != nil {
-		return fmt.Errorf("convert block %d: %w", height, err)
+		return fmt.Errorf("fetch block failed %d: %w", height, err)
 	}
 
 	bytes, err := corethBlock.Marshal()
 	if err != nil {
-		return fmt.Errorf("serialize block %d: %w", height, err)
+		return fmt.Errorf("serialize block failed %d: %w", height, err)
 	}
 
-	err = w.producer.Produce(ctx, kafka.Msg{
-		Topic: w.topic,
+	err = cw.producer.Produce(ctx, kafka.Msg{
+		Topic: cw.topic,
 		Value: bytes,
-		Key:   []byte(block.Number().String()),
+		Key:   []byte(corethBlock.Number.String()),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to produce block %d: %w", height, err)
+		return fmt.Errorf("produce block failed %d: %w", height, err)
 	}
 
-	w.log.Debugw("processed block",
-		"height", height,
-		"hash", block.Hash().Hex(),
-		"txs", len(block.Transactions()),
+	cw.log.Debugw("processed block",
+		"height", corethBlock.Number.Uint64(),
+		"hash", corethBlock.Hash,
+		"txs", len(corethBlock.Transactions),
 	)
 
+	return nil
+}
+
+// GetBlock fetches the block and transaction logs from the coreth rpc
+// and converts it to a messages.CorethBlock.
+func (cw *CorethWorker) GetBlock(ctx context.Context, height uint64) (*messages.CorethBlock, error) {
+	const method = "eth_getBlockByNumber"
+	start := time.Now()
+
+	if cw.metrics != nil {
+		cw.metrics.IncRPCInFlight()
+		defer cw.metrics.DecRPCInFlight()
+	}
+
+	h := new(big.Int).SetUint64(height)
+	block, err := cw.client.BlockByNumber(ctx, h)
+
+	if cw.metrics != nil {
+		cw.metrics.RecordRPCCall(method, err, time.Since(start).Seconds())
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("fetch block failed %d: %w", height, err)
+	}
+
+	corethBlock, err := messages.CorethBlockFromLibevm(block, cw.evmChainID, cw.blockchainID)
+	if err != nil {
+		return nil, fmt.Errorf("convert block failed %d: %w", height, err)
+	}
+
+	err = cw.FetchBlockReceipts(ctx, corethBlock.Transactions, block.Number().Int64())
+	if err != nil {
+		return nil, err
+	}
+	return corethBlock, nil
+}
+
+// FetchBlockReceipts fetches the receipts for the given transactions and block number.
+func (cw *CorethWorker) FetchBlockReceipts(ctx context.Context, transactions []*messages.CorethTransaction, blockNumber int64) error {
+	start := time.Now()
+	if cw.metrics != nil {
+		cw.metrics.IncReceiptFetchInFlight()
+		defer cw.metrics.DecReceiptFetchInFlight()
+	}
+
+	ctxTimeout, cancel := context.WithTimeout(ctx, cw.receiptTimeout)
+	defer cancel()
+	bn := rpc.BlockNumber(blockNumber)
+	r, err := cw.client.BlockReceipts(ctxTimeout, rpc.BlockNumberOrHash{
+		BlockNumber: &bn,
+	})
+	if err != nil {
+		if cw.metrics != nil {
+			cw.metrics.RecordReceiptFetch(err, time.Since(start).Seconds(), 0)
+		}
+		return fmt.Errorf("%w for block %d: %w", ErrReceiptFetchFailed, blockNumber, err)
+	}
+
+	if len(r) != len(transactions) {
+		err := fmt.Errorf("%w for block %d: got %d receipts, expected %d transactions",
+			ErrReceiptCountMismatch, blockNumber, len(r), len(transactions))
+		if cw.metrics != nil {
+			cw.metrics.RecordReceiptFetch(err, time.Since(start).Seconds(), 0)
+		}
+		return err
+	}
+
+	logCount := 0
+	for i, receipt := range r {
+		transactions[i].Receipt = messages.CorethTxReceiptFromLibevm(receipt)
+		logCount += len(receipt.Logs)
+	}
+
+	if cw.metrics != nil {
+		cw.metrics.RecordReceiptFetch(nil, time.Since(start).Seconds(), logCount)
+	}
 	return nil
 }

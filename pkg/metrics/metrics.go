@@ -55,6 +55,15 @@ type Metrics struct {
 
 	// Processing latency
 	blockProcessingDuration prometheus.Histogram
+
+	// Receipt metrics
+	receiptsFetched        *prometheus.CounterVec
+	receiptFetchDuration   prometheus.Histogram
+	receiptFetchesInFlight prometheus.Gauge
+
+	// Log metrics
+	logsFetched   prometheus.Counter
+	logsProcessed prometheus.Counter
 }
 
 // New creates a new Metrics instance and registers all metrics with the provided registerer.
@@ -136,6 +145,37 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Help:      "Time to process a single block end-to-end",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
+		receiptsFetched: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: "receipts",
+			Name:      "fetched_total",
+			Help:      "Total transaction receipts fetched by status",
+		}, []string{"status"}),
+		receiptFetchDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: "receipts",
+			Name:      "fetch_duration_seconds",
+			Help:      "Time to fetch all receipts for a block",
+			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}),
+		receiptFetchesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: "receipts",
+			Name:      "fetches_in_flight",
+			Help:      "Number of receipt fetches currently in progress",
+		}),
+		logsFetched: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: "logs",
+			Name:      "fetched_total",
+			Help:      "Total transaction logs fetched from receipts",
+		}),
+		logsProcessed: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: "logs",
+			Name:      "processed_total",
+			Help:      "Total transaction logs processed and persisted",
+		}),
 	}
 
 	err := errors.Join(
@@ -149,6 +189,11 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		reg.Register(m.rpcDuration),
 		reg.Register(m.rpcInFlight),
 		reg.Register(m.blockProcessingDuration),
+		reg.Register(m.receiptsFetched),
+		reg.Register(m.receiptFetchDuration),
+		reg.Register(m.receiptFetchesInFlight),
+		reg.Register(m.logsFetched),
+		reg.Register(m.logsProcessed),
 	)
 	if err != nil {
 		return nil, err
@@ -226,4 +271,44 @@ func (m *Metrics) ObserveBlockProcessingDuration(seconds float64) {
 		return
 	}
 	m.blockProcessingDuration.Observe(seconds)
+}
+
+// IncReceiptFetchInFlight increments the in-flight receipt fetch gauge.
+func (m *Metrics) IncReceiptFetchInFlight() {
+	if m == nil {
+		return
+	}
+	m.receiptFetchesInFlight.Inc()
+}
+
+// DecReceiptFetchInFlight decrements the in-flight receipt fetch gauge.
+func (m *Metrics) DecReceiptFetchInFlight() {
+	if m == nil {
+		return
+	}
+	m.receiptFetchesInFlight.Dec()
+}
+
+// RecordReceiptFetch records a receipt fetch RPC call outcome with duration and log count.
+func (m *Metrics) RecordReceiptFetch(err error, durationSeconds float64, logCount int) {
+	if m == nil {
+		return
+	}
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+	m.receiptsFetched.WithLabelValues(status).Inc()
+	m.receiptFetchDuration.Observe(durationSeconds)
+	if logCount > 0 {
+		m.logsFetched.Add(float64(logCount))
+	}
+}
+
+// AddLogsProcessed records logs that have been processed and persisted.
+func (m *Metrics) AddLogsProcessed(count int) {
+	if m == nil || count <= 0 {
+		return
+	}
+	m.logsProcessed.Add(float64(count))
 }
