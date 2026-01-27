@@ -335,8 +335,6 @@ func TestConsumer_ErrorHandling(t *testing.T) {
 		messageCount := 3
 		produceTestMessages(t, kc.brokers, consumerTestTopic, messageCount)
 
-		context.WithTimeout(context.Background(), 30*time.Second)
-
 		go func() {
 			_ = consumer.Start(context.Background())
 		}()
@@ -430,17 +428,8 @@ func TestConsumer_DLQProduction(t *testing.T) {
 		for i, msg := range dlqMessages {
 			t.Logf("DLQ message %d: key=%s, partition=%d, offset=%d, headers=%d",
 				i, string(msg.Key), msg.TopicPartition.Partition, msg.TopicPartition.Offset, len(msg.Headers))
-
-			hasErrorHeader := false
-			for _, header := range msg.Headers {
-				if header.Key == "error" || header.Key == "original_topic" {
-					hasErrorHeader = true
-					t.Logf("  Found header: %s = %s", header.Key, string(header.Value))
-				}
-			}
 			require.NotNil(t, msg.Key, "DLQ message should have key")
 			require.NotNil(t, msg.Value, "DLQ message should have value")
-			_ = hasErrorHeader
 		}
 
 		dlqCancel()
@@ -792,7 +781,7 @@ func TestConsumer_LogPrinting(t *testing.T) {
 		case _, ok := <-consumer.logsDone:
 			require.True(t, ok, "logsDone channel should be open when logs enabled")
 		case <-time.After(1 * time.Second):
-			require.True(t, true, "logsDone channel should be open when logs enabled")
+			t.Log("logsDone channel should be open when logs enabled")
 		}
 
 		cancel()
