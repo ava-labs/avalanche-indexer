@@ -135,6 +135,17 @@ func CorethBlockToBlockRow(block *kafkamsg.CorethBlock) (*evmrepo.BlockRow, erro
 		blockNumber = big.NewInt(0)
 	}
 
+	// Set difficulty from big.Int (keep as *big.Int)
+	var difficulty, totalDifficulty *big.Int
+	if block.Difficulty != nil {
+		difficulty = block.Difficulty
+		// TotalDifficulty: for now use Difficulty, but this should be cumulative in production
+		totalDifficulty = new(big.Int).Set(block.Difficulty)
+	} else {
+		difficulty = big.NewInt(0)
+		totalDifficulty = big.NewInt(0)
+	}
+
 	blockRow := &evmrepo.BlockRow{
 		BlockchainID:    blockchainID,
 		EVMChainID:      evmChainID,
@@ -143,22 +154,12 @@ func CorethBlockToBlockRow(block *kafkamsg.CorethBlock) (*evmrepo.BlockRow, erro
 		ParentHash:      block.ParentHash,
 		BlockTime:       time.Unix(int64(block.Timestamp), 0).UTC(),
 		Miner:           block.Miner,
-		Difficulty:      block.Difficulty,
-		TotalDifficulty: new(big.Int).Set(block.Difficulty),
+		Difficulty:      difficulty,
+		TotalDifficulty: totalDifficulty,
 		Size:            block.Size,
 		GasLimit:        block.GasLimit,
 		GasUsed:         block.GasUsed,
 		BaseFeePerGas:   block.BaseFee,
-	}
-
-	// Set difficulty from big.Int (keep as *big.Int)
-	if block.Difficulty != nil {
-		blockRow.Difficulty = block.Difficulty
-		// TotalDifficulty: for now use Difficulty, but this should be cumulative in production
-		blockRow.TotalDifficulty = new(big.Int).Set(block.Difficulty)
-	} else {
-		blockRow.Difficulty = big.NewInt(0)
-		blockRow.TotalDifficulty = big.NewInt(0)
 	}
 
 	// Direct string assignments - no conversions needed
