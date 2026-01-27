@@ -49,7 +49,9 @@ Kafka Topic (blocks)
    make build-all
    ```
 
-### Run Locally
+### Run Locally (Development)
+
+**Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. 
 
 ```bash
 bin/blockfetcher run \
@@ -63,12 +65,12 @@ bin/blockfetcher run \
   --max-failures 5 \
   --kafka-brokers localhost:9092 \
   --kafka-topic blocks \
-  --kafka-topic-num-partitions 3 \
-  --kafka-topic-replication-factor 3 \
+  --kafka-topic-num-partitions 1 \
+  --kafka-topic-replication-factor 1 \
   --verbose
 ```
 
-### Run with Docker
+### Run with Docker (Development)
 
 Build the multi-binary image:
 
@@ -92,8 +94,8 @@ docker run --rm \
   -e MAX_FAILURES=5 \
   -e KAFKA_BROKERS=kafka:9093 \
   -e KAFKA_TOPIC=blocks \
-  -e KAFKA_TOPIC_NUM_PARTITIONS=3 \
-  -e KAFKA_TOPIC_REPLICATION_FACTOR=3 \
+  -e KAFKA_TOPIC_NUM_PARTITIONS=1 \
+  -e KAFKA_TOPIC_REPLICATION_FACTOR=1 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
   -e CLICKHOUSE_DATABASE=test_db \
   -e CLICKHOUSE_USERNAME=default \
