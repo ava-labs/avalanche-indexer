@@ -772,7 +772,7 @@ func TestConsumer_LogPrinting(t *testing.T) {
 	t.Run("logs_enabled", func(t *testing.T) {
 		processor := newTestProcessor()
 
-		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-logs-disabled-%d", time.Now().UnixNano()))
+		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-logs-enabled-%d", time.Now().UnixNano()))
 		cfg.EnableLogs = true
 
 		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
