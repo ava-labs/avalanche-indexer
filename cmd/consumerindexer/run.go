@@ -61,6 +61,7 @@ func run(c *cli.Context) error {
 		"cloudProvider", cfg.CloudProvider,
 		"rawBlocksTableName", cfg.RawBlocksTableName,
 		"rawTransactionsTableName", cfg.RawTransactionsTableName,
+		"rawLogsTableName", cfg.RawLogsTableName,
 		"publishToDLQ", cfg.PublishToDLQ,
 		"kafkaTopicNumPartitions", cfg.KafkaTopicNumPartitions,
 		"kafkaTopicReplicationFactor", cfg.KafkaTopicReplicationFactor,
@@ -114,8 +115,14 @@ func run(c *cli.Context) error {
 	}
 	sugar.Info("Transactions table ready", "tableName", cfg.RawTransactionsTableName)
 
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.RawLogsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create logs repository: %w", err)
+	}
+	sugar.Info("Logs table ready", "tableName", cfg.RawLogsTableName)
+
 	// Create CorethProcessor with ClickHouse persistence and metrics
-	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
+	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
 
 	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
