@@ -253,7 +253,7 @@ func TestConsumer_NewConsumer(t *testing.T) {
 		consumer.dlqProducer.Close(consumerFlushTimeout)
 	})
 
-	t.Run("dl_topic_config_validation", func(t *testing.T) {
+	t.Run("dlq_topic_config_validation", func(t *testing.T) {
 		cfg := ConsumerConfig{
 			BootstrapServers:            kc.brokers,
 			GroupID:                     "test-group-dlq-val",
