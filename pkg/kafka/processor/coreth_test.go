@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
-	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/libevm/common"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -27,7 +28,7 @@ type mockBlocksRepo struct {
 	writeBlockFunc func(ctx context.Context, block *evmrepo.BlockRow) error
 }
 
-func (m *mockBlocksRepo) CreateTableIfNotExists(ctx context.Context) error { return nil }
+func (*mockBlocksRepo) CreateTableIfNotExists(context.Context) error { return nil }
 func (m *mockBlocksRepo) WriteBlock(ctx context.Context, block *evmrepo.BlockRow) error {
 	if m.writeBlockFunc != nil {
 		return m.writeBlockFunc(ctx, block)
@@ -39,7 +40,7 @@ type mockTransactionsRepo struct {
 	writeTransactionFunc func(ctx context.Context, tx *evmrepo.TransactionRow) error
 }
 
-func (m *mockTransactionsRepo) CreateTableIfNotExists(ctx context.Context) error { return nil }
+func (*mockTransactionsRepo) CreateTableIfNotExists(context.Context) error { return nil }
 func (m *mockTransactionsRepo) WriteTransaction(ctx context.Context, tx *evmrepo.TransactionRow) error {
 	if m.writeTransactionFunc != nil {
 		return m.writeTransactionFunc(ctx, tx)
@@ -51,19 +52,13 @@ type mockLogsRepo struct {
 	writeLogFunc func(ctx context.Context, log *evmrepo.LogRow) error
 }
 
-func (m *mockLogsRepo) CreateTableIfNotExists(ctx context.Context) error { return nil }
+func (*mockLogsRepo) CreateTableIfNotExists(context.Context) error { return nil }
 func (m *mockLogsRepo) WriteLog(ctx context.Context, log *evmrepo.LogRow) error {
 	if m.writeLogFunc != nil {
 		return m.writeLogFunc(ctx, log)
 	}
 	return nil
 }
-
-type mockMetrics struct{}
-
-func (m *mockMetrics) IncError(string)                       {}
-func (m *mockMetrics) ObserveBlockProcessingDuration(float64) {}
-func (m *mockMetrics) AddLogsProcessed(int)                  {}
 
 // Helper to compare *big.Int values (handles nil cases)
 func assertBigIntEqual(t *testing.T, expected, actual *big.Int) {
@@ -427,9 +422,8 @@ func TestProcess_NilMessage(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
-	err := proc.Process(context.Background(), nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "nil message")
+	err := proc.Process(t.Context(), nil)
+	require.ErrorIs(t, err, ErrNilMessage)
 }
 
 func TestProcess_NilMessageValue(t *testing.T) {
@@ -439,9 +433,8 @@ func TestProcess_NilMessageValue(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
 	msg := &cKafka.Message{Value: nil}
-	err := proc.Process(context.Background(), msg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "nil message or empty value")
+	err := proc.Process(t.Context(), msg)
+	require.ErrorIs(t, err, ErrNilMessage)
 }
 
 func TestProcess_InvalidJSON(t *testing.T) {
@@ -451,7 +444,7 @@ func TestProcess_InvalidJSON(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
 	msg := &cKafka.Message{Value: []byte(`{invalid json}`)}
-	err := proc.Process(context.Background(), msg)
+	err := proc.Process(t.Context(), msg)
 
 	var jsonErr *json.SyntaxError
 	require.ErrorAs(t, err, &jsonErr)
@@ -475,7 +468,7 @@ func TestProcess_MissingBlockchainID(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
+	err = proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, evmrepo.ErrBlockChainIDRequired)
 }
 
@@ -490,7 +483,7 @@ func TestProcess_Success_NoRepos(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
+	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 }
 
@@ -500,8 +493,8 @@ func TestProcess_Success_WithBlocksRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedBlock *evmrepo.BlockRow
 	blocksRepo := &mockBlocksRepo{
-		writeBlockFunc: func(ctx context.Context, block *evmrepo.BlockRow) error {
-			capturedBlock = block
+		writeBlockFunc: func(_ context.Context, blk *evmrepo.BlockRow) error {
+			capturedBlock = blk
 			return nil
 		},
 	}
@@ -512,7 +505,7 @@ func TestProcess_Success_WithBlocksRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
+	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 
 	require.NotNil(t, capturedBlock)
@@ -526,7 +519,7 @@ func TestProcess_BlocksRepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write block failed")
 	blocksRepo := &mockBlocksRepo{
-		writeBlockFunc: func(ctx context.Context, block *evmrepo.BlockRow) error {
+		writeBlockFunc: func(_ context.Context, _ *evmrepo.BlockRow) error {
 			return expectedErr
 		},
 	}
@@ -537,9 +530,8 @@ func TestProcess_BlocksRepoError(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to write block to ClickHouse")
+	err = proc.Process(t.Context(), msg)
+	require.ErrorIs(t, err, expectedErr)
 }
 
 func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
@@ -548,7 +540,7 @@ func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedTxs []*evmrepo.TransactionRow
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(ctx context.Context, tx *evmrepo.TransactionRow) error {
+		writeTransactionFunc: func(_ context.Context, tx *evmrepo.TransactionRow) error {
 			capturedTxs = append(capturedTxs, tx)
 			return nil
 		},
@@ -560,7 +552,7 @@ func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
+	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 
 	require.Len(t, capturedTxs, 1)
@@ -573,7 +565,7 @@ func TestProcess_TransactionsRepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write transaction failed")
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(ctx context.Context, tx *evmrepo.TransactionRow) error {
+		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
 			return expectedErr
 		},
 	}
@@ -584,9 +576,8 @@ func TestProcess_TransactionsRepoError(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to process transactions")
+	err = proc.Process(t.Context(), msg)
+	require.ErrorIs(t, err, expectedErr)
 }
 
 func TestProcess_Success_WithLogsRepo(t *testing.T) {
@@ -595,8 +586,8 @@ func TestProcess_Success_WithLogsRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedLogs []*evmrepo.LogRow
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(ctx context.Context, log *evmrepo.LogRow) error {
-			capturedLogs = append(capturedLogs, log)
+		writeLogFunc: func(_ context.Context, lg *evmrepo.LogRow) error {
+			capturedLogs = append(capturedLogs, lg)
 			return nil
 		},
 	}
@@ -607,7 +598,7 @@ func TestProcess_Success_WithLogsRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
+	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 
 	require.Len(t, capturedLogs, 2)
@@ -619,7 +610,7 @@ func TestProcess_LogsRepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write log failed")
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(ctx context.Context, log *evmrepo.LogRow) error {
+		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
 			return expectedErr
 		},
 	}
@@ -630,9 +621,8 @@ func TestProcess_LogsRepoError(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to process logs")
+	err = proc.Process(t.Context(), msg)
+	require.ErrorIs(t, err, expectedErr)
 }
 
 func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
@@ -643,13 +633,13 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 	logsRepoCalled := false
 
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(ctx context.Context, tx *evmrepo.TransactionRow) error {
+		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
 			txsRepoCalled = true
 			return nil
 		},
 	}
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(ctx context.Context, log *evmrepo.LogRow) error {
+		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
 			logsRepoCalled = true
 			return nil
 		},
@@ -662,7 +652,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
-	err = proc.Process(context.Background(), msg)
+	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 
 	assert.False(t, txsRepoCalled, "transactions repo should not be called")

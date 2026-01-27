@@ -16,6 +16,9 @@ import (
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
+// ErrNilMessage is returned when a nil message or empty value is received.
+var ErrNilMessage = errors.New("received nil message or empty value")
+
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
 // If repositories are provided, persists blocks and transactions to ClickHouse.
 // Safe for concurrent use.
@@ -53,7 +56,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 
 	if msg == nil || msg.Value == nil {
 		p.metrics.IncError("coreth_nil_message")
-		return errors.New("received nil message or empty value")
+		return ErrNilMessage
 	}
 
 	var block kafkamsg.CorethBlock
