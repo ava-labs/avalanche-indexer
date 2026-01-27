@@ -20,10 +20,10 @@ bin/consumerindexer run \
   --dlq-topic blocks-dlq \
   --publish-to-dlq \
   --concurrency 10 \
-  --kafka-topic-num-partitions 3 \
-  --kafka-topic-replication-factor 3 \
-  --kafka-dlq-topic-num-partitions 3 \
-  --kafka-dlq-topic-replication-factor 3 \
+  --kafka-topic-num-partitions 1 \
+  --kafka-topic-replication-factor 1 \
+  --kafka-dlq-topic-num-partitions 1 \
+  --kafka-dlq-topic-replication-factor 1 \
   --clickhouse-hosts localhost:9000 \
   --clickhouse-username default
 ```
@@ -108,10 +108,10 @@ docker run --rm \
   -e KAFKA_DLQ_TOPIC=blocks-dlq \
   -e KAFKA_PUBLISH_TO_DLQ=true \
   -e KAFKA_CONCURRENCY=20 \
-  -e KAFKA_TOPIC_NUM_PARTITIONS=3 \
-  -e KAFKA_TOPIC_REPLICATION_FACTOR=3 \
-  -e KAFKA_DLQ_TOPIC_NUM_PARTITIONS=3 \
-  -e KAFKA_DLQ_TOPIC_REPLICATION_FACTOR=3 \
+  -e KAFKA_TOPIC_NUM_PARTITIONS=1 \
+  -e KAFKA_TOPIC_REPLICATION_FACTOR=1 \
+  -e KAFKA_DLQ_TOPIC_NUM_PARTITIONS=1 \
+  -e KAFKA_DLQ_TOPIC_REPLICATION_FACTOR=1 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
   -e CLICKHOUSE_USERNAME=default \
   -e METRICS_PORT=9090 \
