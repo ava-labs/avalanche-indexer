@@ -84,7 +84,7 @@ bin/blockfetcher run \
   --backfill-priority 4 \
   --blocks-ch-capacity 200 \
   --max-failures 5 \
-  --kafka-brokers "bootstrap-clstr-nwxvsv9mm4hlglsk.kafka.us-ashburn-1.oci.oraclecloud.com:9092" \
+  --kafka-brokers "your-kafka-broker.example.com:9092" \
   --kafka-topic blocks \
   --kafka-sasl-username "YOUR_SASL_USERNAME" \
   --kafka-sasl-password "YOUR_SASL_PASSWORD" \
@@ -104,7 +104,7 @@ export KAFKA_SASL_MECHANISM="SCRAM-SHA-512"
 export KAFKA_SECURITY_PROTOCOL="SASL_SSL"
 
 bin/blockfetcher run \
-  --kafka-brokers "bootstrap-clstr-nwxvsv9mm4hlglsk.kafka.us-ashburn-1.oci.oraclecloud.com:9092" \
+  --kafka-brokers "your-kafka-broker.example.com:9092" \
   # ... other flags
 ```
 

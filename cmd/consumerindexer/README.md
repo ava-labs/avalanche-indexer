@@ -36,7 +36,7 @@ For authenticated Kafka clusters (e.g., Oracle Cloud Infrastructure Kafka):
 
 ```bash
 bin/consumerindexer run \
-  --bootstrap-servers "bootstrap-clstr-nwxvsv9mm4hlglsk.kafka.us-ashburn-1.oci.oraclecloud.com:9092" \
+  --bootstrap-servers "your-kafka-broker.example.com:9092" \
   --group-id my-consumer-group \
   --topic blocks \
   --dlq-topic blocks-dlq \
@@ -57,7 +57,7 @@ bin/consumerindexer run \
 Or using environment variables:
 
 ```bash
-export KAFKA_BOOTSTRAP_SERVERS="bootstrap-clstr-nwxvsv9mm4hlglsk.kafka.us-ashburn-1.oci.oraclecloud.com:9092"
+export KAFKA_BOOTSTRAP_SERVERS="your-kafka-broker.example.com:9092"
 export KAFKA_GROUP_ID="my-consumer-group"
 export KAFKA_TOPIC="blocks"
 export KAFKA_DLQ_TOPIC="blocks-dlq"
