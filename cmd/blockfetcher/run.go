@@ -109,7 +109,9 @@ func run(c *cli.Context) error {
 	defer client.Close()
 
 	// Create Kafka admin client to ensure topic exists
-	kafkaAdminClient, err := confluentKafka.NewAdminClient(&confluentKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers})
+	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers}
+	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
+	kafkaAdminClient, err := confluentKafka.NewAdminClient(&adminConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka admin client: %w", err)
 	}

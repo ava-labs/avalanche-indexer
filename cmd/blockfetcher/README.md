@@ -51,7 +51,7 @@ Kafka Topic (blocks)
 
 ### Run Locally (Development)
 
-**Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. 
+**Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. Local Kafka (docker-compose) doesn't require SASL authentication.
 
 ```bash
 bin/blockfetcher run \
@@ -68,6 +68,44 @@ bin/blockfetcher run \
   --kafka-topic-num-partitions 1 \
   --kafka-topic-replication-factor 1 \
   --verbose
+```
+
+### Run with SASL Authentication (OCI Kafka, etc.)
+
+For authenticated Kafka clusters (e.g., Oracle Cloud Infrastructure Kafka):
+
+```bash
+bin/blockfetcher run \
+  --evm-chain-id 43114 \
+  --bc-id "11111111111111111111111111111111LpoYY" \
+  --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --start-height 0 \
+  --concurrency 16 \
+  --backfill-priority 4 \
+  --blocks-ch-capacity 200 \
+  --max-failures 5 \
+  --kafka-brokers "bootstrap-clstr-nwxvsv9mm4hlglsk.kafka.us-ashburn-1.oci.oraclecloud.com:9092" \
+  --kafka-topic blocks \
+  --kafka-sasl-username "YOUR_SASL_USERNAME" \
+  --kafka-sasl-password "YOUR_SASL_PASSWORD" \
+  --kafka-sasl-mechanism "SCRAM-SHA-512" \
+  --kafka-security-protocol "SASL_SSL" \
+  --kafka-topic-num-partitions 3 \
+  --kafka-topic-replication-factor 3 \
+  --verbose
+```
+
+Or using environment variables:
+
+```bash
+export KAFKA_SASL_USERNAME="YOUR_SASL_USERNAME"
+export KAFKA_SASL_PASSWORD="YOUR_SASL_PASSWORD"
+export KAFKA_SASL_MECHANISM="SCRAM-SHA-512"
+export KAFKA_SECURITY_PROTOCOL="SASL_SSL"
+
+bin/blockfetcher run \
+  --kafka-brokers "bootstrap-clstr-nwxvsv9mm4hlglsk.kafka.us-ashburn-1.oci.oraclecloud.com:9092" \
+  # ... other flags
 ```
 
 ### Run with Docker (Development)
@@ -137,6 +175,10 @@ All flags have environment variable equivalents:
 - `--kafka-client-id` → `KAFKA_CLIENT_ID` (default: blockfetcher)
 - `--kafka-topic-num-partitions` → `KAFKA_TOPIC_NUM_PARTITIONS` (default: 1, automatically creates/validates topic with this partition count)
 - `--kafka-topic-replication-factor` → `KAFKA_TOPIC_REPLICATION_FACTOR` (default: 1, automatically creates/validates topic with this replication factor)
+- `--kafka-sasl-username` → `KAFKA_SASL_USERNAME` (optional, SASL username for authenticated Kafka)
+- `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
+- `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
+- `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
 - `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: test_db.checkpoints, ClickHouse table for checkpoints)
 - `--checkpoint-interval` / `-i` → `CHECKPOINT_INTERVAL` (default: 1m, checkpoint write interval)
 - `--gap-watchdog-interval` / `-g` → `GAP_WATCHDOG_INTERVAL` (default: 15m, gap check interval)
@@ -152,6 +194,7 @@ All flags have environment variable equivalents:
 - `KAFKA_BROKERS` can be a comma-separated list (e.g., `broker1:9092,broker2:9092`).
 - Enable `KAFKA_ENABLE_LOGS=true` for debugging Kafka connectivity issues.
 - **Topic management**: The blockfetcher automatically ensures the Kafka topic exists with the specified `--kafka-topic-num-partitions` and `--kafka-topic-replication-factor`. It will create the topic if it doesn't exist, or increase partitions if needed. Note: partitions cannot be decreased and replication factor cannot be changed after creation.
+- **SASL Authentication**: For authenticated Kafka clusters (e.g., OCI Kafka), provide `--kafka-sasl-username` and `--kafka-sasl-password`. SASL is automatically applied to producer, consumer, and admin clients. Local Kafka (docker-compose) typically doesn't require SASL unless explicitly configured.
 
 ### Exit behavior
 - Returns a non-zero exit code on unrecoverable errors (e.g., RPC dial failure, failure threshold exceeded, Kafka fatal errors).
