@@ -32,4 +32,5 @@ type TransactionRow struct {
 	Type             uint8
 	TransactionIndex uint64
 	Success          uint8 // 1 for success, 0 for failure (from transaction receipt)
+	PartitionMonth   int   // INTEGER - calculated as YYYYMM from block_time
 }
