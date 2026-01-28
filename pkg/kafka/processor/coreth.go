@@ -371,7 +371,7 @@ func CorethLogToLogRow(
 	blockchainID := block.BlockchainID
 	evmChainID := block.EVMChainID
 	if evmChainID == nil {
-		evmChainID = big.NewInt(0)
+		return nil, evmrepo.ErrEvmChainIDRequired
 	}
 
 	// Convert topics from []common.Hash to individual topic fields

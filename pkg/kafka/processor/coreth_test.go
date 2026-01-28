@@ -138,11 +138,8 @@ func TestCorethLogToLogRow_NilEVMChainID(t *testing.T) {
 	log := createTestLog()
 
 	logRow, err := CorethLogToLogRow(log, block)
-	require.NoError(t, err)
-	require.NotNil(t, logRow)
-
-	// EVMChainID defaults to 0
-	assertBigIntEqual(t, big.NewInt(0), logRow.EVMChainID)
+	require.ErrorIs(t, err, evmrepo.ErrEvmChainIDRequired)
+	assert.Nil(t, logRow)
 }
 
 func TestCorethLogToLogRow_EmptyTopics(t *testing.T) {

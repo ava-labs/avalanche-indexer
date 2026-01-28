@@ -79,10 +79,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 	}
 
 	// Convert EVMChainID to string for ClickHouse UInt256
-	evmChainIDStr := "0"
-	if log.EVMChainID != nil {
-		evmChainIDStr = log.EVMChainID.String()
-	}
+	evmChainIDStr := log.EVMChainID.String()
 
 	// Convert hex strings to bytes for FixedString fields
 	blockHashBytes, err := utils.HexToBytes32(log.BlockHash)
