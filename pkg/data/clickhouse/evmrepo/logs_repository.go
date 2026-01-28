@@ -118,7 +118,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 	}
 
 	// Calculate partition_month as YYYYMM from block_time
-	partitionMonth := int(log.BlockTime.Year()*100 + int(log.BlockTime.Month()))
+	partitionMonth := log.BlockTime.Year()*100 + int(log.BlockTime.Month())
 
 	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
