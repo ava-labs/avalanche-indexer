@@ -1,165 +1,181 @@
 networks:
-  app-network:
-    driver: bridge
-
-volumes:
-  kafka-data:
-  grafana-data:
-  clickhouse-test-data:
-
-services:
-  # Kafka Broker with KRaft (no Zookeeper) - Official Apache Kafka
-  kafka:
-    image: apache/kafka:4.1.1
-    container_name: kafka
-    hostname: kafka
-    ports:
-      - "9092:9092"      # External client access
-      - "9094:9094"      # Controller port
-    environment:
-      # KRaft settings
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
-      
-      # Listener configuration
-      KAFKA_LISTENERS: PLAINTEXT://:9093,CONTROLLER://:9094,EXTERNAL://:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9093,EXTERNAL://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-
-      # Internal topics
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-            
-      # Performance tuning
-      KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_LOG_SEGMENT_BYTES: 1073741824
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
-    volumes:
-      - kafka-data:/var/lib/kafka/data
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9093 || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
-  # Kafka UI (Provectus)
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    hostname: kafka-ui
-    ports:
-      - "8080:8080"
-    environment:
-      # Dynamic config enabled for editing clusters in UI
-      DYNAMIC_CONFIG_ENABLED: "true"
-      
-      # Pre-configured local Kafka cluster
-      KAFKA_CLUSTERS_0_NAME: local-kafka
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
-      KAFKA_CLUSTERS_0_READONLY: "false"
-      
-      # UI settings
-      AUTH_TYPE: "DISABLED"
-      SERVER_SERVLET_CONTEXT_PATH: /
-    depends_on:
-      kafka:
-        condition: service_healthy
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9091:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana-data:/var/lib/grafana
-  # ClickHouse Server
-  clickhouse:
-    image: clickhouse/clickhouse-server:latest
-    container_name: clickhouse-test
-    hostname: clickhouse
-    ports:
-      - "8123:8123"  # HTTP interface
-      - "9000:9000"  # Native protocol
-    environment:
-      CLICKHOUSE_DB: test_db
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-    volumes:
-      - clickhouse-test-data:/var/lib/clickhouse
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    networks:
-      - app-network
+    app-network:
+      driver: bridge
   
-  # ClickHouse Init (create tables)
-  clickhouse-init:
-    image: clickhouse/clickhouse-server:latest
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    entrypoint: >
-      bash -lc '
-      clickhouse-client --host clickhouse --query "
-      CREATE TABLE IF NOT EXISTS test_db.checkpoints
-      (
-        chain_id UInt64,
-        lowest_unprocessed_block UInt64,
-        timestamp Int64
-      )
-      ENGINE = ReplacingMergeTree(timestamp)
-      ORDER BY chain_id
-      "
-      '
-    restart: "no"
-    networks:
-      - app-network
-
-  # Tabix UI for ClickHouse - pre-configured with local credentials
-  tabix:
-    image: spoonest/clickhouse-tabix-web-client
-    platform: linux/amd64
-    container_name: tabix
-    ports:
-      - "8082:80"
-    environment:
-      CH_NAME: local-clickhouse
-      CH_HOST: http://localhost:8123
-      CH_LOGIN: default
-      CH_PASSWORD: ""
-    depends_on:
-      clickhouse:
-        condition: service_healthy
+  volumes:
+    kafka-data:
+    grafana-data:
+    clickhouse-test-data:
+  
+  services:
+    # Kafka Broker with KRaft (no Zookeeper) - Official Apache Kafka with SASL/SCRAM
+    kafka:
+      image: apache/kafka:4.1.1
+      container_name: kafka
+      hostname: kafka
+      ports:
+        - "9092:9092"      # External client access (SASL)
+        - "9094:9094"      # Controller port
+      environment:
+        # KRaft settings
+        KAFKA_NODE_ID: 1
+        KAFKA_PROCESS_ROLES: broker,controller
+        KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
+        KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+        CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+        
+        # Listener configuration with SASL
+        KAFKA_LISTENERS: PLAINTEXT://:9093,CONTROLLER://:9094,EXTERNAL://:9092
+        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9093,EXTERNAL://localhost:9092
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+        KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+        
+        # SASL/SCRAM configuration
+        KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-512
+        KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAINTEXT
+        
+        # JAAS configuration for SASL
+        KAFKA_OPTS: >-
+          -Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf
+        
+        # Internal topics
+        KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+        KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+                  
+        # Performance tuning
+        KAFKA_LOG_RETENTION_HOURS: 168
+        KAFKA_LOG_SEGMENT_BYTES: 1073741824
+        KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+        KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  
+      volumes:
+        - kafka-data:/var/lib/kafka/data
+        - ./kafka-sasl-config/kafka_server_jaas.conf:/opt/kafka/config/kafka_server_jaas.conf:ro
+      networks:
+        - app-network
+      healthcheck:
+        test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9093 || exit 1"]
+        interval: 10s
+        timeout: 10s
+        retries: 5
+        start_period: 30s
+  
+    # Kafka UI (Provectus) - Updated for SASL
+    kafka-ui:
+      image: provectuslabs/kafka-ui:latest
+      container_name: kafka-ui
+      hostname: kafka-ui
+      ports:
+        - "8080:8080"
+      environment:
+        # Dynamic config enabled for editing clusters in UI
+        DYNAMIC_CONFIG_ENABLED: "true"
+        
+        # Pre-configured local Kafka cluster with SASL
+        KAFKA_CLUSTERS_0_NAME: local-kafka
+        KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+        KAFKA_CLUSTERS_0_READONLY: "false"
+        
+        # SASL configuration for external access (if needed)
+        KAFKA_CLUSTERS_1_NAME: local-kafka-sasl
+        KAFKA_CLUSTERS_1_BOOTSTRAPSERVERS: localhost:9092
+        KAFKA_CLUSTERS_1_PROPERTIES_SECURITY_PROTOCOL: SASL_PLAINTEXT
+        KAFKA_CLUSTERS_1_PROPERTIES_SASL_MECHANISM: SCRAM-SHA-512
+        KAFKA_CLUSTERS_1_PROPERTIES_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="testuser" password="testpass";
+        
+        # UI settings
+        AUTH_TYPE: "DISABLED"
+        SERVER_SERVLET_CONTEXT_PATH: /
+      depends_on:
+        kafka:
+          condition: service_healthy
+      networks:
+        - app-network
+      healthcheck:
+        test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+        start_period: 30s
+  
+    prometheus:
+      image: prom/prometheus:latest
+      ports:
+        - "9091:9090"
+      volumes:
+        - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
+  
+    grafana:
+      image: grafana/grafana:latest
+      ports:
+        - "3000:3000"
+      environment:
+        - GF_SECURITY_ADMIN_PASSWORD=admin
+      volumes:
+        - grafana-data:/var/lib/grafana
+    # ClickHouse Server
+    clickhouse:
+      image: clickhouse/clickhouse-server:latest
+      container_name: clickhouse-test
+      hostname: clickhouse
+      ports:
+        - "8123:8123"  # HTTP interface
+        - "9000:9000"  # Native protocol
+      environment:
+        CLICKHOUSE_DB: test_db
+        CLICKHOUSE_USER: default
+        CLICKHOUSE_PASSWORD: ""
+        CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      volumes:
+        - clickhouse-test-data:/var/lib/clickhouse
+      healthcheck:
+        test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+        interval: 5s
+        timeout: 3s
+        retries: 10
+        start_period: 10s
+      networks:
+        - app-network
+    
+    # ClickHouse Init (create tables)
+    clickhouse-init:
+      image: clickhouse/clickhouse-server:latest
+      depends_on:
+        clickhouse:
+          condition: service_healthy
+      entrypoint: >
+        bash -lc '
+        clickhouse-client --host clickhouse --query "
+        CREATE TABLE IF NOT EXISTS test_db.checkpoints
+        (
+          chain_id UInt64,
+          lowest_unprocessed_block UInt64,
+          timestamp Int64
+        )
+        ENGINE = ReplacingMergeTree(timestamp)
+        ORDER BY chain_id
+        "
+        '
+      restart: "no"
+      networks:
+        - app-network
+  
+    # Tabix UI for ClickHouse - pre-configured with local credentials
+    tabix:
+      image: spoonest/clickhouse-tabix-web-client
+      platform: linux/amd64
+      container_name: tabix
+      ports:
+        - "8082:80"
+      environment:
+        CH_NAME: local-clickhouse
+        CH_HOST: http://localhost:8123
+        CH_LOGIN: default
+        CH_PASSWORD: ""
+      depends_on:
+        clickhouse:
+          condition: service_healthy
