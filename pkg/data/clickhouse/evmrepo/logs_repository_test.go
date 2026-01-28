@@ -65,7 +65,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 			nil,                       // nil: topic3 is nil
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
-			log.Removed,               // uint8
+			log.Removed,               // bool
 		).
 		Return(nil).
 		Once()
@@ -126,7 +126,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 			nil,                       // nil: topic3 is nil
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
-			log.Removed,               // uint8
+			log.Removed,               // bool
 		).
 		Return(execErr).
 		Once()
@@ -187,7 +187,7 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 			nil,                       // nil: topic3 is nil
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
-			log.Removed,               // uint8
+			log.Removed,               // bool
 		).
 		Return(nil).
 		Once()
@@ -225,6 +225,6 @@ func createTestLog() *LogRow {
 		Topic3:       nil,
 		Data:         []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 		LogIndex:     0,
-		Removed:      0,
+		Removed:      false,
 	}
 }

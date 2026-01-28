@@ -49,7 +49,7 @@ func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 			topic3 Nullable(FixedString(32)),
 			data String,
 			log_index UInt32,
-			removed UInt8
+			removed Bool
 		)
 		ENGINE = MergeTree
 		ORDER BY (blockchain_id, block_time, tx_hash, log_index)

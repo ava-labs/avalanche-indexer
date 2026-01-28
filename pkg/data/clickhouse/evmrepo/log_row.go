@@ -21,5 +21,5 @@ type LogRow struct {
 	Topic3       *string // Hex string, stored as Nullable(FixedString(32))
 	Data         []byte  // Binary data, stored as String
 	LogIndex     uint32
-	Removed      uint8 // 1 for removed, 0 for not removed
+	Removed      bool
 }

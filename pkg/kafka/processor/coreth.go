@@ -393,12 +393,6 @@ func CorethLogToLogRow(
 		topic3 = &t
 	}
 
-	// Determine removed flag
-	var removed uint8
-	if log.Removed {
-		removed = 1
-	}
-
 	return &evmrepo.LogRow{
 		BlockchainID: blockchainID,
 		EVMChainID:   evmChainID,
@@ -414,7 +408,7 @@ func CorethLogToLogRow(
 		Topic3:       topic3,
 		Data:         log.Data,
 		LogIndex:     uint32(log.Index),
-		Removed:      removed,
+		Removed:      log.Removed,
 	}, nil
 }
 

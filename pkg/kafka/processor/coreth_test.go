@@ -105,7 +105,7 @@ func TestCorehtLogToLogRow_Success(t *testing.T) {
 	assert.Equal(t, uint32(0), logRow.TxIndex)
 	assert.Equal(t, log.Address.Hex(), logRow.Address)
 	assert.Equal(t, uint32(0), logRow.LogIndex)
-	assert.Equal(t, uint8(0), logRow.Removed)
+	assert.False(t, logRow.Removed)
 	assert.Equal(t, log.Data, logRow.Data)
 
 	// Check topics
@@ -196,7 +196,7 @@ func TestCorethLogToLogRow_RemovedFlag(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, logRow)
 
-	assert.Equal(t, uint8(1), logRow.Removed)
+	assert.True(t, logRow.Removed)
 }
 
 // ============================================================================
