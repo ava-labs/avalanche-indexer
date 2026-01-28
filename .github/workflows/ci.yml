@@ -71,7 +71,7 @@ jobs:
     env:
       GOPRIVATE: "github.com/ava-labs"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-for-project
       - name: Run integration tests
         shell: bash
@@ -148,7 +148,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: umbrelladocs/action-linkspector@de84085e0f51452a470558693d7d308fbb2fa261 # v1.2.5
+      - uses: umbrelladocs/action-linkspector@v1
         with:
           fail_level: any
 
