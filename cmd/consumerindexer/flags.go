@@ -263,6 +263,12 @@ func flags() []cli.Flag {
 			EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
 			Value:   "default.raw_transactions",
 		},
+		&cli.StringFlag{
+			Name:    "raw-logs-table-name",
+			Usage:   "ClickHouse table name for raw logs",
+			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
+			Value:   "default.raw_logs",
+		},
 		// Metrics configuration flags
 		&cli.StringFlag{
 			Name:    "metrics-host",
