@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 )
 
 type workerStub struct {

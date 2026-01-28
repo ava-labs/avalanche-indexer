@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
-	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
 const testBlockHash = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
