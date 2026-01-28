@@ -9,6 +9,7 @@ import (
 // Sentinel errors for block parsing
 var (
 	ErrBlockChainIDRequired = errors.New("block blockchain ID is required but was not set")
+	ErrEvmChainIDRequired   = errors.New("evmChainID is required but was not set")
 )
 
 // BlockRow represents a block row in the database

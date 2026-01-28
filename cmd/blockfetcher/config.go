@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/urfave/cli/v2"
 
 	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -35,6 +36,7 @@ type Config struct {
 	KafkaClientID               string
 	KafkaTopicNumPartitions     int
 	KafkaTopicReplicationFactor int
+	KafkaSASL                   kafka.SASLConfig
 
 	// Checkpoint settings
 	CheckpointTableName string
@@ -57,7 +59,7 @@ func (c *Config) MetricsAddr() string {
 
 // KafkaProducerConfig builds a Kafka producer ConfigMap from the config
 func (c *Config) KafkaProducerConfig() *confluentKafka.ConfigMap {
-	return &confluentKafka.ConfigMap{
+	cfg := &confluentKafka.ConfigMap{
 		// Required
 		"bootstrap.servers": c.KafkaBrokers,
 		"client.id":         c.KafkaClientID,
@@ -76,6 +78,9 @@ func (c *Config) KafkaProducerConfig() *confluentKafka.ConfigMap {
 		// Go channel for logs (optional, enable for debugging)
 		"go.logs.channel.enable": c.KafkaEnableLogs,
 	}
+	// Apply SASL configuration if enabled
+	c.KafkaSASL.ApplyToConfigMap(cfg)
+	return cfg
 }
 
 // buildConfig builds a Config from CLI context flags
@@ -98,14 +103,20 @@ func buildConfig(c *cli.Context) *Config {
 		KafkaClientID:               c.String("kafka-client-id"),
 		KafkaTopicNumPartitions:     c.Int("kafka-topic-num-partitions"),
 		KafkaTopicReplicationFactor: c.Int("kafka-topic-replication-factor"),
-		CheckpointTableName:         c.String("checkpoint-table-name"),
-		CheckpointInterval:          c.Duration("checkpoint-interval"),
-		GapWatchdogInterval:         c.Duration("gap-watchdog-interval"),
-		GapWatchdogMaxGap:           c.Uint64("gap-watchdog-max-gap"),
-		MetricsHost:                 c.String("metrics-host"),
-		MetricsPort:                 c.Int("metrics-port"),
-		Environment:                 c.String("environment"),
-		Region:                      c.String("region"),
-		CloudProvider:               c.String("cloud-provider"),
+		KafkaSASL: kafka.SASLConfig{
+			Username:         c.String("kafka-sasl-username"),
+			Password:         c.String("kafka-sasl-password"),
+			Mechanism:        c.String("kafka-sasl-mechanism"),
+			SecurityProtocol: c.String("kafka-security-protocol"),
+		},
+		CheckpointTableName: c.String("checkpoint-table-name"),
+		CheckpointInterval:  c.Duration("checkpoint-interval"),
+		GapWatchdogInterval: c.Duration("gap-watchdog-interval"),
+		GapWatchdogMaxGap:   c.Uint64("gap-watchdog-max-gap"),
+		MetricsHost:         c.String("metrics-host"),
+		MetricsPort:         c.Int("metrics-port"),
+		Environment:         c.String("environment"),
+		Region:              c.String("region"),
+		CloudProvider:       c.String("cloud-provider"),
 	}
 }

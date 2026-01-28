@@ -2,6 +2,8 @@ package kafka
 
 import (
 	"time"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Default timeout values for Kafka consumer
@@ -29,6 +31,7 @@ type ConsumerConfig struct {
 	PollInterval                *time.Duration // Poll interval for Kafka consumer
 	EnableLogs                  bool           // Enable librdkafka client logs
 	PublishToDLQ                bool           // If true, failed messages are published to DLQ
+	SASL                        SASLConfig     // SASL authentication configuration
 }
 
 // WithDefaults returns a copy of the config with default values filled in for any nil pointer fields.
@@ -55,4 +58,28 @@ func (c ConsumerConfig) WithDefaults() ConsumerConfig {
 		c.PollInterval = &interval
 	}
 	return c
+}
+
+// SASLConfig holds SASL authentication configuration
+type SASLConfig struct {
+	Username         string // SASL username
+	Password         string // SASL password
+	Mechanism        string // SASL mechanism: "SCRAM-SHA-256", "SCRAM-SHA-512", or "PLAIN"
+	SecurityProtocol string // Security protocol: "SASL_SSL" or "SASL_PLAINTEXT"
+}
+
+// IsEnabled returns true if SASL authentication is configured
+func (s SASLConfig) IsEnabled() bool {
+	return s.Username != "" && s.Password != "" && s.Mechanism != "" && s.SecurityProtocol != ""
+}
+
+// ApplyToConfigMap applies SASL configuration to a Kafka ConfigMap
+func (s SASLConfig) ApplyToConfigMap(cfg *cKafka.ConfigMap) {
+	if !s.IsEnabled() {
+		return
+	}
+	(*cfg)["security.protocol"] = s.SecurityProtocol
+	(*cfg)["sasl.mechanism"] = s.Mechanism
+	(*cfg)["sasl.username"] = s.Username
+	(*cfg)["sasl.password"] = s.Password
 }

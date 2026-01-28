@@ -69,6 +69,7 @@ func NewConsumer(
 		"partition.assignment.strategy": defaultPartitionAssignmentStrategy,
 		"go.logs.channel.enable":        cfg.EnableLogs,
 	}
+	cfg.SASL.ApplyToConfigMap(&consumerConfig)
 	consumer, err := cKafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka consumer: %w", err)
@@ -83,6 +84,7 @@ func NewConsumer(
 		"enable.idempotence":     true,
 		"go.logs.channel.enable": cfg.EnableLogs,
 	}
+	cfg.SASL.ApplyToConfigMap(&dlqProducerConfig)
 	dlqProducer, err := NewProducer(ctx, &dlqProducerConfig, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
