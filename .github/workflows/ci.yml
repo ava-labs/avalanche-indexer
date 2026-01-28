@@ -41,6 +41,7 @@ jobs:
         with:
           name: coverage-unit
           path: ${{ runner.temp }}/cover-unit
+          if-no-files-found: error
 
   Integration:
     runs-on: ubuntu-latest
@@ -63,6 +64,7 @@ jobs:
         with:
           name: coverage-integration
           path: ${{ runner.temp }}/cover-integration
+          if-no-files-found: error
 
   E2E:
     runs-on: ubuntu-latest
@@ -95,6 +97,7 @@ jobs:
         with:
           name: coverage-e2e
           path: ${{ runner.temp }}/cover-e2e
+          if-no-files-found: error
 
   Coverage:
     name: Combined Coverage
@@ -104,28 +107,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-for-project
-      - name: Download coverage data
+      - name: Download unit coverage data
         uses: actions/download-artifact@v4
         with:
-          path: coverdata
+          name: coverage-unit
+          path: coverdata/coverage-unit
+      - name: Download integration coverage data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+          path: coverdata/coverage-integration
+      - name: Download e2e coverage data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-e2e
+          path: coverdata/coverage-e2e
       - name: Merge coverage data
         shell: bash
         run: |
           set -eo pipefail
-          INPUTS=""
-          for d in coverdata/*; do
-            if [ -d "$d" ]; then
-              if [ -z "$INPUTS" ]; then
-                INPUTS="$d"
-              else
-                INPUTS="$INPUTS,$d"
-              fi
-            fi
-          done
-          if [ -z "$INPUTS" ]; then
-            echo "::error::No coverage artifacts found"
-            exit 1
-          fi
+          INPUTS="coverdata/coverage-unit,coverdata/coverage-integration,coverdata/coverage-e2e"
           go tool covdata textfmt -i="$INPUTS" -o=coverage.out
       - name: Coverage report
         shell: bash
