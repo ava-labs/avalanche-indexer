@@ -10,7 +10,9 @@ Consumes blocks from Kafka pipeline with concurrent processing, automatic offset
 
 ### Usage
 
-Run locally (from repo root after build):
+### Run Locally (Development)
+
+**Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. Local Kafka (docker-compose) doesn't require SASL authentication.
 
 ```bash
 bin/consumerindexer run \
@@ -20,6 +22,30 @@ bin/consumerindexer run \
   --dlq-topic blocks-dlq \
   --publish-to-dlq \
   --concurrency 10 \
+  --kafka-topic-num-partitions 1 \
+  --kafka-topic-replication-factor 1 \
+  --kafka-dlq-topic-num-partitions 1 \
+  --kafka-dlq-topic-replication-factor 1 \
+  --clickhouse-hosts localhost:9000 \
+  --clickhouse-username default
+```
+
+### Run with SASL Authentication (OCI Kafka, etc.)
+
+For authenticated Kafka clusters (e.g., Oracle Cloud Infrastructure Kafka):
+
+```bash
+bin/consumerindexer run \
+  --bootstrap-servers "your-kafka-broker.example.com:9092" \
+  --group-id my-consumer-group \
+  --topic blocks \
+  --dlq-topic blocks-dlq \
+  --publish-to-dlq \
+  --concurrency 10 \
+  --kafka-sasl-username "YOUR_SASL_USERNAME" \
+  --kafka-sasl-password "YOUR_SASL_PASSWORD" \
+  --kafka-sasl-mechanism "SCRAM-SHA-512" \
+  --kafka-security-protocol "SASL_SSL" \
   --kafka-topic-num-partitions 3 \
   --kafka-topic-replication-factor 3 \
   --kafka-dlq-topic-num-partitions 3 \
@@ -31,11 +57,15 @@ bin/consumerindexer run \
 Or using environment variables:
 
 ```bash
-export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
+export KAFKA_BOOTSTRAP_SERVERS="your-kafka-broker.example.com:9092"
 export KAFKA_GROUP_ID="my-consumer-group"
 export KAFKA_TOPIC="blocks"
 export KAFKA_DLQ_TOPIC="blocks-dlq"
 export KAFKA_PUBLISH_TO_DLQ="true"
+export KAFKA_SASL_USERNAME="YOUR_SASL_USERNAME"
+export KAFKA_SASL_PASSWORD="YOUR_SASL_PASSWORD"
+export KAFKA_SASL_MECHANISM="SCRAM-SHA-512"
+export KAFKA_SECURITY_PROTOCOL="SASL_SSL"
 export KAFKA_TOPIC_NUM_PARTITIONS="3"
 export KAFKA_TOPIC_REPLICATION_FACTOR="3"
 export CLICKHOUSE_HOSTS="localhost:9000"
@@ -66,6 +96,10 @@ All flags have environment variable equivalents:
 - `--kafka-topic-replication-factor` → `KAFKA_TOPIC_REPLICATION_FACTOR` (default: 1, automatically ensures topic has this replication factor)
 - `--kafka-dlq-topic-num-partitions` → `KAFKA_DLQ_TOPIC_NUM_PARTITIONS` (default: 1, DLQ topic partition count)
 - `--kafka-dlq-topic-replication-factor` → `KAFKA_DLQ_TOPIC_REPLICATION_FACTOR` (default: 1, DLQ topic replication factor)
+- `--kafka-sasl-username` → `KAFKA_SASL_USERNAME` (optional, SASL username for authenticated Kafka)
+- `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
+- `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
+- `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
 - `--verbose` / `-v` → none (enable verbose application logging)
 
 **ClickHouse flags:**
@@ -108,10 +142,10 @@ docker run --rm \
   -e KAFKA_DLQ_TOPIC=blocks-dlq \
   -e KAFKA_PUBLISH_TO_DLQ=true \
   -e KAFKA_CONCURRENCY=20 \
-  -e KAFKA_TOPIC_NUM_PARTITIONS=3 \
-  -e KAFKA_TOPIC_REPLICATION_FACTOR=3 \
-  -e KAFKA_DLQ_TOPIC_NUM_PARTITIONS=3 \
-  -e KAFKA_DLQ_TOPIC_REPLICATION_FACTOR=3 \
+  -e KAFKA_TOPIC_NUM_PARTITIONS=1 \
+  -e KAFKA_TOPIC_REPLICATION_FACTOR=1 \
+  -e KAFKA_DLQ_TOPIC_NUM_PARTITIONS=1 \
+  -e KAFKA_DLQ_TOPIC_REPLICATION_FACTOR=1 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
   -e CLICKHOUSE_USERNAME=default \
   -e METRICS_PORT=9090 \
@@ -135,6 +169,13 @@ docker run --rm \
 - The consumerindexer automatically ensures both main topic and DLQ topic exist with the specified partition counts and replication factors
 - Monitor DLQ for parsing/validation errors
 - Note: Topics are created automatically if they don't exist, or partitions are increased if needed. Partitions cannot be decreased and replication factor cannot be changed after creation.
+
+**SASL Authentication:**
+- For authenticated Kafka clusters (e.g., OCI Kafka), provide `--kafka-sasl-username` and `--kafka-sasl-password`
+- SASL is automatically applied to consumer, DLQ producer, and admin clients
+- Supported mechanisms: `SCRAM-SHA-256`, `SCRAM-SHA-512`, `PLAIN`
+- Supported protocols: `SASL_SSL` (default), `SASL_PLAINTEXT`
+- Local Kafka (docker-compose) typically doesn't require SASL unless explicitly configured
 
 **Offset Management:**
 - `--offset-commit-interval` balances commit frequency vs. reprocessing on restart

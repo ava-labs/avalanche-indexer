@@ -16,6 +16,9 @@ import (
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
+// ErrNilMessage is returned when a nil message or empty value is received.
+var ErrNilMessage = errors.New("received nil message or empty value")
+
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
 // If repositories are provided, persists blocks and transactions to ClickHouse.
 // Safe for concurrent use.
@@ -23,6 +26,7 @@ type CorethProcessor struct {
 	log        *zap.SugaredLogger
 	blocksRepo evmrepo.Blocks
 	txsRepo    evmrepo.Transactions
+	logsRepo   evmrepo.Logs
 	metrics    *metrics.Metrics
 }
 
@@ -32,12 +36,14 @@ func NewCorethProcessor(
 	log *zap.SugaredLogger,
 	blocksRepo evmrepo.Blocks,
 	txsRepo evmrepo.Transactions,
+	logsRepo evmrepo.Logs,
 	metrics *metrics.Metrics,
 ) *CorethProcessor {
 	return &CorethProcessor{
 		log:        log,
 		blocksRepo: blocksRepo,
 		txsRepo:    txsRepo,
+		logsRepo:   logsRepo,
 		metrics:    metrics,
 	}
 }
@@ -50,7 +56,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 
 	if msg == nil || msg.Value == nil {
 		p.metrics.IncError("coreth_nil_message")
-		return errors.New("received nil message or empty value")
+		return ErrNilMessage
 	}
 
 	var block kafkamsg.CorethBlock
@@ -101,6 +107,13 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		}
 	}
 
+	// Persist logs to ClickHouse if repository is configured
+	if p.logsRepo != nil && len(block.Transactions) > 0 {
+		if err := p.processLogs(ctx, &block); err != nil {
+			return fmt.Errorf("failed to process logs: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -125,6 +138,17 @@ func CorethBlockToBlockRow(block *kafkamsg.CorethBlock) (*evmrepo.BlockRow, erro
 		blockNumber = big.NewInt(0)
 	}
 
+	// Set difficulty from big.Int (keep as *big.Int)
+	var difficulty, totalDifficulty *big.Int
+	if block.Difficulty != nil {
+		difficulty = block.Difficulty
+		// TotalDifficulty: for now use Difficulty, but this should be cumulative in production
+		totalDifficulty = new(big.Int).Set(block.Difficulty)
+	} else {
+		difficulty = big.NewInt(0)
+		totalDifficulty = big.NewInt(0)
+	}
+
 	blockRow := &evmrepo.BlockRow{
 		BlockchainID:    blockchainID,
 		EVMChainID:      evmChainID,
@@ -133,22 +157,12 @@ func CorethBlockToBlockRow(block *kafkamsg.CorethBlock) (*evmrepo.BlockRow, erro
 		ParentHash:      block.ParentHash,
 		BlockTime:       time.Unix(int64(block.Timestamp), 0).UTC(),
 		Miner:           block.Miner,
-		Difficulty:      block.Difficulty,
-		TotalDifficulty: new(big.Int).Set(block.Difficulty),
+		Difficulty:      difficulty,
+		TotalDifficulty: totalDifficulty,
 		Size:            block.Size,
 		GasLimit:        block.GasLimit,
 		GasUsed:         block.GasUsed,
 		BaseFeePerGas:   block.BaseFee,
-	}
-
-	// Set difficulty from big.Int (keep as *big.Int)
-	if block.Difficulty != nil {
-		blockRow.Difficulty = block.Difficulty
-		// TotalDifficulty: for now use Difficulty, but this should be cumulative in production
-		blockRow.TotalDifficulty = new(big.Int).Set(block.Difficulty)
-	} else {
-		blockRow.Difficulty = big.NewInt(0)
-		blockRow.TotalDifficulty = big.NewInt(0)
 	}
 
 	// Direct string assignments - no conversions needed
@@ -302,6 +316,100 @@ func (p *CorethProcessor) processTransactions(
 	)
 
 	return nil
+}
+
+// processLogs extracts logs from transaction receipts and writes them to ClickHouse
+func (p *CorethProcessor) processLogs(
+	ctx context.Context,
+	block *kafkamsg.CorethBlock,
+) error {
+	totalLogs := 0
+	for _, tx := range block.Transactions {
+		if tx.Receipt == nil || len(tx.Receipt.Logs) == 0 {
+			continue
+		}
+
+		for _, log := range tx.Receipt.Logs {
+			logRow, err := CorethLogToLogRow(log, block)
+			if err != nil {
+				return fmt.Errorf("failed to convert log: %w", err)
+			}
+
+			if err := p.logsRepo.WriteLog(ctx, logRow); err != nil {
+				return fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err)
+			}
+			totalLogs++
+		}
+	}
+
+	var blockNumber uint64
+	if block.Number != nil {
+		blockNumber = block.Number.Uint64()
+	}
+
+	p.log.Debugw("successfully wrote logs",
+		"blockchainID", block.BlockchainID,
+		"evmChainID", block.EVMChainID,
+		"blockNumber", blockNumber,
+		"logCount", totalLogs,
+	)
+
+	return nil
+}
+
+// CorethLogToLogRow converts a CorethLog to LogRow
+// Exported for testing purposes
+func CorethLogToLogRow(
+	log *kafkamsg.CorethLog,
+	block *kafkamsg.CorethBlock,
+) (*evmrepo.LogRow, error) {
+	if block.BlockchainID == nil {
+		return nil, evmrepo.ErrBlockChainIDRequired
+	}
+
+	// Set BlockchainID and EVMChainID from block
+	blockchainID := block.BlockchainID
+	evmChainID := block.EVMChainID
+	if evmChainID == nil {
+		return nil, evmrepo.ErrEvmChainIDRequired
+	}
+
+	// Convert topics from []common.Hash to individual topic fields
+	var topic0 string
+	var topic1, topic2, topic3 *string
+	if len(log.Topics) > 0 {
+		topic0 = log.Topics[0].Hex()
+	}
+	if len(log.Topics) > 1 {
+		t := log.Topics[1].Hex()
+		topic1 = &t
+	}
+	if len(log.Topics) > 2 {
+		t := log.Topics[2].Hex()
+		topic2 = &t
+	}
+	if len(log.Topics) > 3 {
+		t := log.Topics[3].Hex()
+		topic3 = &t
+	}
+
+	return &evmrepo.LogRow{
+		BlockchainID: blockchainID,
+		EVMChainID:   evmChainID,
+		BlockNumber:  log.BlockNumber,
+		BlockHash:    log.BlockHash.Hex(),
+		BlockTime:    time.Unix(int64(block.Timestamp), 0).UTC(),
+		TxHash:       log.TxHash.Hex(),
+		TxIndex:      uint32(log.TxIndex),
+		Address:      log.Address.Hex(),
+		Topic0:       topic0,
+		Topic1:       topic1,
+		Topic2:       topic2,
+		Topic3:       topic3,
+		Data:         log.Data,
+		LogIndex:     uint32(log.Index),
+		Removed:      log.Removed,
+	}, nil
 }
 
 // Compile-time check that CorethProcessor implements Processor.
