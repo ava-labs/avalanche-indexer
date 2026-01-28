@@ -140,7 +140,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	}
 
 	// Calculate partition_month as YYYYMM from block_time
-	partitionMonth := int(tx.BlockTime.Year()*100 + int(tx.BlockTime.Month()))
+	partitionMonth := tx.BlockTime.Year()*100 + int(tx.BlockTime.Month())
 
 	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
