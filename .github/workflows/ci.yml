@@ -27,13 +27,106 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-go-for-project
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage data
         shell: bash
         run: |
           set -eo pipefail
           # Dynamically build coverage package list, excluding cmd/* and testutils
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
-          go test -race -coverprofile=coverage.out -covermode=atomic -coverpkg="$COVERPKGS" ./...
+          export GOCOVERDIR="$RUNNER_TEMP/cover-unit"
+          mkdir -p "$GOCOVERDIR"
+          go test -race -cover -covermode=atomic -coverpkg="$COVERPKGS" ./...
+      - name: Upload coverage data (unit)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: ${{ runner.temp }}/cover-unit
+
+  Integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-go-for-project
+      - name: Run integration tests with coverage data
+        shell: bash
+        run: |
+          set -eo pipefail
+          COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
+          export GOCOVERDIR="$RUNNER_TEMP/cover-integration"
+          mkdir -p "$GOCOVERDIR"
+          go test -tags=integration -v -timeout=10m -cover -covermode=atomic -coverpkg="$COVERPKGS" $(go list ./... | grep -v '/clickhouse')
+      - name: Upload coverage data (integration)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration
+          path: ${{ runner.temp }}/cover-integration
+
+  E2E:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOPRIVATE: "github.com/ava-labs"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-go-for-project
+      - name: Start dependencies
+        shell: bash
+        run: docker compose up -d
+      - name: Wait for services
+        shell: bash
+        run: sleep 10
+      - name: Run e2e tests with coverage data
+        shell: bash
+        run: |
+          set -eo pipefail
+          COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
+          export GOCOVERDIR="$RUNNER_TEMP/cover-e2e"
+          mkdir -p "$GOCOVERDIR"
+          go test -tags=e2e -v -cover -covermode=atomic -coverpkg="$COVERPKGS" ./test/e2e
+      - name: Stop dependencies
+        if: always()
+        shell: bash
+        run: docker compose down
+      - name: Upload coverage data (e2e)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-e2e
+          path: ${{ runner.temp }}/cover-e2e
+
+  Coverage:
+    name: Combined Coverage
+    runs-on: ubuntu-latest
+    needs: [Unit, Integration, E2E]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-go-for-project
+      - name: Download coverage data
+        uses: actions/download-artifact@v4
+        with:
+          path: coverdata
+      - name: Merge coverage data
+        shell: bash
+        run: |
+          set -eo pipefail
+          INPUTS=""
+          for d in coverdata/*; do
+            if [ -d "$d" ]; then
+              if [ -z "$INPUTS" ]; then
+                INPUTS="$d"
+              else
+                INPUTS="$INPUTS,$d"
+              fi
+            fi
+          done
+          if [ -z "$INPUTS" ]; then
+            echo "::error::No coverage artifacts found"
+            exit 1
+          fi
+          go tool covdata textfmt -i="$INPUTS" -o=coverage.out
       - name: Coverage report
         shell: bash
         run: |
@@ -51,53 +144,33 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Extract and display total coverage
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          COVERAGE=$(go tool cover -func=coverage.out | awk '/total:/{print substr($3, 1, length($3)-1)}')
           echo "**Total Coverage: ${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
 
           # Check coverage threshold
           THRESHOLD=50
           echo "" >> $GITHUB_STEP_SUMMARY
-          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+          export COVERAGE THRESHOLD
+          if python - <<'PY'
+          import os
+          import sys
+
+          cov = float(os.environ["COVERAGE"])
+          thr = float(os.environ["THRESHOLD"])
+          sys.exit(1 if cov < thr else 0)
+          PY
+          then
+            echo "Coverage meets ${THRESHOLD}% threshold" >> $GITHUB_STEP_SUMMARY
+          else
             echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
             echo "Coverage is below ${THRESHOLD}% threshold" >> $GITHUB_STEP_SUMMARY
             exit 1
-          else
-            echo "Coverage meets ${THRESHOLD}% threshold" >> $GITHUB_STEP_SUMMARY
           fi
-
-  Integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      GOPRIVATE: "github.com/ava-labs"
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-go-for-project
-      - name: Run integration tests
-        shell: bash
-        run: make integration-test
-
-  E2E:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      GOPRIVATE: "github.com/ava-labs"
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-go-for-project
-      - name: Start dependencies
-        shell: bash
-        run: docker compose up -d
-      - name: Wait for services
-        shell: bash
-        run: sleep 10
-      - name: Run e2e tests
-        shell: bash
-        run: make e2e-test
-      - name: Stop dependencies
-        if: always()
-        shell: bash
-        run: docker compose down
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-profile
+          path: coverage.out
 
   Lint:
     runs-on: ubuntu-latest
@@ -155,7 +228,7 @@ jobs:
   Publish-Latest:
     name: Publish Docker image (latest)
     runs-on: ubuntu-latest
-    needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
+    needs: [Coverage, Lint, Fuzz, Markdown-Links]
     if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 20
     steps:
@@ -176,7 +249,7 @@ jobs:
   Publish-Latest-ARM:
     name: Publish Docker image (latest-arm64)
     runs-on: ubuntu-24.04-arm
-    needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
+    needs: [Coverage, Lint, Fuzz, Markdown-Links]
     if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 20
     steps:
@@ -217,7 +290,7 @@ jobs:
   Publish-Release:
     name: Publish Docker image (release-amd64)
     runs-on: ubuntu-latest
-    needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
+    needs: [Coverage, Lint, Fuzz, Markdown-Links]
     if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     timeout-minutes: 20
     steps:
@@ -240,7 +313,7 @@ jobs:
   Publish-Release-ARM:
     name: Publish Docker image (release-arm64)
     runs-on: ubuntu-24.04-arm
-    needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
+    needs: [Coverage, Lint, Fuzz, Markdown-Links]
     if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     timeout-minutes: 20
     steps:
