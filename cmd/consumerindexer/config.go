@@ -119,7 +119,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		ChainID:                  c.Uint64("chain-id"),
 		Environment:              c.String("environment"),
 		Region:                   c.String("region"),
-		CloudProvider:            c.String("cloud-provider")
+		CloudProvider:            c.String("cloud-provider"),
 	}, nil
 }
 
