@@ -44,14 +44,14 @@ const queueFullErrorRetryDelay = time.Second
 //
 // Callers must call Close to flush messages and release resources.
 func NewProducer(ctx context.Context, conf *kafka.ConfigMap, log *zap.SugaredLogger) (*Producer, error) {
-	p, err := kafka.NewProducer(conf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
-	}
-
 	logsChEnabled, err := conf.Get("go.logs.channel.enable", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get go.logs.channel.enable: %w", err)
+	}
+
+	p, err := kafka.NewProducer(conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
 	}
 
 	kq := Producer{
@@ -206,7 +206,7 @@ func (q *Producer) produceWithRetry(
 
 		switch kafkaErr.Code() {
 		case kafka.ErrQueueFull:
-			q.log.Warn("producer queue full, retrying in %s", queueFullErrorRetryDelay)
+			q.log.Warnf("producer queue full, retrying in %v", queueFullErrorRetryDelay)
 			time.Sleep(queueFullErrorRetryDelay)
 			continue
 		case kafka.ErrBrokerNotAvailable:
@@ -255,8 +255,8 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 					q.log.Debugf("Successfully produced record to topic %s partition [%d] @ offset %v",
 						*e.TopicPartition.Topic, e.TopicPartition.Partition, e.TopicPartition.Offset)
 				}
-			case kafka.Stats:
-				q.log.Infof("kafka stats event received %s", e.String())
+			case *kafka.Stats:
+				q.log.Debugw("kafka stats event received", "stats", e.String())
 			case kafka.Error:
 				if e.IsFatal() || e.Code() == kafka.ErrAllBrokersDown {
 					err := fmt.Errorf("fatal err or ErrAllBrokersDown: %#x, %w", e.Code(), e)

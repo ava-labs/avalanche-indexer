@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -330,4 +331,136 @@ func createTestTransaction() *kafkamsg.CorethTransaction {
 // Helper function to create a uint64 pointer
 func uintPtr(u uint64) *uint64 {
 	return &u
+}
+
+func TestValidateBlockBufferSize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		blockBufSize  int
+		expectedValue uint8
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "valid minimum value (0)",
+			blockBufSize:  0,
+			expectedValue: 0,
+			expectError:   false,
+		},
+		{
+			name:          "valid maximum value (255)",
+			blockBufSize:  255,
+			expectedValue: 255,
+			expectError:   false,
+		},
+		{
+			name:          "valid middle value (128)",
+			blockBufSize:  128,
+			expectedValue: 128,
+			expectError:   false,
+		},
+		{
+			name:          "valid default value (10)",
+			blockBufSize:  10,
+			expectedValue: 10,
+			expectError:   false,
+		},
+		{
+			name:          "invalid: too large (256)",
+			blockBufSize:  256,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+		{
+			name:          "invalid: too large (1000)",
+			blockBufSize:  1000,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+		{
+			name:          "invalid: negative value (-1)",
+			blockBufSize:  -1,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+		{
+			name:          "invalid: very negative value (-100)",
+			blockBufSize:  -100,
+			expectError:   true,
+			errorContains: "must be between 0 and 255",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := validateBlockBufferSize(tt.blockBufSize)
+
+			if tt.expectError {
+				require.Error(t, err) //nolint:forbidigo // ErrorIs not appropriate here, checking error message with Contains
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedValue, result, "BlockBufferSize should match expected value")
+		})
+	}
+}
+
+func TestValidateBlockBufferSize_Overflow(t *testing.T) {
+	t.Parallel()
+
+	// Test that values > 255 don't silently wrap to 0
+	// This is the specific edge case the user asked about
+	tests := []struct {
+		name         string
+		blockBufSize int
+	}{
+		{
+			name:         "256 should error, not wrap to 0",
+			blockBufSize: 256,
+		},
+		{
+			name:         "257 should error, not wrap to 1",
+			blockBufSize: 257,
+		},
+		{
+			name:         "512 should error, not wrap to 0",
+			blockBufSize: 512,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := validateBlockBufferSize(tt.blockBufSize)
+
+			// Should return an error, not silently wrap
+			require.Error(t, err, "should error on overflow value %d", tt.blockBufSize) //nolint:forbidigo // ErrorIs not appropriate here, checking error message with Contains
+			assert.Contains(t, err.Error(), "must be between 0 and 255")
+
+			// When there's an error, result should be 0 (the zero value)
+			assert.Equal(t, uint8(0), result, "should return zero value when error occurs")
+		})
+	}
+}
+
+func TestValidateBlockBufferSize_AllValidValues(t *testing.T) {
+	t.Parallel()
+
+	// Test boundary values and a few in between
+	testValues := []int{0, 1, 10, 128, 254, 255}
+
+	for _, val := range testValues {
+		t.Run(fmt.Sprintf("value_%d", val), func(t *testing.T) {
+			result, err := validateBlockBufferSize(val)
+
+			require.NoError(t, err)
+			assert.Equal(t, uint8(val), result,
+				"BlockBufferSize should correctly convert %d to uint8", val)
+		})
+	}
 }

@@ -98,7 +98,7 @@ func NewConsumer(
 		log,
 	)
 
-	if !cfg.IsDLQConsumer && cfg.DLQTopic == "" {
+	if cfg.PublishToDLQ && cfg.DLQTopic == "" {
 		return nil, errors.New("DLQ topic not configured")
 	}
 
@@ -122,11 +122,12 @@ func NewConsumer(
 // On shutdown, waits up to 30s for in-flight messages to complete processing.
 // Returns an error if subscription fails or if consumer/producer close fails.
 func (c *Consumer) Start(ctx context.Context) error {
+	c.log.Infow("starting consumer for topic", "topic", c.cfg.Topic)
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if c.cfg.IsDLQConsumer {
-		c.log.Warnw("consumer is subscribing to a DLQ topic - messages will NOT be re-sent to DLQ on failure",
+	if !c.cfg.PublishToDLQ {
+		c.log.Warnw("consumer is set to not publish to DLQ on failure",
 			"topic", c.cfg.Topic,
 		)
 	}
@@ -137,10 +138,13 @@ func (c *Consumer) Start(ctx context.Context) error {
 		close(c.logsDone)
 	}
 
+	c.log.Infow("subscribing to topic", "topic", c.cfg.Topic)
+
 	if err := c.consumer.SubscribeTopics([]string{c.cfg.Topic}, c.getRebalanceCallback(ctxWithCancel)); err != nil {
 		return fmt.Errorf("failed to subscribe to topics: %w", err)
 	}
 
+	c.log.Info("consumer subscribed to topic, starting to poll for messages...")
 	run := true
 	for run {
 		select {
@@ -185,6 +189,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 		}
 	}
 
+	c.log.Info("consumer shutting down...")
 	err := c.close()
 	if err != nil {
 		c.log.Errorw("failed to close consumer", "error", err)
@@ -223,7 +228,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			return
 		}
 
-		if c.cfg.IsDLQConsumer {
+		if !c.cfg.PublishToDLQ {
 			select {
 			case c.errCh <- err:
 			default:

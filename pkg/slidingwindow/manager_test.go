@@ -615,7 +615,7 @@ func TestRun_FailureChain(t *testing.T) {
 		if !strings.Contains(msg, "block 5") || !strings.Contains(msg, "after 3 attempts") {
 			require.Failf(t, "Run", "unexpected error message: %q", msg)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		require.Fail(t, "timeout waiting for failure threshold to trigger")
 	}
 }

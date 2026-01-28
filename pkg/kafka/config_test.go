@@ -98,7 +98,7 @@ func TestConsumerConfig_WithDefaults_NonPointerFieldsUnaffected(t *testing.T) {
 		Concurrency:                 20,
 		OffsetManagerCommitInterval: 15 * time.Second,
 		EnableLogs:                  true,
-		IsDLQConsumer:               true,
+		PublishToDLQ:                true,
 	}.WithDefaults()
 
 	// Non-pointer fields should be preserved
@@ -110,7 +110,7 @@ func TestConsumerConfig_WithDefaults_NonPointerFieldsUnaffected(t *testing.T) {
 	assert.Equal(t, int64(20), cfg.Concurrency)
 	assert.Equal(t, 15*time.Second, cfg.OffsetManagerCommitInterval)
 	assert.True(t, cfg.EnableLogs)
-	assert.True(t, cfg.IsDLQConsumer)
+	assert.True(t, cfg.PublishToDLQ)
 
 	// Pointer fields should get defaults
 	require.NotNil(t, cfg.SessionTimeout)

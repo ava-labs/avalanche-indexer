@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ava-labs/libevm/common"
 	"github.com/ava-labs/libevm/common/hexutil"
 
 	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
@@ -54,17 +55,18 @@ type CorethBlock struct {
 }
 
 type CorethTransaction struct {
-	Hash           string   `json:"hash"`
-	From           string   `json:"from"`
-	To             string   `json:"to"`
-	Nonce          uint64   `json:"nonce"`
-	Value          *big.Int `json:"value"`
-	Gas            uint64   `json:"gas"`
-	GasPrice       *big.Int `json:"gasPrice"`
-	MaxFeePerGas   *big.Int `json:"maxFeePerGas"`
-	MaxPriorityFee *big.Int `json:"maxPriorityFeePerGas"`
-	Input          string   `json:"input"`
-	Type           uint8    `json:"type"`
+	Hash           string           `json:"hash"`
+	From           string           `json:"from"`
+	To             string           `json:"to"`
+	Nonce          uint64           `json:"nonce"`
+	Value          *big.Int         `json:"value"`
+	Gas            uint64           `json:"gas"`
+	GasPrice       *big.Int         `json:"gasPrice"`
+	MaxFeePerGas   *big.Int         `json:"maxFeePerGas"`
+	MaxPriorityFee *big.Int         `json:"maxPriorityFeePerGas"`
+	Input          string           `json:"input"`
+	Type           uint8            `json:"type"`
+	Receipt        *CorethTxReceipt `json:"receipt,omitempty"`
 }
 
 type CorethWithdrawal struct {
@@ -74,7 +76,26 @@ type CorethWithdrawal struct {
 	Amount         uint64 `json:"amount"`
 }
 
-// CorethBlockFromLibevm converts a libevm Block to a Coreth Block.
+type CorethTxReceipt struct {
+	ContractAddress common.Address `json:"contractAddress"`
+	Status          uint64         `json:"status"`
+	GasUsed         uint64         `json:"gasUsed"`
+	Logs            []*CorethLog   `json:"logs"`
+}
+
+type CorethLog struct {
+	Address     common.Address `json:"address"`
+	Topics      []common.Hash  `json:"topics"`
+	Data        []byte         `json:"data"`
+	BlockNumber uint64         `json:"blockNumber"`
+	TxHash      common.Hash    `json:"txHash"`
+	TxIndex     uint           `json:"txIndex"`
+	BlockHash   common.Hash    `json:"blockHash"`
+	Index       uint           `json:"index"`
+	Removed     bool           `json:"removed"`
+}
+
+// BlockFromLibevm converts a libevm Block to a Coreth Block.
 // chainID should be provided since blocks may not have transactions to extract it from.
 func CorethBlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*CorethBlock, error) {
 	transactions, err := CorethTransactionsFromLibevm(block.Transactions())
@@ -174,6 +195,34 @@ func CorethWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*Coreth
 		}
 	}
 	return result
+}
+
+func CorethTxReceiptFromLibevm(tx *libevmtypes.Receipt) *CorethTxReceipt {
+	return &CorethTxReceipt{
+		ContractAddress: tx.ContractAddress,
+		Status:          tx.Status,
+		GasUsed:         tx.GasUsed,
+		Logs:            CorethLogsFromLibevm(tx.Logs),
+	}
+}
+
+func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
+	logWrappers := make([]*CorethLog, len(logs))
+
+	for i, log := range logs {
+		logWrappers[i] = &CorethLog{
+			Address:     log.Address,
+			Topics:      log.Topics,
+			Data:        log.Data,
+			BlockNumber: log.BlockNumber,
+			TxHash:      log.TxHash,
+			TxIndex:     log.TxIndex,
+			BlockHash:   log.BlockHash,
+			Index:       log.Index,
+			Removed:     log.Removed,
+		}
+	}
+	return logWrappers
 }
 
 func (b *CorethBlock) Marshal() ([]byte, error) {
