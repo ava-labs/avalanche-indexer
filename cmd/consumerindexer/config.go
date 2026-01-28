@@ -61,6 +61,7 @@ type Config struct {
 	// Table names
 	RawBlocksTableName       string
 	RawTransactionsTableName string
+	RawLogsTableName         string
 
 	// Metrics settings
 	MetricsHost   string
@@ -112,6 +113,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		ClickHouse:               chCfg,
 		RawBlocksTableName:       c.String("raw-blocks-table-name"),
 		RawTransactionsTableName: c.String("raw-transactions-table-name"),
+		RawLogsTableName:         c.String("raw-logs-table-name"),
 		MetricsHost:              c.String("metrics-host"),
 		MetricsPort:              c.Int("metrics-port"),
 		ChainID:                  c.Uint64("chain-id"),

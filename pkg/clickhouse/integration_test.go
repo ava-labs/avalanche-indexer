@@ -5,76 +5,124 @@ package clickhouse
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-var testClickHouseClient Client
+var (
+	testClickHouseClient    Client
+	testClickHouseContainer testcontainers.Container
+)
 
-// loadTestEnv loads the .env.test file from the clickhouse directory
-func loadTestEnv() error {
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		return nil // If we can't determine the file, just use defaults
+// setupClickHouseContainer spins up a ClickHouse container for integration tests
+func setupClickHouseContainer() (testcontainers.Container, Config, error) {
+	ctx := context.Background()
+
+	req := testcontainers.ContainerRequest{
+		Image:        "clickhouse/clickhouse-server:23.8",
+		ExposedPorts: []string{"9000/tcp", "8123/tcp"},
+		Env: map[string]string{
+			"CLICKHOUSE_DB":       "default",
+			"CLICKHOUSE_USER":     "default",
+			"CLICKHOUSE_PASSWORD": "",
+		},
+		WaitingFor: wait.ForHTTP("/ping").
+			WithPort("8123/tcp").
+			WithStartupTimeout(90 * time.Second),
 	}
 
-	// Get the directory of the current file (integration_test.go)
-	dir := filepath.Dir(currentFile)
-	envPath := filepath.Join(dir, ".env.test")
-	return godotenv.Load(envPath)
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	if err != nil {
+		return nil, Config{}, fmt.Errorf("failed to start ClickHouse container: %w", err)
+	}
+
+	// Get the mapped port
+	mappedPort, err := container.MappedPort(ctx, "9000")
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, Config{}, fmt.Errorf("failed to get mapped port: %w", err)
+	}
+
+	host, err := container.Host(ctx)
+	if err != nil {
+		_ = container.Terminate(ctx)
+		return nil, Config{}, fmt.Errorf("failed to get container host: %w", err)
+	}
+
+	// Create config for the test container
+	cfg := Config{
+		Hosts:       []string{fmt.Sprintf("%s:%d", host, mappedPort.Int())},
+		Database:    "default",
+		Username:    "default",
+		Password:    "",
+		DialTimeout: 10,
+		Debug:       false,
+	}
+
+	return container, cfg, nil
 }
 
 // TestMain sets up the ClickHouse client for all integration tests.
-// Integration tests require a running ClickHouse instance.
-// If ClickHouse is not available, tests will fail (no skipping).
+// Uses testcontainers-go to spin up a ClickHouse instance automatically.
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	// Load test environment variables for integration tests
-	if err := loadTestEnv(); err != nil {
-		log.Printf("integration: Note: Could not load .env.test file: %v (using defaults)", err)
+	// Spin up ClickHouse container
+	log.Println("Setting up ClickHouse container for integration tests...")
+	container, cfg, err := setupClickHouseContainer()
+	if err != nil {
+		log.Fatalf("Failed to setup ClickHouse container: %v", err)
 	}
+	testClickHouseContainer = container
 
-	// Load configuration (will use .env.test values if loaded, otherwise defaults)
-	cfg := Load()
-
-	// Override with test-friendly settings
-	cfg.DialTimeout = 5
+	log.Printf("ClickHouse container started at %s", cfg.Hosts[0])
 
 	// Create a test logger
-	sugar, err := utils.NewSugaredLogger(true) // Use verbose mode for integration tests
+	sugar, err := utils.NewSugaredLogger(true)
 	if err != nil {
-		require.Failf(t, "integration: failed to create logger: %v", err)
+		log.Fatalf("Failed to create logger: %v", err)
 	}
 
-	// Initialize ClickHouse client - fail if not available
+	// Initialize ClickHouse client
 	chClient, err := New(cfg, sugar)
 	if err != nil {
-		require.Failf(t, "integration: failed to open ClickHouse connection: %v", err)
+		_ = container.Terminate(ctx)
+		log.Fatalf("Failed to create ClickHouse client: %v", err)
 	}
-
 	testClickHouseClient = chClient
 
-	// Ping ClickHouse to ensure connection works - fail if not available
+	// Ping ClickHouse to ensure connection works
 	if err := testClickHouseClient.Ping(ctx); err != nil {
-		require.Failf(t, "integration: failed to ping ClickHouse: %v", err)
+		_ = testClickHouseClient.Close()
+		_ = container.Terminate(ctx)
+		log.Fatalf("Failed to ping ClickHouse: %v", err)
 	}
+
+	log.Println("ClickHouse client initialized successfully")
 
 	// Run all tests
 	code := m.Run()
 
 	// Cleanup
+	log.Println("Cleaning up ClickHouse resources...")
 	if testClickHouseClient != nil {
 		_ = testClickHouseClient.Close()
+	}
+	if testClickHouseContainer != nil {
+		_ = testClickHouseContainer.Terminate(ctx)
 	}
 
 	os.Exit(code)
@@ -83,6 +131,7 @@ func TestMain(m *testing.M) {
 // TestClientImpl_Methods tests the actual client implementation methods (Conn, Ping, Close)
 func TestClientImpl_Methods(t *testing.T) {
 	require.NotNil(t, testClickHouseClient, "ClickHouse client must be initialized")
+	require.NotNil(t, testClickHouseContainer, "ClickHouse container must be running")
 
 	// Test Conn() method
 	conn := testClickHouseClient.Conn()
@@ -94,11 +143,22 @@ func TestClientImpl_Methods(t *testing.T) {
 	require.NoError(t, err, "Ping() should succeed with valid connection")
 
 	// Test Close() method (create a new client for this test since we need to close it)
-	// We'll test Close by creating a temporary client with the same config
-	tempCfg := Load()
-	tempCfg.DialTimeout = 5
+	// Get container connection details to create a temporary client
+	mappedPort, err := testClickHouseContainer.MappedPort(ctx, "9000")
+	require.NoError(t, err)
 
-	sugar, err := utils.NewSugaredLogger(true) // Use verbose mode for tests
+	host, err := testClickHouseContainer.Host(ctx)
+	require.NoError(t, err)
+
+	tempCfg := Config{
+		Hosts:       []string{fmt.Sprintf("%s:%d", host, mappedPort.Int())},
+		Database:    "default",
+		Username:    "default",
+		Password:    "",
+		DialTimeout: 5,
+	}
+
+	sugar, err := utils.NewSugaredLogger(true)
 	require.NoError(t, err)
 
 	tempClient, err := New(tempCfg, sugar)
@@ -112,14 +172,27 @@ func TestClientImpl_Methods(t *testing.T) {
 // by attempting to connect with invalid credentials, which triggers a clickhouse.Exception
 func TestNew_ExceptionError(t *testing.T) {
 	require.NotNil(t, testClickHouseClient, "ClickHouse client must be initialized")
+	require.NotNil(t, testClickHouseContainer, "ClickHouse container must be running")
 
-	// Use a config that will connect but fail authentication, triggering a clickhouse.Exception
-	// Start with loaded config and override with invalid credentials
-	cfg := Load()
-	cfg.Username = "invaliduser"
-	cfg.Password = "invalidpass"
+	ctx := context.Background()
 
-	sugar, err := utils.NewSugaredLogger(true) // Use verbose mode for tests
+	// Get the current container's connection details
+	mappedPort, err := testClickHouseContainer.MappedPort(ctx, "9000")
+	require.NoError(t, err)
+
+	host, err := testClickHouseContainer.Host(ctx)
+	require.NoError(t, err)
+
+	// Create config with invalid credentials to trigger clickhouse.Exception
+	cfg := Config{
+		Hosts:       []string{fmt.Sprintf("%s:%d", host, mappedPort.Int())},
+		Database:    "default",
+		Username:    "invaliduser",
+		Password:    "invalidpass",
+		DialTimeout: 5,
+	}
+
+	sugar, err := utils.NewSugaredLogger(true)
 	require.NoError(t, err)
 
 	client, err := New(cfg, sugar)

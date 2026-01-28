@@ -1,13 +1,13 @@
 networks:
-    app-network:
-      driver: bridge
-  
-  volumes:
-    kafka-data:
-    grafana-data:
-    clickhouse-test-data:
-  
-  services:
+  app-network:
+    driver: bridge
+
+volumes:
+  kafka-data:
+  grafana-data:
+  clickhouse-test-data:
+
+services:
     # Kafka Broker with KRaft (no Zookeeper) - Official Apache Kafka with SASL/SCRAM
     kafka:
       image: apache/kafka:4.1.1
