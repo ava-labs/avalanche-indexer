@@ -49,11 +49,13 @@ func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 			topic3 Nullable(FixedString(32)),
 			data String,
 			log_index UInt32,
-			removed Bool
+			removed Bool,
+			partition_month INTEGER
 		)
 		ENGINE = MergeTree
-		ORDER BY (blockchain_id, block_time, tx_hash, log_index)
-		SETTINGS index_granularity = 8192
+		PARTITION BY (toString(evm_chain_id), partition_month)
+		ORDER BY (toString(evm_chain_id), partition_month, block_time, tx_hash, log_index)
+		SETTINGS index_granularity = 8192, allow_nullable_key = 1
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create logs table: %w", err)
@@ -66,8 +68,8 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			blockchain_id, evm_chain_id, block_number, block_hash, block_time,
-			tx_hash, tx_index, address, topic0, topic1, topic2, topic3, data, log_index, removed
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			tx_hash, tx_index, address, topic0, topic1, topic2, topic3, data, log_index, removed, partition_month
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
 	// Convert BlockchainID
@@ -115,6 +117,9 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 		return fmt.Errorf("failed to convert topic3 to bytes: %w", err)
 	}
 
+	// Calculate partition_month as YYYYMM from block_time
+	partitionMonth := int(log.BlockTime.Year()*100 + int(log.BlockTime.Month()))
+
 	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
 		evmChainIDStr,
@@ -131,6 +136,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 		string(log.Data),
 		log.LogIndex,
 		log.Removed,
+		partitionMonth,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write log: %w", err)
