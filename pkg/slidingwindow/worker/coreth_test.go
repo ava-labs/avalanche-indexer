@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/coreth/rpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 	dto "github.com/prometheus/client_model/go"
