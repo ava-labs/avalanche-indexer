@@ -45,6 +45,11 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Convert topic bytes to string pointers (matching new return type)
+	topic0Str := string(topic0Bytes[:])
+	topic1Str := string(topic1Bytes[:])
+	topic2Str := string(topic2Bytes[:])
+
 	// Expect WriteLog call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -59,10 +64,10 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 			string(txHashBytes[:]),    // string: 32-byte binary string
 			log.TxIndex,               // uint32
 			string(addressBytes[:]),   // string: 20-byte binary string
-			string(topic0Bytes[:]),    // string: 32-byte binary string (topic0)
-			string(topic1Bytes[:]),    // string: 32-byte binary string (topic1)
-			string(topic2Bytes[:]),    // string: 32-byte binary string (topic2)
-			nil,                       // nil: topic3 is nil
+			&topic0Str,                // *string: 32-byte binary string (topic0)
+			&topic1Str,                // *string: 32-byte binary string (topic1)
+			&topic2Str,                // *string: 32-byte binary string (topic2)
+			(*string)(nil),            // *string nil: topic3 is nil
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
@@ -109,6 +114,11 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Convert topic bytes to string pointers (matching new return type)
+	topic0Str := string(topic0Bytes[:])
+	topic1Str := string(topic1Bytes[:])
+	topic2Str := string(topic2Bytes[:])
+
 	// Expect WriteLog call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
@@ -120,10 +130,10 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 			string(txHashBytes[:]),    // string: 32-byte binary string
 			log.TxIndex,               // uint32
 			string(addressBytes[:]),   // string: 20-byte binary string
-			string(topic0Bytes[:]),    // string: 32-byte binary string (topic0)
-			string(topic1Bytes[:]),    // string: 32-byte binary string (topic1)
-			string(topic2Bytes[:]),    // string: 32-byte binary string (topic2)
-			nil,                       // nil: topic3 is nil
+			&topic0Str,                // *string: 32-byte binary string (topic0)
+			&topic1Str,                // *string: 32-byte binary string (topic1)
+			&topic2Str,                // *string: 32-byte binary string (topic2)
+			(*string)(nil),            // *string nil: topic3 is nil
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
@@ -181,10 +191,10 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 			string(txHashBytes[:]),    // string: 32-byte binary string
 			log.TxIndex,               // uint32
 			string(addressBytes[:]),   // string: 20-byte binary string
-			nil,                       // nil: topic0 is nil
-			nil,                       // nil: topic1 is nil
-			nil,                       // nil: topic2 is nil
-			nil,                       // nil: topic3 is nil
+			(*string)(nil),            // *string nil: topic0 is nil
+			(*string)(nil),            // *string nil: topic1 is nil
+			(*string)(nil),            // *string nil: topic2 is nil
+			(*string)(nil),            // *string nil: topic3 is nil
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool

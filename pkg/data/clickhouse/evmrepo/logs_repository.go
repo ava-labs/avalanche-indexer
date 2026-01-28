@@ -142,7 +142,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 }
 
 // convertTopicToBytes converts a nullable topic hex string to bytes for ClickHouse
-func convertTopicToBytes(topic *string) (interface{}, error) {
+func convertTopicToBytes(topic *string) (*string, error) {
 	if topic == nil {
 		return nil, nil
 	}
@@ -150,11 +150,12 @@ func convertTopicToBytes(topic *string) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return string(topicBytes[:]), nil
+	result := string(topicBytes[:])
+	return &result, nil
 }
 
 // convertTopic0ToBytes converts a topic0 string to bytes for ClickHouse (empty string = NULL)
-func convertTopic0ToBytes(topic string) (interface{}, error) {
+func convertTopic0ToBytes(topic string) (*string, error) {
 	if topic == "" {
 		return nil, nil
 	}
@@ -162,5 +163,6 @@ func convertTopic0ToBytes(topic string) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return string(topicBytes[:]), nil
+	result := string(topicBytes[:])
+	return &result, nil
 }
