@@ -367,7 +367,7 @@ func CorethLogToLogRow(
 		return nil, evmrepo.ErrBlockChainIDRequired
 	}
 
-	// Set BlockchainID and EVMChainID from block (default EVMChainID to 0 if not set)
+	// Set BlockchainID and EVMChainID from block
 	blockchainID := block.BlockchainID
 	evmChainID := block.EVMChainID
 	if evmChainID == nil {
