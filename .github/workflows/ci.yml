@@ -33,14 +33,18 @@ jobs:
           set -eo pipefail
           # Dynamically build coverage package list, excluding cmd/* and testutils
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
-          export GOCOVERDIR="$RUNNER_TEMP/cover-unit"
+          export GOCOVERDIR="$GITHUB_WORKSPACE/.cover/cover-unit"
           mkdir -p "$GOCOVERDIR"
           go test -race -cover -covermode=atomic -coverpkg="$COVERPKGS" ./...
+          if [ -z "$(ls -A "$GOCOVERDIR")" ]; then
+            echo "::error::No coverage data found in $GOCOVERDIR"
+            exit 1
+          fi
       - name: Upload coverage data (unit)
         uses: actions/upload-artifact@v4
         with:
           name: coverage-unit
-          path: ${{ runner.temp }}/cover-unit
+          path: .cover/cover-unit
           if-no-files-found: error
 
   Integration:
@@ -56,14 +60,18 @@ jobs:
         run: |
           set -eo pipefail
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
-          export GOCOVERDIR="$RUNNER_TEMP/cover-integration"
+          export GOCOVERDIR="$GITHUB_WORKSPACE/.cover/cover-integration"
           mkdir -p "$GOCOVERDIR"
           go test -tags=integration -v -timeout=10m -cover -covermode=atomic -coverpkg="$COVERPKGS" $(go list ./... | grep -v '/clickhouse')
+          if [ -z "$(ls -A "$GOCOVERDIR")" ]; then
+            echo "::error::No coverage data found in $GOCOVERDIR"
+            exit 1
+          fi
       - name: Upload coverage data (integration)
         uses: actions/upload-artifact@v4
         with:
           name: coverage-integration
-          path: ${{ runner.temp }}/cover-integration
+          path: .cover/cover-integration
           if-no-files-found: error
 
   E2E:
@@ -85,9 +93,13 @@ jobs:
         run: |
           set -eo pipefail
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
-          export GOCOVERDIR="$RUNNER_TEMP/cover-e2e"
+          export GOCOVERDIR="$GITHUB_WORKSPACE/.cover/cover-e2e"
           mkdir -p "$GOCOVERDIR"
           go test -tags=e2e -v -cover -covermode=atomic -coverpkg="$COVERPKGS" ./test/e2e
+          if [ -z "$(ls -A "$GOCOVERDIR")" ]; then
+            echo "::error::No coverage data found in $GOCOVERDIR"
+            exit 1
+          fi
       - name: Stop dependencies
         if: always()
         shell: bash
@@ -96,7 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-e2e
-          path: ${{ runner.temp }}/cover-e2e
+          path: .cover/cover-e2e
           if-no-files-found: error
 
   Coverage:
