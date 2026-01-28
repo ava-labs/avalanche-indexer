@@ -155,6 +155,28 @@ func flags() []cli.Flag {
 			Value:   1,
 		},
 		&cli.StringFlag{
+			Name:    "kafka-sasl-username",
+			Usage:   "SASL username for Kafka authentication",
+			EnvVars: []string{"KAFKA_SASL_USERNAME"},
+		},
+		&cli.StringFlag{
+			Name:    "kafka-sasl-password",
+			Usage:   "SASL password for Kafka authentication",
+			EnvVars: []string{"KAFKA_SASL_PASSWORD"},
+		},
+		&cli.StringFlag{
+			Name:    "kafka-sasl-mechanism",
+			Usage:   "SASL mechanism (SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)",
+			EnvVars: []string{"KAFKA_SASL_MECHANISM"},
+			Value:   "SCRAM-SHA-512",
+		},
+		&cli.StringFlag{
+			Name:    "kafka-security-protocol",
+			Usage:   "Security protocol (SASL_SSL or SASL_PLAINTEXT)",
+			EnvVars: []string{"KAFKA_SECURITY_PROTOCOL"},
+			Value:   "SASL_SSL",
+		},
+		&cli.StringFlag{
 			Name:    "checkpoint-table-name",
 			Aliases: []string{"T"},
 			Usage:   "The name of the table to write the checkpoint to",
