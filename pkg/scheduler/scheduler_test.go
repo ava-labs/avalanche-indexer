@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
-	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 )
 
 type mockCheckpointRepo struct {
