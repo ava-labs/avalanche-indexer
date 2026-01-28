@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"

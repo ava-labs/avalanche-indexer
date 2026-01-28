@@ -30,12 +30,14 @@ jobs:
       - name: Run tests with coverage
         shell: bash
         run: |
+          set -eo pipefail
           # Dynamically build coverage package list, excluding cmd/* and testutils
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
           go test -race -coverprofile=coverage.out -covermode=atomic -coverpkg="$COVERPKGS" ./...
       - name: Coverage report
         shell: bash
         run: |
+          set -eo pipefail
           # Write coverage report to job summary
           echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -52,12 +54,13 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
           echo "**Total Coverage: ${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
 
-          # Check coverage threshold (set to 50% and warn to start, adjust higher and fail CI once testing is more mature)
+          # Check coverage threshold
           THRESHOLD=50
           echo "" >> $GITHUB_STEP_SUMMARY
           if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
-            echo "::warning::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
             echo "Coverage is below ${THRESHOLD}% threshold" >> $GITHUB_STEP_SUMMARY
+            exit 1
           else
             echo "Coverage meets ${THRESHOLD}% threshold" >> $GITHUB_STEP_SUMMARY
           fi
@@ -153,7 +156,7 @@ jobs:
     name: Publish Docker image (latest)
     runs-on: ubuntu-latest
     needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -174,7 +177,7 @@ jobs:
     name: Publish Docker image (latest-arm64)
     runs-on: ubuntu-24.04-arm
     needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -195,7 +198,7 @@ jobs:
     name: Publish Docker manifest (latest)
     runs-on: ubuntu-latest
     needs: [Publish-Latest, Publish-Latest-ARM]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 10
     steps:
       - name: Login to DockerHub
@@ -205,6 +208,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASS }}
       - name: Create and push multi-arch latest manifest
         run: |
+          set -eo pipefail
           docker buildx imagetools create \
             -t avaplatform/avalanche-indexer:latest \
             avaplatform/avalanche-indexer:latest \
@@ -214,7 +218,7 @@ jobs:
     name: Publish Docker image (release-amd64)
     runs-on: ubuntu-latest
     needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -237,7 +241,7 @@ jobs:
     name: Publish Docker image (release-arm64)
     runs-on: ubuntu-24.04-arm
     needs: [Unit, E2E, Lint, Fuzz, Markdown-Links]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -260,7 +264,7 @@ jobs:
     name: Publish Docker manifest (release)
     runs-on: ubuntu-latest
     needs: [Publish-Release, Publish-Release-ARM]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'ava-labs/avalanche-indexer' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     timeout-minutes: 10
     steps:
       - name: Login to DockerHub
@@ -270,6 +274,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASS }}
       - name: Create and push multi-arch manifest
         run: |
+          set -eo pipefail
           docker buildx imagetools create \
             -t avaplatform/avalanche-indexer:${{ github.ref_name }} \
             avaplatform/avalanche-indexer:${{ github.ref_name }}-amd64 \
@@ -287,6 +292,7 @@ jobs:
       - name: Check go.mod tidiness
         shell: bash
         run: |
+          set -eo pipefail
           go mod tidy
           if ! git diff --exit-code go.mod go.sum; then
             echo "::error::go.mod or go.sum is not tidy. Run 'go mod tidy' and commit the changes."

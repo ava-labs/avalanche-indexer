@@ -5,8 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/urfave/cli/v2"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
 const (

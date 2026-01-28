@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -28,6 +29,26 @@ func httpGet(ctx context.Context, url string) (*http.Response, error) {
 	return http.DefaultClient.Do(req)
 }
 
+func waitForStatusOK(ctx context.Context, url string) error {
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		resp, err := httpGet(ctx, url)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func TestServer_StartAndShutdown(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
@@ -35,16 +56,20 @@ func TestServer_StartAndShutdown(t *testing.T) {
 	_, err := New(reg)
 	require.NoError(t, err)
 
-	server := NewServer("127.0.0.1:19090", reg)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := NewServer(listener.Addr().String(), reg)
 
 	// Start the server
-	errCh := server.Start()
-
-	// Give server time to start
-	time.Sleep(50 * time.Millisecond)
+	errCh := server.StartWithListener(listener)
 
 	// Verify server is running by hitting health endpoint
-	resp, err := httpGet(t.Context(), "http://127.0.0.1:19090/health")
+	healthURL := "http://" + listener.Addr().String() + "/health"
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	require.NoError(t, waitForStatusOK(ctx, healthURL))
+	cancel()
+
+	resp, err := httpGet(t.Context(), healthURL)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -55,7 +80,7 @@ func TestServer_StartAndShutdown(t *testing.T) {
 	require.Equal(t, "ok", string(body))
 
 	// Shutdown gracefully
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel = context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	err = server.Shutdown(ctx)
@@ -81,8 +106,10 @@ func TestServer_MetricsEndpoint(t *testing.T) {
 	m.UpdateWindowMetrics(100, 200, 50)
 	m.IncError(ErrTypeOutOfWindow)
 
-	server := NewServer("127.0.0.1:19091", reg)
-	errCh := server.Start()
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := NewServer(listener.Addr().String(), reg)
+	errCh := server.StartWithListener(listener)
 	defer func() {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
@@ -90,11 +117,13 @@ func TestServer_MetricsEndpoint(t *testing.T) {
 		<-errCh
 	}()
 
-	// Give server time to start
-	time.Sleep(50 * time.Millisecond)
-
 	// Hit metrics endpoint
-	resp, err := httpGet(t.Context(), "http://127.0.0.1:19091/metrics")
+	metricsURL := "http://" + listener.Addr().String() + "/metrics"
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	require.NoError(t, waitForStatusOK(ctx, metricsURL))
+	cancel()
+
+	resp, err := httpGet(t.Context(), metricsURL)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -112,9 +141,11 @@ func TestServer_MetricsEndpoint(t *testing.T) {
 
 func TestServer_HealthEndpoint(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	server := NewServer("127.0.0.1:19092", reg)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := NewServer(listener.Addr().String(), reg)
 
-	errCh := server.Start()
+	errCh := server.StartWithListener(listener)
 	defer func() {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
@@ -122,9 +153,12 @@ func TestServer_HealthEndpoint(t *testing.T) {
 		<-errCh
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	healthURL := "http://" + listener.Addr().String() + "/health"
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	require.NoError(t, waitForStatusOK(ctx, healthURL))
+	cancel()
 
-	resp, err := httpGet(t.Context(), "http://127.0.0.1:19092/health")
+	resp, err := httpGet(t.Context(), healthURL)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
