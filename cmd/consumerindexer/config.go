@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 )
 
 const (
@@ -53,6 +54,7 @@ type Config struct {
 	KafkaTopicReplicationFactor    int
 	KafkaDLQTopicNumPartitions     int
 	KafkaDLQTopicReplicationFactor int
+	KafkaSASL                      kafka.SASLConfig
 
 	// ClickHouse settings
 	ClickHouse clickhouse.Config
@@ -60,6 +62,7 @@ type Config struct {
 	// Table names
 	RawBlocksTableName       string
 	RawTransactionsTableName string
+	RawLogsTableName         string
 
 	// Metrics settings
 	MetricsHost   string
@@ -102,15 +105,22 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		KafkaTopicReplicationFactor:    c.Int("kafka-topic-replication-factor"),
 		KafkaDLQTopicNumPartitions:     c.Int("kafka-dlq-topic-num-partitions"),
 		KafkaDLQTopicReplicationFactor: c.Int("kafka-dlq-topic-replication-factor"),
-		ClickHouse:                     chCfg,
-		RawBlocksTableName:             c.String("raw-blocks-table-name"),
-		RawTransactionsTableName:       c.String("raw-transactions-table-name"),
-		MetricsHost:                    c.String("metrics-host"),
-		MetricsPort:                    c.Int("metrics-port"),
-		ChainID:                        c.Uint64("chain-id"),
-		Environment:                    c.String("environment"),
-		Region:                         c.String("region"),
-		CloudProvider:                  c.String("cloud-provider"),
+		KafkaSASL: kafka.SASLConfig{
+			Username:         c.String("kafka-sasl-username"),
+			Password:         c.String("kafka-sasl-password"),
+			Mechanism:        c.String("kafka-sasl-mechanism"),
+			SecurityProtocol: c.String("kafka-security-protocol"),
+		},
+		ClickHouse:               chCfg,
+		RawBlocksTableName:       c.String("raw-blocks-table-name"),
+		RawTransactionsTableName: c.String("raw-transactions-table-name"),
+		RawLogsTableName:         c.String("raw-logs-table-name"),
+		MetricsHost:              c.String("metrics-host"),
+		MetricsPort:              c.Int("metrics-port"),
+		ChainID:                  c.Uint64("chain-id"),
+		Environment:              c.String("environment"),
+		Region:                   c.String("region"),
+		CloudProvider:            c.String("cloud-provider"),
 	}, nil
 }
 

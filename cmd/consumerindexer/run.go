@@ -62,6 +62,7 @@ func run(c *cli.Context) error {
 		"cloudProvider", cfg.CloudProvider,
 		"rawBlocksTableName", cfg.RawBlocksTableName,
 		"rawTransactionsTableName", cfg.RawTransactionsTableName,
+		"rawLogsTableName", cfg.RawLogsTableName,
 		"publishToDLQ", cfg.PublishToDLQ,
 		"kafkaTopicNumPartitions", cfg.KafkaTopicNumPartitions,
 		"kafkaTopicReplicationFactor", cfg.KafkaTopicReplicationFactor,
@@ -115,10 +116,18 @@ func run(c *cli.Context) error {
 	}
 	sugar.Info("Transactions table ready", "tableName", cfg.RawTransactionsTableName)
 
-	// Create CorethProcessor with ClickHouse persistence and metrics
-	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, m)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.RawLogsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create logs repository: %w", err)
+	}
+	sugar.Info("Logs table ready", "tableName", cfg.RawLogsTableName)
 
-	adminClient, err := confluentKafka.NewAdminClient(&confluentKafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers})
+	// Create CorethProcessor with ClickHouse persistence and metrics
+	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
+
+	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
+	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
+	adminClient, err := confluentKafka.NewAdminClient(&adminConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka admin client: %w", err)
 	}
@@ -160,6 +169,7 @@ func run(c *cli.Context) error {
 		FlushTimeout:                &cfg.FlushTimeout,
 		GoroutineWaitTimeout:        &cfg.GoroutineWaitTimeout,
 		PollInterval:                &cfg.PollInterval,
+		SASL:                        cfg.KafkaSASL,
 	}
 
 	// Create consumer

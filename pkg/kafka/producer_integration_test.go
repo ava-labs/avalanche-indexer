@@ -668,7 +668,6 @@ func TestProducer_ProduceErrors(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
-
 }
 
 // TestProducer_BackgroundGoroutines tests goroutine lifecycle
