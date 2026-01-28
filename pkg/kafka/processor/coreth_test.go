@@ -109,8 +109,8 @@ func TestCorehtLogToLogRow_Success(t *testing.T) {
 	assert.Equal(t, log.Data, logRow.Data)
 
 	// Check topics
-	require.NotNil(t, logRow.Topic0)
-	assert.Equal(t, log.Topics[0].Hex(), *logRow.Topic0)
+	assert.NotEmpty(t, logRow.Topic0)
+	assert.Equal(t, log.Topics[0].Hex(), logRow.Topic0)
 	require.NotNil(t, logRow.Topic1)
 	assert.Equal(t, log.Topics[1].Hex(), *logRow.Topic1)
 	require.NotNil(t, logRow.Topic2)
@@ -156,7 +156,7 @@ func TestCorethLogToLogRow_EmptyTopics(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, logRow)
 
-	assert.Nil(t, logRow.Topic0)
+	assert.Empty(t, logRow.Topic0)
 	assert.Nil(t, logRow.Topic1)
 	assert.Nil(t, logRow.Topic2)
 	assert.Nil(t, logRow.Topic3)
@@ -178,7 +178,7 @@ func TestCorethLogToLogRow_AllFourTopics(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, logRow)
 
-	require.NotNil(t, logRow.Topic0)
+	assert.NotEmpty(t, logRow.Topic0)
 	require.NotNil(t, logRow.Topic1)
 	require.NotNil(t, logRow.Topic2)
 	require.NotNil(t, logRow.Topic3)

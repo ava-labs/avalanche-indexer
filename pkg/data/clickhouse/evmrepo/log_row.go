@@ -15,7 +15,7 @@ type LogRow struct {
 	TxHash       string // Hex string, stored as FixedString(32)
 	TxIndex      uint32
 	Address      string  // Hex string, stored as FixedString(20)
-	Topic0       *string // Hex string, stored as Nullable(FixedString(32))
+	Topic0       string  // Hex string, stored as Nullable(FixedString(32)), empty string = NULL
 	Topic1       *string // Hex string, stored as Nullable(FixedString(32))
 	Topic2       *string // Hex string, stored as Nullable(FixedString(32))
 	Topic3       *string // Hex string, stored as Nullable(FixedString(32))

@@ -101,7 +101,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 	}
 
 	// Convert topic hex strings to bytes for Nullable FixedString fields
-	topic0, err := convertTopicToBytes(log.Topic0)
+	topic0, err := convertTopic0ToBytes(log.Topic0)
 	if err != nil {
 		return fmt.Errorf("failed to convert topic0 to bytes: %w", err)
 	}
@@ -147,6 +147,18 @@ func convertTopicToBytes(topic *string) (interface{}, error) {
 		return nil, nil
 	}
 	topicBytes, err := utils.HexToBytes32(*topic)
+	if err != nil {
+		return nil, err
+	}
+	return string(topicBytes[:]), nil
+}
+
+// convertTopic0ToBytes converts a topic0 string to bytes for ClickHouse (empty string = NULL)
+func convertTopic0ToBytes(topic string) (interface{}, error) {
+	if topic == "" {
+		return nil, nil
+	}
+	topicBytes, err := utils.HexToBytes32(topic)
 	if err != nil {
 		return nil, err
 	}

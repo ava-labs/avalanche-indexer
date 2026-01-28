@@ -375,10 +375,10 @@ func CorethLogToLogRow(
 	}
 
 	// Convert topics from []common.Hash to individual topic fields
-	var topic0, topic1, topic2, topic3 *string
+	var topic0 string
+	var topic1, topic2, topic3 *string
 	if len(log.Topics) > 0 {
-		t := log.Topics[0].Hex()
-		topic0 = &t
+		topic0 = log.Topics[0].Hex()
 	}
 	if len(log.Topics) > 1 {
 		t := log.Topics[1].Hex()

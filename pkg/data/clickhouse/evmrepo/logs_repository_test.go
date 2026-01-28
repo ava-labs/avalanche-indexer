@@ -30,7 +30,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	require.NoError(t, err, "address conversion should succeed")
 
 	// Convert topics
-	topic0Bytes, err := utils.HexToBytes32(*log.Topic0)
+	topic0Bytes, err := utils.HexToBytes32(log.Topic0)
 	require.NoError(t, err, "topic0 conversion should succeed")
 	topic1Bytes, err := utils.HexToBytes32(*log.Topic1)
 	require.NoError(t, err, "topic1 conversion should succeed")
@@ -94,7 +94,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 	require.NoError(t, err, "address conversion should succeed")
 
 	// Convert topics
-	topic0Bytes, err := utils.HexToBytes32(*log.Topic0)
+	topic0Bytes, err := utils.HexToBytes32(log.Topic0)
 	require.NoError(t, err, "topic0 conversion should succeed")
 	topic1Bytes, err := utils.HexToBytes32(*log.Topic1)
 	require.NoError(t, err, "topic1 conversion should succeed")
@@ -145,9 +145,9 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
 
-	// Create a test log with nil topics
+	// Create a test log with nil/empty topics
 	log := createTestLog()
-	log.Topic0 = nil
+	log.Topic0 = ""
 	log.Topic1 = nil
 	log.Topic2 = nil
 	log.Topic3 = nil
@@ -219,7 +219,7 @@ func createTestLog() *LogRow {
 		TxHash:       txHash,
 		TxIndex:      0,
 		Address:      address,
-		Topic0:       &topic0,
+		Topic0:       topic0,
 		Topic1:       &topic1,
 		Topic2:       &topic2,
 		Topic3:       nil,
