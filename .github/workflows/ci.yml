@@ -35,7 +35,7 @@ jobs:
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
           export GOCOVERDIR="$GITHUB_WORKSPACE/.cover/cover-unit"
           mkdir -p "$GOCOVERDIR"
-          go test -race -cover -covermode=atomic -coverpkg="$COVERPKGS" ./...
+          go test -race -cover -covermode=atomic -coverpkg="$COVERPKGS" ./... -test.gocoverdir="$GOCOVERDIR"
           if [ -z "$(ls -A "$GOCOVERDIR")" ]; then
             echo "::error::No coverage data found in $GOCOVERDIR"
             exit 1
@@ -62,7 +62,7 @@ jobs:
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
           export GOCOVERDIR="$GITHUB_WORKSPACE/.cover/cover-integration"
           mkdir -p "$GOCOVERDIR"
-          go test -tags=integration -v -timeout=10m -cover -covermode=atomic -coverpkg="$COVERPKGS" $(go list ./... | grep -v '/clickhouse')
+          go test -tags=integration -v -timeout=10m -cover -covermode=atomic -coverpkg="$COVERPKGS" $(go list ./... | grep -v '/clickhouse') -test.gocoverdir="$GOCOVERDIR"
           if [ -z "$(ls -A "$GOCOVERDIR")" ]; then
             echo "::error::No coverage data found in $GOCOVERDIR"
             exit 1
@@ -95,7 +95,7 @@ jobs:
           COVERPKGS=$(go list ./... | grep -v '/cmd/' | grep -v '/testutils' | tr '\n' ',' | sed 's/,$//')
           export GOCOVERDIR="$GITHUB_WORKSPACE/.cover/cover-e2e"
           mkdir -p "$GOCOVERDIR"
-          go test -tags=e2e -v -cover -covermode=atomic -coverpkg="$COVERPKGS" ./test/e2e
+          go test -tags=e2e -v -cover -covermode=atomic -coverpkg="$COVERPKGS" ./test/e2e -test.gocoverdir="$GOCOVERDIR"
           if [ -z "$(ls -A "$GOCOVERDIR")" ]; then
             echo "::error::No coverage data found in $GOCOVERDIR"
             exit 1
