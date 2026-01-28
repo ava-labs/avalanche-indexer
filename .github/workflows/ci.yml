@@ -161,7 +161,7 @@ jobs:
           echo "**Total Coverage: ${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
 
           # Check coverage threshold
-          THRESHOLD=50
+          THRESHOLD=70
           echo "" >> $GITHUB_STEP_SUMMARY
           export COVERAGE THRESHOLD
           if python - <<'PY'
