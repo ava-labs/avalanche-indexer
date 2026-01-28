@@ -4,15 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/urfave/cli/v2"
-
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
-	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
-	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/urfave/cli/v2"
 )
 
