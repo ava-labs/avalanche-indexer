@@ -36,7 +36,7 @@ func (c *Checkpointer) Write(
 	})
 }
 
-// Read retrieves the latest checkpoint for given EVM chain  ID.
+// Read retrieves the latest checkpoint for given EVM chain ID.
 func (c *Checkpointer) Read(
 	ctx context.Context,
 	evmChainID uint64,
