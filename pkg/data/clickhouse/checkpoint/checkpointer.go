@@ -13,7 +13,7 @@ type Checkpointer struct {
 	repo Repository
 }
 
-// Creates new Checkpointer. The provided repository will be used for all checkpoint operations.
+// Creates a new Checkpointer. The provided repository will be used for all checkpoint operations.
 func NewCheckpointer(repo Repository) *Checkpointer {
 	return &Checkpointer{repo: repo}
 }
