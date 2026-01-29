@@ -24,8 +24,21 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ptrDuration returns a pointer to a time.Duration
-func ptrDuration(d time.Duration) *time.Duration {
+// Test helper constants for creating deterministic test data
+const (
+	// txHashMultiplier is used for generating unique transaction hashes within blocks
+	txHashMultiplier = 100
+
+	// txHashMultiplierLarge is used for large payload tests to avoid hash collisions
+	txHashMultiplierLarge = 1000
+
+	// oneEtherInWei represents 1 ETH in wei (10^18)
+	oneEtherInWei = 1000000000000000000
+)
+
+// durationPtr returns a pointer to a time.Duration.
+// This is useful for optional duration fields in config structs.
+func durationPtr(d time.Duration) *time.Duration {
 	return &d
 }
 
@@ -115,8 +128,8 @@ func TestE2EConsumerIndexer(t *testing.T) {
 		OffsetManagerCommitInterval: 2 * time.Second,
 		PublishToDLQ:                false,
 		EnableLogs:                  false,
-		SessionTimeout:              ptrDuration(10 * time.Second),
-		MaxPollInterval:             ptrDuration(30 * time.Second),
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
 	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
@@ -222,8 +235,8 @@ func TestE2EConsumerIndexerWithDLQ(t *testing.T) {
 		OffsetManagerCommitInterval: 2 * time.Second,
 		PublishToDLQ:                true,
 		EnableLogs:                  false,
-		SessionTimeout:              ptrDuration(10 * time.Second),
-		MaxPollInterval:             ptrDuration(30 * time.Second),
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
 	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
@@ -264,11 +277,11 @@ func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messa
 		txs := make([]*messages.CorethTransaction, 2)
 		for j := 0; j < 2; j++ {
 			tx := &messages.CorethTransaction{
-				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*100+uint64(j))).Hex(),
+				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*txHashMultiplier+uint64(j))).Hex(),
 				Nonce:    uint64(j),
 				From:     common.HexToAddress(fmt.Sprintf("0x%040d", 1)).Hex(),
 				To:       common.HexToAddress(fmt.Sprintf("0x%040d", 2)).Hex(),
-				Value:    big.NewInt(int64(1000000000000000000)),
+				Value:    big.NewInt(int64(oneEtherInWei)),
 				Gas:      21000,
 				GasPrice: big.NewInt(25000000000),
 				Input:    "0x",
@@ -563,8 +576,8 @@ func TestE2EConsumerIndexerConcurrency(t *testing.T) {
 		OffsetManagerCommitInterval: 2 * time.Second,
 		PublishToDLQ:                false,
 		EnableLogs:                  false,
-		SessionTimeout:              ptrDuration(10 * time.Second),
-		MaxPollInterval:             ptrDuration(30 * time.Second),
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
 	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
@@ -698,8 +711,8 @@ func TestE2EConsumerIndexerOffsetManagement(t *testing.T) {
 		OffsetManagerCommitInterval: 1 * time.Second, // Frequent commits
 		PublishToDLQ:                false,
 		EnableLogs:                  false,
-		SessionTimeout:              ptrDuration(10 * time.Second),
-		MaxPollInterval:             ptrDuration(30 * time.Second),
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
 	consumer1, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
@@ -904,8 +917,8 @@ func TestE2EConsumerIndexerLargePayload(t *testing.T) {
 		OffsetManagerCommitInterval: 2 * time.Second,
 		PublishToDLQ:                false,
 		EnableLogs:                  false,
-		SessionTimeout:              ptrDuration(10 * time.Second),
-		MaxPollInterval:             ptrDuration(30 * time.Second),
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
 	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
@@ -958,11 +971,11 @@ func createTestBlocksStartingFrom(evmChainID uint64, blockchainID string, startN
 		txs := make([]*messages.CorethTransaction, 2)
 		for j := 0; j < 2; j++ {
 			tx := &messages.CorethTransaction{
-				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*100+uint64(j))).Hex(),
+				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*txHashMultiplier+uint64(j))).Hex(),
 				Nonce:    uint64(j),
 				From:     common.HexToAddress(fmt.Sprintf("0x%040d", 1)).Hex(),
 				To:       common.HexToAddress(fmt.Sprintf("0x%040d", 2)).Hex(),
-				Value:    big.NewInt(int64(1000000000000000000)),
+				Value:    big.NewInt(int64(oneEtherInWei)),
 				Gas:      21000,
 				GasPrice: big.NewInt(25000000000),
 				Input:    "0x",
@@ -1013,11 +1026,11 @@ func createTestBlocksWithTransactions(evmChainID uint64, blockchainID string, bl
 		txs := make([]*messages.CorethTransaction, txPerBlock)
 		for j := 0; j < txPerBlock; j++ {
 			tx := &messages.CorethTransaction{
-				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*1000+uint64(j))).Hex(),
+				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*txHashMultiplierLarge+uint64(j))).Hex(),
 				Nonce:    uint64(j),
 				From:     common.HexToAddress(fmt.Sprintf("0x%040d", j%10+1)).Hex(),
 				To:       common.HexToAddress(fmt.Sprintf("0x%040d", j%10+2)).Hex(),
-				Value:    big.NewInt(int64(1000000000000000000)),
+				Value:    big.NewInt(int64(oneEtherInWei)),
 				Gas:      21000,
 				GasPrice: big.NewInt(25000000000),
 				Input:    "0x",
