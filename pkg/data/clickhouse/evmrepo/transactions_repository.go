@@ -53,12 +53,12 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 			type UInt8,
 			transaction_index UInt64,
 			success UInt8,
-			partition_month INTEGER
+			month INTEGER
 		)
 		ENGINE = MergeTree
-		PARTITION BY (toString(evm_chain_id), partition_month)
-		ORDER BY (toString(evm_chain_id), partition_month, block_time, hash)
-		SETTINGS index_granularity = 8192, allow_nullable_key = 1
+		PARTITION BY (toString(evm_chain_id), month)
+		ORDER BY (block_time, hash)
+		SETTINGS index_granularity = 8192
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create transactions table: %w", err)
@@ -72,7 +72,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		INSERT INTO %s (
 			blockchain_id, evm_chain_id, block_number, block_hash, block_time, hash,
 			from_address, to_address, nonce, value, gas, gas_price,
-			max_fee_per_gas, max_priority_fee, input, type, transaction_index, success, partition_month
+			max_fee_per_gas, max_priority_fee, input, type, transaction_index, success, month
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
@@ -139,8 +139,8 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		maxPriorityFeeStr = nil
 	}
 
-	// Calculate partition_month as YYYYMM from block_time
-	partitionMonth := tx.BlockTime.Year()*100 + int(tx.BlockTime.Month())
+	// Calculate month as YYYYMM from block_time
+	month := utils.MonthFromTime(tx.BlockTime)
 
 	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
@@ -161,7 +161,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		tx.Type,
 		tx.TransactionIndex,
 		tx.Success,
-		partitionMonth,
+		month,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write transaction: %w", err)
