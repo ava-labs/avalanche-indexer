@@ -86,8 +86,8 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := block.BlockTime.Year()*100 + int(block.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(block.BlockTime)
 
 	// Expect WriteBlock call
 	mockConn.
@@ -124,7 +124,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			block.ExcessBlobGas,              // uint64
 			parentBeaconBlockRootStr,         // string or nil
 			block.MinDelayExcess,             // uint64
-			partitionMonth,                   // int: partition_month
+			month,                            // int: month
 		).
 		Return(nil).
 		Once()
@@ -200,8 +200,8 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		Return(nil).
 		Once()
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := block.BlockTime.Year()*100 + int(block.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(block.BlockTime)
 
 	// Expect WriteBlock call that fails
 	mockConn.
@@ -235,7 +235,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			block.ExcessBlobGas,
 			parentBeaconBlockRootStr,
 			block.MinDelayExcess,
-			partitionMonth, // int: partition_month
+			month, // int: month
 		).
 		Return(execErr).
 		Once()

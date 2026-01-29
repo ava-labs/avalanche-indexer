@@ -46,8 +46,8 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := tx.BlockTime.Year()*100 + int(tx.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(tx.BlockTime)
 
 	// Expect WriteTransaction call
 	mockConn.
@@ -72,8 +72,8 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
-			tx.Success,     // UInt8: success status
-			partitionMonth, // int: partition_month
+			tx.Success, // UInt8: success status
+			month,      // int: month
 		).
 		Return(nil).
 		Once()
@@ -117,8 +117,8 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 		Return(nil).
 		Once()
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := tx.BlockTime.Year()*100 + int(tx.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(tx.BlockTime)
 
 	// Expect WriteTransaction call that fails
 	mockConn.
@@ -140,8 +140,8 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
-			tx.Success,     // UInt8: success status
-			partitionMonth, // int: partition_month
+			tx.Success, // UInt8: success status
+			month,      // int: month
 		).
 		Return(execErr).
 		Once()
@@ -182,8 +182,8 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		Return(nil).
 		Once()
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := tx.BlockTime.Year()*100 + int(tx.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(tx.BlockTime)
 
 	// Expect WriteTransaction call
 	mockConn.
@@ -207,8 +207,8 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
-			tx.Success,     // UInt8: success status
-			partitionMonth, // int: partition_month
+			tx.Success, // UInt8: success status
+			month,      // int: month
 		).
 		Return(nil).
 		Once()

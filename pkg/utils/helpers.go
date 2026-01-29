@@ -1,6 +1,9 @@
 package utils
 
-import "encoding/hex"
+import (
+	"encoding/hex"
+	"time"
+)
 
 // HexToBytes32 converts a hex string (with or without 0x prefix) to a 32-byte array
 func HexToBytes32(hexStr string) ([32]byte, error) {
@@ -69,4 +72,10 @@ func HexToBytes8(hexStr string) ([8]byte, error) {
 	var result [8]byte
 	copy(result[:], bytes)
 	return result, nil
+}
+
+// MonthFromTime calculates the month as YYYYMM from a time.Time value.
+// For example, January 2026 returns 202601.
+func MonthFromTime(t time.Time) int {
+	return t.Year()*100 + int(t.Month())
 }

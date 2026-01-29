@@ -51,8 +51,8 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	topic1Str := string(topic1Bytes[:])
 	topic2Str := string(topic2Bytes[:])
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := log.BlockTime.Year()*100 + int(log.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(log.BlockTime)
 
 	// Expect WriteLog call
 	mockConn.
@@ -75,7 +75,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
-			partitionMonth,            // int: partition_month
+			month,                     // int: month
 		).
 		Return(nil).
 		Once()
@@ -124,8 +124,8 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 	topic1Str := string(topic1Bytes[:])
 	topic2Str := string(topic2Bytes[:])
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := log.BlockTime.Year()*100 + int(log.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(log.BlockTime)
 
 	// Expect WriteLog call that fails
 	mockConn.
@@ -145,7 +145,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
-			partitionMonth,            // int: partition_month
+			month,                     // int: month
 		).
 		Return(execErr).
 		Once()
@@ -187,8 +187,8 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 		Return(nil).
 		Once()
 
-	// Calculate partition_month from BlockTime (November 2020 = 202011)
-	partitionMonth := log.BlockTime.Year()*100 + int(log.BlockTime.Month())
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(log.BlockTime)
 
 	// Expect WriteLog call
 	mockConn.
@@ -210,7 +210,7 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
-			partitionMonth,            // int: partition_month
+			month,                     // int: month
 		).
 		Return(nil).
 		Once()
