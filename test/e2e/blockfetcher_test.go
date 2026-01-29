@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
@@ -338,40 +337,6 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
 }
 
-// verifyCheckpointFromMaxProcessed finds the max processed height and checks checkpoint lowest==max+1.
-func verifyCheckpointFromMaxProcessed(t *testing.T, ctx context.Context, repo checkpoint.Repository, chainID uint64, kafkaByNumber map[uint64][]byte) {
-	t.Helper()
-	if len(kafkaByNumber) == 0 {
-		return
-	}
-	var max uint64
-	for n := range kafkaByNumber {
-		if n > max {
-			max = n
-		}
-	}
-	verifyCheckpointLowestCorrect(t, ctx, repo, chainID, max+1)
-}
-
-// verifyCheckpointLowestCorrect polls ClickHouse checkpoint for the chain until lowest>=expected or timeout.
-func verifyCheckpointLowestCorrect(t *testing.T, ctx context.Context, repo checkpoint.Repository, chainID uint64, expected uint64) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		s, err := repo.ReadCheckpoint(ctx, chainID)
-		if err == nil && s != nil && s.Lowest >= expected {
-			return
-		}
-		if time.Now().After(deadline) {
-			require.NoError(t, err, "read checkpoint failed")
-			require.NotNil(t, s, "checkpoint nil")
-			require.GreaterOrEqual(t, expected, s.Lowest, "checkpoint lowest mismatch")
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
 // verifyBlocksFromRPC fetches blocks by number from RPC and compares to Kafka payloads.
 func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafkaByNumber map[uint64][]byte, numbers []uint64) {
 	if len(numbers) == 0 {
@@ -421,23 +386,4 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 			require.Equal(t, exp.BaseFee.String(), got.BaseFee.String(), "baseFee %d", n)
 		}
 	}
-}
-
-// Helpers
-func getEnvStr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func getEnvUint64(key string, def uint64) uint64 {
-	if v := os.Getenv(key); v != "" {
-		var out uint64
-		_, _ = fmt.Sscanf(v, "%d", &out)
-		if out != 0 {
-			return out
-		}
-	}
-	return def
 }
