@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
 )
 
 // rowMock is a minimal implementation of driver.Row that populates provided destinations.

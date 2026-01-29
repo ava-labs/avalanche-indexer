@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -43,6 +44,19 @@ func (s *Server) Start() <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
 		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("metrics server: %w", err)
+		}
+		close(errCh)
+	}()
+	return errCh
+}
+
+// StartWithListener begins serving metrics on a provided listener. This is
+// useful for tests that need an ephemeral port.
+func (s *Server) StartWithListener(listener net.Listener) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		if err := s.httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("metrics server: %w", err)
 		}
 		close(errCh)
