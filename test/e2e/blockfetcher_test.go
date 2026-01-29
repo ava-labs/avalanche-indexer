@@ -13,11 +13,11 @@ import (
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	stream "github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -61,8 +61,9 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	defer chClient.Close()
 
 	repo := checkpoint.NewRepository(chClient, clickhouseTable)
-	err = repo.CreateTableIfNotExists(ctx)
-	require.NoError(t, err, "failed to check existence or create checkpoints table")
+	chkpt := checkpoint.NewCheckpointer(repo)
+	err = chkpt.Initialize(ctx)
+	require.NoError(t, err, "failed to initialize checkpointer")
 
 	// Get latest block height from RPC to seed checkpoint.
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
@@ -133,7 +134,11 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
+	g.Go(func() error {
+		cfg := checkpointer.DefaultConfig()
+		cfg.Interval = checkpointInterval
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+	})
 
 	minMsgs := 5
 	received := 0
@@ -236,9 +241,10 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	defer chClient.Close()
 
 	repo := checkpoint.NewRepository(chClient, clickhouseTable)
-	err = repo.CreateTableIfNotExists(ctx)
+	chkpt := checkpoint.NewCheckpointer(repo)
+	err = chkpt.Initialize(ctx)
 	if err != nil {
-		require.NoError(t, err, "failed to check existence or create checkpoints table")
+		require.NoError(t, err, "failed to initialize checkpointer")
 	}
 
 	// ---- Kafka consumer to observe backfilled blocks ----
@@ -284,7 +290,11 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
+	g.Go(func() error {
+		cfg := checkpointer.DefaultConfig()
+		cfg.Interval = checkpointInterval
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+	})
 
 	// Collect exactly the expected backfill range
 	expectedCount := int(end - start + 1)

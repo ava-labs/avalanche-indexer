@@ -15,11 +15,11 @@ import (
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
-	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -160,22 +160,23 @@ func run(c *cli.Context) error {
 	}
 
 	repo := checkpoint.NewRepository(chClient, cfg.CheckpointTableName)
+	chkpt := checkpoint.NewCheckpointer(repo)
 
-	err = repo.CreateTableIfNotExists(ctx)
+	err = chkpt.Initialize(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to check existence or create checkpoints table: %w", err)
+		return fmt.Errorf("failed to initialize checkpointer: %w", err)
 	}
 
 	if fetchStartHeight {
-		checkpoint, err := repo.ReadCheckpoint(ctx, cfg.EVMChainID)
+		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID)
 		if err != nil {
 			return fmt.Errorf("failed to read checkpoint: %w", err)
 		}
-		if checkpoint == nil {
+		if !exists {
 			sugar.Infof("checkpoint not found, will start from block height 0")
 			start = 0
 		} else {
-			start = checkpoint.Lowest
+			start = lowestUnprocessed
 			sugar.Infof("start block height: %d", start)
 		}
 	}
@@ -221,7 +222,13 @@ func run(c *cli.Context) error {
 		}
 	})
 	g.Go(func() error {
-		return scheduler.Start(gctx, s, repo, cfg.CheckpointInterval, cfg.EVMChainID)
+		checkpointCfg := checkpointer.Config{
+			Interval:     cfg.CheckpointInterval,
+			WriteTimeout: 1 * time.Second,
+			MaxRetries:   3,
+			RetryBackoff: 300 * time.Millisecond,
+		}
+		return checkpointer.Start(gctx, s, chkpt, checkpointCfg, cfg.EVMChainID)
 	})
 
 	go slidingwindow.StartGapWatchdog(gctx, sugar, s, cfg.GapWatchdogInterval, cfg.GapWatchdogMaxGap)
