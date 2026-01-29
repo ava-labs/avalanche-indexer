@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
-	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
 const envTrue = "true"

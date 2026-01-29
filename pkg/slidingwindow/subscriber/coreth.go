@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/libevm/core/types"
 	"go.uber.org/zap"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 )
 
 type Coreth struct {

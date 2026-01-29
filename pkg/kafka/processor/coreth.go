@@ -8,9 +8,10 @@ import (
 	"strconv"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
-	"go.uber.org/zap"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"

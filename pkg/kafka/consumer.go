@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )

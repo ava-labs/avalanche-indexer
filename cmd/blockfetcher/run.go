@@ -9,6 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ava-labs/coreth/plugin/evm/customethclient"
+	"github.com/ava-labs/coreth/rpc"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
@@ -18,11 +24,6 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-	"github.com/ava-labs/coreth/plugin/evm/customethclient"
-	"github.com/ava-labs/coreth/rpc"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/urfave/cli/v2"
-	"golang.org/x/sync/errgroup"
 
 	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )

@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/urfave/cli/v2"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 
 	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
