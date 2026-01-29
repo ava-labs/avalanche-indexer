@@ -62,6 +62,7 @@ func run(c *cli.Context) error {
 		"rawBlocksTableName", cfg.RawBlocksTableName,
 		"rawTransactionsTableName", cfg.RawTransactionsTableName,
 		"rawLogsTableName", cfg.RawLogsTableName,
+		"logAggregatesMVTableName", cfg.LogAggregatesMVTableName,
 		"publishToDLQ", cfg.PublishToDLQ,
 		"kafkaTopicNumPartitions", cfg.KafkaTopicNumPartitions,
 		"kafkaTopicReplicationFactor", cfg.KafkaTopicReplicationFactor,
@@ -120,6 +121,13 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create logs repository: %w", err)
 	}
 	sugar.Info("Logs table ready", "tableName", cfg.RawLogsTableName)
+
+	// Initialize log aggregates materialized view
+	logAggregatesMV := evmrepo.NewLogAggregatesMV(chClient)
+	if err := logAggregatesMV.CreateMaterializedViewIfNotExists(ctx, cfg.RawLogsTableName, cfg.LogAggregatesMVTableName); err != nil {
+		return fmt.Errorf("failed to create log aggregates materialized view: %w", err)
+	}
+	sugar.Info("Log aggregates materialized view ready", "mvTableName", cfg.LogAggregatesMVTableName, "sourceTable", cfg.RawLogsTableName)
 
 	// Create CorethProcessor with ClickHouse persistence and metrics
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)

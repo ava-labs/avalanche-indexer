@@ -62,6 +62,7 @@ type Config struct {
 	RawBlocksTableName       string
 	RawTransactionsTableName string
 	RawLogsTableName         string
+	LogAggregatesMVTableName string
 
 	// Metrics settings
 	MetricsHost   string
@@ -114,6 +115,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		RawBlocksTableName:       c.String("raw-blocks-table-name"),
 		RawTransactionsTableName: c.String("raw-transactions-table-name"),
 		RawLogsTableName:         c.String("raw-logs-table-name"),
+		LogAggregatesMVTableName: c.String("log-aggregates-mv-table-name"),
 		MetricsHost:              c.String("metrics-host"),
 		MetricsPort:              c.Int("metrics-port"),
 		ChainID:                  c.Uint64("chain-id"),

@@ -269,6 +269,12 @@ func flags() []cli.Flag {
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
 			Value:   "default.raw_logs",
 		},
+		&cli.StringFlag{
+			Name:    "log-aggregates-mv-table-name",
+			Usage:   "ClickHouse materialized view table name for log aggregates",
+			EnvVars: []string{"CLICKHOUSE_LOG_AGGREGATES_MV_TABLE_NAME"},
+			Value:   "default.log_aggregates_mv",
+		},
 		// Metrics configuration flags
 		&cli.StringFlag{
 			Name:    "metrics-host",
