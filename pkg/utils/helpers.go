@@ -76,6 +76,11 @@ func HexToBytes8(hexStr string) ([8]byte, error) {
 
 // MonthFromTime calculates the month as YYYYMM from a time.Time value.
 // For example, January 2026 returns 202601.
+// Returns 0 if the time is the zero value or if the year is before 1970 (Unix epoch).
 func MonthFromTime(t time.Time) int {
+	// Guard against zero time value (year 1) or invalid timestamps
+	if t.IsZero() || t.Year() < 1970 {
+		return 0
+	}
 	return t.Year()*100 + int(t.Month())
 }
