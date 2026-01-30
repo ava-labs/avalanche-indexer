@@ -86,6 +86,9 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(block.BlockTime)
+
 	// Expect WriteBlock call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -121,6 +124,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			block.ExcessBlobGas,              // uint64
 			parentBeaconBlockRootStr,         // string or nil
 			block.MinDelayExcess,             // uint64
+			month,                            // int: month
 		).
 		Return(nil).
 		Once()
@@ -196,6 +200,9 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(block.BlockTime)
+
 	// Expect WriteBlock call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
@@ -228,6 +235,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			block.ExcessBlobGas,
 			parentBeaconBlockRootStr,
 			block.MinDelayExcess,
+			month, // int: month
 		).
 		Return(execErr).
 		Once()

@@ -22,4 +22,5 @@ type LogRow struct {
 	Data         []byte  // Binary data, stored as String
 	LogIndex     uint32
 	Removed      bool
+	Month        int // INTEGER - calculated as YYYYMM from block_time
 }

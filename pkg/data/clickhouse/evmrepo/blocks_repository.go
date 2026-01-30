@@ -63,10 +63,12 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 			blob_gas_used UInt64,
 			excess_blob_gas UInt64,
 			parent_beacon_block_root Nullable(FixedString(32)),
-			min_delay_excess UInt64
+			min_delay_excess UInt64,
+			month INTEGER
 		)
 		ENGINE = MergeTree
-		ORDER BY (blockchain_id, block_time, block_number)
+		PARTITION BY (toString(evm_chain_id), month)
+		ORDER BY (block_time, block_number)
 		SETTINGS index_granularity = 8192
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -84,8 +86,8 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 			base_fee_per_gas, block_gas_cost, state_root, transactions_root, receipts_root,
 			extra_data, block_extra_data, ext_data_hash, ext_data_gas_used,
 			mix_hash, nonce, sha3_uncles, uncles,
-			blob_gas_used, excess_blob_gas, parent_beacon_block_root, min_delay_excess
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			blob_gas_used, excess_blob_gas, parent_beacon_block_root, min_delay_excess, month
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
 	// Convert hex strings to bytes for FixedString fields
@@ -206,6 +208,9 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		unclesStrings[i] = string(uncle[:])
 	}
 
+	// Calculate month as YYYYMM from block_time
+	month := utils.MonthFromTime(block.BlockTime)
+
 	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
 		evmChainIDStr,
@@ -236,6 +241,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		block.ExcessBlobGas,
 		parentBeaconBlockRootBytes,
 		block.MinDelayExcess,
+		month,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %w", err)
