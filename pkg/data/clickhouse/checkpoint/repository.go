@@ -60,7 +60,7 @@ func (r *repository) WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint
 
 func (r *repository) ReadCheckpoint(ctx context.Context, chainID uint64) (*Checkpoint, error) {
 	var checkpoint Checkpoint
-	query := fmt.Sprintf("SELECT * FROM %s FINAL WHERE chain_id = %d", r.tableName, chainID)
+	query := fmt.Sprintf("SELECT * FROM %s WHERE chain_id = %d", r.tableName, chainID)
 	err := r.client.Conn().
 		QueryRow(ctx, query).
 		Scan(&checkpoint.ChainID, &checkpoint.Lowest, &checkpoint.Timestamp)
