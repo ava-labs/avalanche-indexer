@@ -46,6 +46,9 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(tx.BlockTime)
+
 	// Expect WriteTransaction call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -70,6 +73,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.Type,
 			tx.TransactionIndex,
 			tx.Success, // UInt8: success status
+			month,      // int: month
 		).
 		Return(nil).
 		Once()
@@ -113,6 +117,9 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(tx.BlockTime)
+
 	// Expect WriteTransaction call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
@@ -134,6 +141,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.Type,
 			tx.TransactionIndex,
 			tx.Success, // UInt8: success status
+			month,      // int: month
 		).
 		Return(execErr).
 		Once()
@@ -174,6 +182,9 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(tx.BlockTime)
+
 	// Expect WriteTransaction call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -197,6 +208,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.Type,
 			tx.TransactionIndex,
 			tx.Success, // UInt8: success status
+			month,      // int: month
 		).
 		Return(nil).
 		Once()

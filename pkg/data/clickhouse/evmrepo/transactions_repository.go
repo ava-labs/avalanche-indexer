@@ -52,10 +52,12 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 			input String,
 			type UInt8,
 			transaction_index UInt64,
-			success UInt8
+			success UInt8,
+			month INTEGER
 		)
 		ENGINE = MergeTree
-		ORDER BY (blockchain_id, block_time, hash)
+		PARTITION BY (toString(evm_chain_id), month)
+		ORDER BY (block_time, hash)
 		SETTINGS index_granularity = 8192
 	`, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -70,8 +72,8 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		INSERT INTO %s (
 			blockchain_id, evm_chain_id, block_number, block_hash, block_time, hash,
 			from_address, to_address, nonce, value, gas, gas_price,
-			max_fee_per_gas, max_priority_fee, input, type, transaction_index, success
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			max_fee_per_gas, max_priority_fee, input, type, transaction_index, success, month
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.tableName)
 
 	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
@@ -137,6 +139,9 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		maxPriorityFeeStr = nil
 	}
 
+	// Calculate month as YYYYMM from block_time
+	month := utils.MonthFromTime(tx.BlockTime)
+
 	err = r.client.Conn().Exec(ctx, query,
 		blockchainID,
 		evmChainIDStr,
@@ -156,6 +161,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		tx.Type,
 		tx.TransactionIndex,
 		tx.Success,
+		month,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write transaction: %w", err)

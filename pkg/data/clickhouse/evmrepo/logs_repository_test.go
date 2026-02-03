@@ -51,6 +51,9 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	topic1Str := string(topic1Bytes[:])
 	topic2Str := string(topic2Bytes[:])
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(log.BlockTime)
+
 	// Expect WriteLog call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -72,6 +75,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
+			month,                     // int: month
 		).
 		Return(nil).
 		Once()
@@ -120,6 +124,9 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 	topic1Str := string(topic1Bytes[:])
 	topic2Str := string(topic2Bytes[:])
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(log.BlockTime)
+
 	// Expect WriteLog call that fails
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
@@ -138,6 +145,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
+			month,                     // int: month
 		).
 		Return(execErr).
 		Once()
@@ -179,6 +187,9 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 		Return(nil).
 		Once()
 
+	// Calculate month from BlockTime (November 2020 = 202011)
+	month := utils.MonthFromTime(log.BlockTime)
+
 	// Expect WriteLog call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
@@ -199,6 +210,7 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 			string(log.Data),          // string: binary data
 			log.LogIndex,              // uint32
 			log.Removed,               // bool
+			month,                     // int: month
 		).
 		Return(nil).
 		Once()

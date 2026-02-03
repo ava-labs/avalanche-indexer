@@ -43,4 +43,5 @@ type BlockRow struct {
 	ExcessBlobGas         uint64
 	ParentBeaconBlockRoot string
 	MinDelayExcess        uint64
+	Month                 int // INTEGER - calculated as YYYYMM from block_time
 }
