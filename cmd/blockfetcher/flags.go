@@ -6,8 +6,8 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// flags returns all CLI flags for the blockfetcher run command
-func flags() []cli.Flag {
+// runFlags returns all CLI runFlags for the blockfetcher run command
+func runFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "verbose",
@@ -203,6 +203,25 @@ func flags() []cli.Flag {
 			Usage:   "The maximum gap between the lowest and highest block heights before a warning is logged",
 			EnvVars: []string{"GAP_WATCHDOG_MAX_GAP"},
 			Value:   100,
+		},
+	}
+}
+
+func removeFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:     "evm-chain-id",
+			Aliases:  []string{"C"},
+			Usage:    "The EVM chain ID of the blockchain resources being removed",
+			EnvVars:  []string{"EVM_CHAIN_ID"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "checkpoint-table-name",
+			Aliases:  []string{"T"},
+			Usage:    "The name of the table to remove the checkpoints from",
+			EnvVars:  []string{"CHECKPOINT_TABLE_NAME"},
+			Required: true,
 		},
 	}
 }

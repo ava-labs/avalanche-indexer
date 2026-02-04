@@ -160,3 +160,34 @@ func TestRepository_CreateTableIfNotExists_Error(t *testing.T) {
 	require.ErrorIs(t, err, createTableErr)
 	mockConn.AssertExpectations(t)
 }
+
+func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM checkpoints WHERE chain_id = 43114").
+		Return(nil)
+
+	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
+	err := repo.DeleteCheckpoints(ctx, 43114)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	deleteErr := errors.New("delete failed")
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM checkpoints WHERE chain_id = 43114").
+		Return(deleteErr)
+
+	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
+	err := repo.DeleteCheckpoints(ctx, 43114)
+	require.ErrorIs(t, err, deleteErr)
+	mockConn.AssertExpectations(t)
+}

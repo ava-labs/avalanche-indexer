@@ -15,6 +15,7 @@ type Repository interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint) error
 	ReadCheckpoint(ctx context.Context, chainID uint64) (*Checkpoint, error)
+	DeleteCheckpoints(ctx context.Context, chainID uint64) error
 }
 
 type repository struct {
@@ -71,4 +72,13 @@ func (r *repository) ReadCheckpoint(ctx context.Context, chainID uint64) (*Check
 		return nil, err
 	}
 	return &checkpoint, nil
+}
+
+func (r *repository) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf("DELETE FROM %s WHERE chain_id = %d", r.tableName, chainID)
+	err := r.client.Conn().Exec(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to delete checkpoints for chain ID %d: %w", chainID, err)
+	}
+	return nil
 }
