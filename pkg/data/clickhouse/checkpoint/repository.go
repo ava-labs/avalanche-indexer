@@ -75,8 +75,8 @@ func (r *repository) ReadCheckpoint(ctx context.Context, chainID uint64) (*Check
 }
 
 func (r *repository) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
-	query := fmt.Sprintf("DELETE FROM %s WHERE chain_id = %d", r.tableName, chainID)
-	err := r.client.Conn().Exec(ctx, query)
+	query := fmt.Sprintf("DELETE FROM %s WHERE chain_id = ?", r.tableName)
+	err := r.client.Conn().Exec(ctx, query, chainID)
 	if err != nil {
 		return fmt.Errorf("failed to delete checkpoints for chain ID %d: %w", chainID, err)
 	}

@@ -209,7 +209,7 @@ func runFlags() []cli.Flag {
 
 func removeFlags() []cli.Flag {
 	return []cli.Flag{
-		&cli.StringFlag{
+		&cli.Uint64Flag{
 			Name:     "evm-chain-id",
 			Aliases:  []string{"C"},
 			Usage:    "The EVM chain ID of the blockchain resources being removed",

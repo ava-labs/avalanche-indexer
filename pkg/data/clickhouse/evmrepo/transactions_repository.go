@@ -165,8 +165,8 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 }
 
 func (r *transactions) DeleteTransactions(ctx context.Context, chainID uint64) error {
-	query := fmt.Sprintf("DELETE FROM %s WHERE evm_chain_id = %d", r.tableName, chainID)
-	err := r.client.Conn().Exec(ctx, query)
+	query := fmt.Sprintf("DELETE FROM %s WHERE evm_chain_id = ?", r.tableName)
+	err := r.client.Conn().Exec(ctx, query, chainID)
 	if err != nil {
 		return fmt.Errorf("failed to delete transactions for chain ID %d: %w", chainID, err)
 	}

@@ -167,7 +167,7 @@ func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
 	ctx := t.Context()
 
 	mockConn.
-		On("Exec", mock.Anything, "DELETE FROM checkpoints WHERE chain_id = 43114").
+		On("Exec", mock.Anything, "DELETE FROM checkpoints WHERE chain_id = ?", mock.Anything).
 		Return(nil)
 
 	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
@@ -183,7 +183,7 @@ func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
 
 	deleteErr := errors.New("delete failed")
 	mockConn.
-		On("Exec", mock.Anything, "DELETE FROM checkpoints WHERE chain_id = 43114").
+		On("Exec", mock.Anything, "DELETE FROM checkpoints WHERE chain_id = ?", mock.Anything).
 		Return(deleteErr)
 
 	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
