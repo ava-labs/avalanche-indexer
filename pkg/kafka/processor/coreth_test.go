@@ -26,7 +26,8 @@ const (
 
 // Mock implementations for testing
 type mockBlocksRepo struct {
-	writeBlockFunc func(ctx context.Context, block *evmrepo.BlockRow) error
+	writeBlockFunc   func(ctx context.Context, block *evmrepo.BlockRow) error
+	deleteBlocksFunc func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockBlocksRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -37,8 +38,16 @@ func (m *mockBlocksRepo) WriteBlock(ctx context.Context, block *evmrepo.BlockRow
 	return nil
 }
 
+func (m *mockBlocksRepo) DeleteBlocks(ctx context.Context, chainID uint64) error {
+	if m.deleteBlocksFunc != nil {
+		return m.deleteBlocksFunc(ctx, chainID)
+	}
+	return nil
+}
+
 type mockTransactionsRepo struct {
-	writeTransactionFunc func(ctx context.Context, tx *evmrepo.TransactionRow) error
+	writeTransactionFunc   func(ctx context.Context, tx *evmrepo.TransactionRow) error
+	deleteTransactionsFunc func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockTransactionsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -49,14 +58,29 @@ func (m *mockTransactionsRepo) WriteTransaction(ctx context.Context, tx *evmrepo
 	return nil
 }
 
+func (m *mockTransactionsRepo) DeleteTransactions(ctx context.Context, chainID uint64) error {
+	if m.deleteTransactionsFunc != nil {
+		return m.deleteTransactionsFunc(ctx, chainID)
+	}
+	return nil
+}
+
 type mockLogsRepo struct {
-	writeLogFunc func(ctx context.Context, log *evmrepo.LogRow) error
+	writeLogFunc   func(ctx context.Context, log *evmrepo.LogRow) error
+	deleteLogsFunc func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockLogsRepo) CreateTableIfNotExists(context.Context) error { return nil }
 func (m *mockLogsRepo) WriteLog(ctx context.Context, log *evmrepo.LogRow) error {
 	if m.writeLogFunc != nil {
 		return m.writeLogFunc(ctx, log)
+	}
+	return nil
+}
+
+func (m *mockLogsRepo) DeleteLogs(ctx context.Context, chainID uint64) error {
+	if m.deleteLogsFunc != nil {
+		return m.deleteLogsFunc(ctx, chainID)
 	}
 	return nil
 }
@@ -655,6 +679,145 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 
 	assert.False(t, txsRepoCalled, "transactions repo should not be called")
 	assert.False(t, logsRepoCalled, "logs repo should not be called")
+}
+
+// ============================================================================
+// Repository Delete Method Tests
+// ============================================================================
+
+func TestMockBlocksRepo_DeleteBlocks_Success(t *testing.T) {
+	t.Parallel()
+
+	deleteCalled := false
+	var capturedChainID uint64
+
+	blocksRepo := &mockBlocksRepo{
+		deleteBlocksFunc: func(_ context.Context, chainID uint64) error {
+			deleteCalled = true
+			capturedChainID = chainID
+			return nil
+		},
+	}
+
+	err := blocksRepo.DeleteBlocks(t.Context(), 43114)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, uint64(43114), capturedChainID)
+}
+
+func TestMockBlocksRepo_DeleteBlocks_Error(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("delete blocks failed")
+	blocksRepo := &mockBlocksRepo{
+		deleteBlocksFunc: func(_ context.Context, _ uint64) error {
+			return expectedErr
+		},
+	}
+
+	err := blocksRepo.DeleteBlocks(t.Context(), 43114)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestMockBlocksRepo_DeleteBlocks_NilFunc(t *testing.T) {
+	t.Parallel()
+
+	blocksRepo := &mockBlocksRepo{
+		deleteBlocksFunc: nil, // No function set
+	}
+
+	err := blocksRepo.DeleteBlocks(t.Context(), 43114)
+	require.NoError(t, err, "should return nil when deleteBlocksFunc is not set")
+}
+
+func TestMockTransactionsRepo_DeleteTransactions_Success(t *testing.T) {
+	t.Parallel()
+
+	deleteCalled := false
+	var capturedChainID uint64
+
+	txsRepo := &mockTransactionsRepo{
+		deleteTransactionsFunc: func(_ context.Context, chainID uint64) error {
+			deleteCalled = true
+			capturedChainID = chainID
+			return nil
+		},
+	}
+
+	err := txsRepo.DeleteTransactions(t.Context(), 43114)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, uint64(43114), capturedChainID)
+}
+
+func TestMockTransactionsRepo_DeleteTransactions_Error(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("delete transactions failed")
+	txsRepo := &mockTransactionsRepo{
+		deleteTransactionsFunc: func(_ context.Context, _ uint64) error {
+			return expectedErr
+		},
+	}
+
+	err := txsRepo.DeleteTransactions(t.Context(), 43114)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestMockTransactionsRepo_DeleteTransactions_NilFunc(t *testing.T) {
+	t.Parallel()
+
+	txsRepo := &mockTransactionsRepo{
+		deleteTransactionsFunc: nil, // No function set
+	}
+
+	err := txsRepo.DeleteTransactions(t.Context(), 43114)
+	require.NoError(t, err, "should return nil when deleteTransactionsFunc is not set")
+}
+
+func TestMockLogsRepo_DeleteLogs_Success(t *testing.T) {
+	t.Parallel()
+
+	deleteCalled := false
+	var capturedChainID uint64
+
+	logsRepo := &mockLogsRepo{
+		deleteLogsFunc: func(_ context.Context, chainID uint64) error {
+			deleteCalled = true
+			capturedChainID = chainID
+			return nil
+		},
+	}
+
+	err := logsRepo.DeleteLogs(t.Context(), 43114)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, uint64(43114), capturedChainID)
+}
+
+func TestMockLogsRepo_DeleteLogs_Error(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("delete logs failed")
+	logsRepo := &mockLogsRepo{
+		deleteLogsFunc: func(_ context.Context, _ uint64) error {
+			return expectedErr
+		},
+	}
+
+	err := logsRepo.DeleteLogs(t.Context(), 43114)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestMockLogsRepo_DeleteLogs_NilFunc(t *testing.T) {
+	t.Parallel()
+
+	logsRepo := &mockLogsRepo{
+		deleteLogsFunc: nil, // No function set
+	}
+
+	err := logsRepo.DeleteLogs(t.Context(), 43114)
+	require.NoError(t, err, "should return nil when deleteLogsFunc is not set")
 }
 
 // ============================================================================
