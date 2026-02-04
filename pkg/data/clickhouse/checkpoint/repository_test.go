@@ -203,3 +203,48 @@ func containsSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`checkpoints_local` ON CLUSTER 'default' WHERE chain_id = ?\n", mock.Anything).
+		Return(nil)
+
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
+	err = repo.DeleteCheckpoints(ctx, 43114)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+
+	deleteErr := errors.New("delete failed")
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`checkpoints_local` ON CLUSTER 'default' WHERE chain_id = ?\n", mock.Anything).
+		Return(deleteErr)
+
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
+	err = repo.DeleteCheckpoints(ctx, 43114)
+	require.ErrorIs(t, err, deleteErr)
+	mockConn.AssertExpectations(t)
+}

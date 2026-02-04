@@ -6,8 +6,8 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// flags returns all CLI flags for the blockfetcher run command
-func flags() []cli.Flag {
+// runFlags returns all CLI runFlags for the blockfetcher run command
+func runFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "verbose",
@@ -205,6 +205,132 @@ func flags() []cli.Flag {
 			Value:   100,
 		},
 		// ClickHouse configuration flags
+		&cli.StringSliceFlag{
+			Name:    "clickhouse-hosts",
+			Usage:   "ClickHouse server hosts (comma-separated)",
+			EnvVars: []string{"CLICKHOUSE_HOSTS"},
+			Value:   cli.NewStringSlice("localhost:9000"),
+		},
+		&cli.StringFlag{
+			Name:    "clickhouse-cluster",
+			Usage:   "ClickHouse cluster name",
+			EnvVars: []string{"CLICKHOUSE_CLUSTER"},
+			Value:   "default",
+		},
+		&cli.StringFlag{
+			Name:    "clickhouse-database",
+			Usage:   "ClickHouse database name",
+			EnvVars: []string{"CLICKHOUSE_DATABASE"},
+			Value:   "default",
+		},
+		&cli.StringFlag{
+			Name:    "clickhouse-username",
+			Usage:   "ClickHouse username",
+			EnvVars: []string{"CLICKHOUSE_USERNAME"},
+			Value:   "default",
+		},
+		&cli.StringFlag{
+			Name:    "clickhouse-password",
+			Usage:   "ClickHouse password",
+			EnvVars: []string{"CLICKHOUSE_PASSWORD"},
+			Value:   "",
+		},
+		&cli.BoolFlag{
+			Name:    "clickhouse-debug",
+			Usage:   "Enable ClickHouse debug logging",
+			EnvVars: []string{"CLICKHOUSE_DEBUG"},
+		},
+		&cli.BoolFlag{
+			Name:    "clickhouse-insecure-skip-verify",
+			Usage:   "Skip TLS certificate verification for ClickHouse",
+			EnvVars: []string{"CLICKHOUSE_INSECURE_SKIP_VERIFY"},
+			Value:   true,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-max-execution-time",
+			Usage:   "ClickHouse max execution time in seconds",
+			EnvVars: []string{"CLICKHOUSE_MAX_EXECUTION_TIME"},
+			Value:   60,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-dial-timeout",
+			Usage:   "ClickHouse dial timeout in seconds",
+			EnvVars: []string{"CLICKHOUSE_DIAL_TIMEOUT"},
+			Value:   30,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-max-open-conns",
+			Usage:   "ClickHouse maximum open connections",
+			EnvVars: []string{"CLICKHOUSE_MAX_OPEN_CONNS"},
+			Value:   5,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-max-idle-conns",
+			Usage:   "ClickHouse maximum idle connections",
+			EnvVars: []string{"CLICKHOUSE_MAX_IDLE_CONNS"},
+			Value:   5,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-conn-max-lifetime",
+			Usage:   "ClickHouse connection max lifetime in minutes",
+			EnvVars: []string{"CLICKHOUSE_CONN_MAX_LIFETIME"},
+			Value:   10,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-block-buffer-size",
+			Usage:   "ClickHouse block buffer size",
+			EnvVars: []string{"CLICKHOUSE_BLOCK_BUFFER_SIZE"},
+			Value:   10,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-max-block-size",
+			Usage:   "ClickHouse max block size (recommended maximum number of rows in a single block)",
+			EnvVars: []string{"CLICKHOUSE_MAX_BLOCK_SIZE"},
+			Value:   1000,
+		},
+		&cli.IntFlag{
+			Name:    "clickhouse-max-compression-buffer",
+			Usage:   "ClickHouse max compression buffer in bytes",
+			EnvVars: []string{"CLICKHOUSE_MAX_COMPRESSION_BUFFER"},
+			Value:   10240,
+		},
+		&cli.StringFlag{
+			Name:    "clickhouse-client-name",
+			Usage:   "ClickHouse client name for ClientInfo",
+			EnvVars: []string{"CLICKHOUSE_CLIENT_NAME"},
+			Value:   "ac-client-name",
+		},
+		&cli.StringFlag{
+			Name:    "clickhouse-client-version",
+			Usage:   "ClickHouse client version for ClientInfo",
+			EnvVars: []string{"CLICKHOUSE_CLIENT_VERSION"},
+			Value:   "1.0",
+		},
+		&cli.BoolFlag{
+			Name:    "clickhouse-use-http",
+			Usage:   "Use HTTP protocol instead of native protocol",
+			EnvVars: []string{"CLICKHOUSE_USE_HTTP"},
+			Value:   false,
+		},
+	}
+}
+
+func removeFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.Uint64Flag{
+			Name:     "evm-chain-id",
+			Aliases:  []string{"C"},
+			Usage:    "The EVM chain ID of the blockchain resources being removed",
+			EnvVars:  []string{"EVM_CHAIN_ID"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:    "checkpoint-table-name",
+			Aliases: []string{"T"},
+			Usage:   "The name of the table to write the checkpoint to",
+			EnvVars: []string{"CHECKPOINT_TABLE_NAME"},
+			Value:   "checkpoints",
+		},
 		&cli.StringSliceFlag{
 			Name:    "clickhouse-hosts",
 			Usage:   "ClickHouse server hosts (comma-separated)",

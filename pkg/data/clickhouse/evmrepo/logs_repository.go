@@ -14,6 +14,7 @@ import (
 type Logs interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteLog(ctx context.Context, log *LogRow) error
+	DeleteLogs(ctx context.Context, chainID uint64) error
 }
 
 //go:embed queries/log/create-logs-table-local.sql
@@ -24,6 +25,9 @@ var createLogsTableQuery string
 
 //go:embed queries/log/write-log.sql
 var writeLogQuery string
+
+//go:embed queries/log/delete-logs.sql
+var deleteLogsQuery string
 
 type logs struct {
 	client    clickhouse.Client
@@ -156,4 +160,12 @@ func convertTopic0ToBytes(topic string) (*string, error) {
 	}
 	result := string(topicBytes[:])
 	return &result, nil
+}
+
+func (r *logs) DeleteLogs(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf(deleteLogsQuery, r.database, r.tableName, r.cluster)
+	if err := r.client.Conn().Exec(ctx, query, chainID); err != nil {
+		return fmt.Errorf("failed to delete logs: %w", err)
+	}
+	return nil
 }

@@ -36,6 +36,11 @@ func (m *mockCheckpointRepo) ReadCheckpoint(ctx context.Context, chainID uint64)
 	return nil, args.Error(1)
 }
 
+func (m *mockCheckpointRepo) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
+	args := m.Called(ctx, chainID)
+	return args.Error(0)
+}
+
 func TestStartCheckpointScheduler_WritesAndCancels(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(5, 10)

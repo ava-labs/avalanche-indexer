@@ -14,6 +14,7 @@ import (
 type Blocks interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteBlock(ctx context.Context, block *BlockRow) error
+	DeleteBlocks(ctx context.Context, chainID uint64) error
 }
 
 //go:embed queries/block/create-blocks-table-local.sql
@@ -24,6 +25,9 @@ var createBlocksTableQuery string
 
 //go:embed queries/block/write-block.sql
 var writeBlockQuery string
+
+//go:embed queries/block/delete-blocks.sql
+var deleteBlocksQuery string
 
 type blocks struct {
 	client    clickhouse.Client
@@ -216,5 +220,14 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	if err != nil {
 		return fmt.Errorf("failed to write block: %w", err)
 	}
+	return nil
+}
+
+func (r *blocks) DeleteBlocks(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf(deleteBlocksQuery, r.database, r.tableName, r.cluster)
+	if err := r.client.Conn().Exec(ctx, query, chainID); err != nil {
+		return fmt.Errorf("failed to delete blocks: %w", err)
+	}
+
 	return nil
 }

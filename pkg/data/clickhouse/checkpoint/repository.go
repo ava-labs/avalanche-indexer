@@ -17,6 +17,7 @@ type Repository interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint) error
 	ReadCheckpoint(ctx context.Context, chainID uint64) (*Checkpoint, error)
+	DeleteCheckpoints(ctx context.Context, chainID uint64) error
 }
 
 //go:embed queries/create-table-local.sql
@@ -30,6 +31,9 @@ var writeCheckpointQuery string
 
 //go:embed queries/read-checkpoint.sql
 var readCheckpointQuery string
+
+//go:embed queries/delete-checkpoints.sql
+var deleteCheckpointsQuery string
 
 type repository struct {
 	client    clickhouse.Client
@@ -91,4 +95,13 @@ func (r *repository) ReadCheckpoint(ctx context.Context, chainID uint64) (*Check
 		return nil, err
 	}
 	return &checkpoint, nil
+}
+
+func (r *repository) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf(deleteCheckpointsQuery, r.database, r.tableName, r.cluster)
+	if err := r.client.Conn().Exec(ctx, query, chainID); err != nil {
+		return fmt.Errorf("failed to delete checkpoints: %w", err)
+	}
+
+	return nil
 }

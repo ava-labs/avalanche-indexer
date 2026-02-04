@@ -281,6 +281,62 @@ func createTestBlock() *BlockRow {
 	}
 }
 
+func TestRepository_DeleteBlocks_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+		})).
+		Return(nil)
+
+	// Expect DeleteBlocks call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_blocks_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
+	require.NoError(t, err)
+	err = repo.DeleteBlocks(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_DeleteBlocks_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+		})).
+		Return(nil)
+
+	// Expect DeleteBlocks call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_blocks_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
+	require.NoError(t, err)
+	err = repo.DeleteBlocks(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete blocks")
+	mockConn.AssertExpectations(t)
+}
+
 // Helper function to check if a string contains a substring (case-insensitive)
 func containsSubstring(s, substr string) bool {
 	if len(substr) > len(s) {
