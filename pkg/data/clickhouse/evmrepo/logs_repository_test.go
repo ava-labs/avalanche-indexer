@@ -210,6 +210,64 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 	mockConn.AssertExpectations(t)
 }
 
+func TestLogsRepository_DeleteLogs_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect DeleteLogs call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM default.raw_logs WHERE evm_chain_id = ?", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	require.NoError(t, err)
+	err = repo.DeleteLogs(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestLogsRepository_DeleteLogs_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect DeleteLogs call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM default.raw_logs WHERE evm_chain_id = ?", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	require.NoError(t, err)
+	err = repo.DeleteLogs(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete logs for chain ID 43114")
+	mockConn.AssertExpectations(t)
+}
+
 // Helper function to create a test log with all fields populated
 func createTestLog() *LogRow {
 	blockHash := testBlockHash

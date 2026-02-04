@@ -15,8 +15,14 @@ func main() {
 			{
 				Name:   "run",
 				Usage:  "Run the consumer indexer",
-				Flags:  flags(),
+				Flags:  runFlags(),
 				Action: run,
+			},
+			{
+				Name:   "remove",
+				Usage:  "Remove resources for a given EVM chain ID",
+				Flags:  removeFlags(),
+				Action: remove,
 			},
 		},
 	}

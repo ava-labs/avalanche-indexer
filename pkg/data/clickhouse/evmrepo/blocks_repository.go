@@ -12,6 +12,7 @@ import (
 type Blocks interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteBlock(ctx context.Context, block *BlockRow) error
+	DeleteBlocks(ctx context.Context, chainID uint64) error
 }
 
 type blocks struct {
@@ -239,6 +240,15 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %w", err)
+	}
+	return nil
+}
+
+func (r *blocks) DeleteBlocks(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf("DELETE FROM %s WHERE evm_chain_id = ?", r.tableName)
+	err := r.client.Conn().Exec(ctx, query, chainID)
+	if err != nil {
+		return fmt.Errorf("failed to delete blocks for chain ID %d: %w", chainID, err)
 	}
 	return nil
 }

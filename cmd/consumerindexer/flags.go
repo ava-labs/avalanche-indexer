@@ -6,8 +6,8 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// flags returns all CLI flags for the consumerindexer run command
-func flags() []cli.Flag {
+// runFlags returns all CLI runFlags for the consumerindexer run command
+func runFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "verbose",
@@ -310,6 +310,37 @@ func flags() []cli.Flag {
 			Usage:   "Cloud provider for metrics labels (e.g., 'aws', 'oci', 'gcp')",
 			EnvVars: []string{"CLOUD_PROVIDER"},
 			Value:   "",
+		},
+	}
+}
+
+// removeFlags returns all CLI removeFlags for the consumerindexer remove command
+func removeFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.Uint64Flag{
+			Name:     "evm-chain-id",
+			Aliases:  []string{"C"},
+			Usage:    "The EVM chain ID of the blockchain resources being removed",
+			EnvVars:  []string{"EVM_CHAIN_ID"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "raw-blocks-table-name",
+			Usage:    "ClickHouse table name for raw blocks",
+			EnvVars:  []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "raw-transactions-table-name",
+			Usage:    "ClickHouse table name for raw transactions",
+			EnvVars:  []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "raw-logs-table-name",
+			Usage:    "ClickHouse table name for raw logs",
+			EnvVars:  []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
+			Required: true,
 		},
 	}
 }

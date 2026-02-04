@@ -208,6 +208,64 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	mockConn.AssertExpectations(t)
 }
 
+func TestTransactionsRepository_DeleteTransactions_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect DeleteTransactions call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM default.raw_transactions WHERE evm_chain_id = ?", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	require.NoError(t, err)
+	err = repo.DeleteTransactions(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_DeleteTransactions_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect DeleteTransactions call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM default.raw_transactions WHERE evm_chain_id = ?", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	require.NoError(t, err)
+	err = repo.DeleteTransactions(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete transactions for chain ID 43114")
+	mockConn.AssertExpectations(t)
+}
+
 // Helper function to create a test transaction with all fields populated
 func createTestTransaction() *TransactionRow {
 	blockHash := testBlockHash

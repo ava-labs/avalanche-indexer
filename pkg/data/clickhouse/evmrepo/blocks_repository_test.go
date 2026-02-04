@@ -282,6 +282,64 @@ func createTestBlock() *BlockRow {
 	}
 }
 
+func TestRepository_DeleteBlocks_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect DeleteBlocks call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM default.raw_blocks WHERE evm_chain_id = ?", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	require.NoError(t, err)
+	err = repo.DeleteBlocks(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_DeleteBlocks_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+		})).
+		Return(nil).
+		Once()
+
+	// Expect DeleteBlocks call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM default.raw_blocks WHERE evm_chain_id = ?", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	require.NoError(t, err)
+	err = repo.DeleteBlocks(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete blocks for chain ID 43114")
+	mockConn.AssertExpectations(t)
+}
+
 // Helper function to check if a string contains a substring (case-insensitive)
 func containsSubstring(s, substr string) bool {
 	if len(substr) > len(s) {
