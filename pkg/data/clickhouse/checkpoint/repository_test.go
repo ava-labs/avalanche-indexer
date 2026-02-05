@@ -85,7 +85,7 @@ func TestRepository_ReadCheckpoint_Success(t *testing.T) {
 	// Prepare row with values
 	row := rowMock{chainID: 43114, lowestUnprocessedBlock: 777, timestamp: 1700000000}
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM checkpoints FINAL WHERE chain_id = 43114").
+		On("QueryRow", mock.Anything, "SELECT * FROM checkpoints WHERE chain_id = 43114").
 		Return(row)
 
 	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
@@ -118,7 +118,7 @@ func TestRepository_ReadCheckpoint_Error(t *testing.T) {
 
 	scanErr := errors.New("scan failed")
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM checkpoints FINAL WHERE chain_id = 43114").
+		On("QueryRow", mock.Anything, "SELECT * FROM checkpoints WHERE chain_id = 43114").
 		Return(rowErrMock{err: scanErr})
 
 	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
