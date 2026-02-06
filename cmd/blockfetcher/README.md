@@ -135,7 +135,7 @@ docker run --rm \
   -e KAFKA_TOPIC_NUM_PARTITIONS=1 \
   -e KAFKA_TOPIC_REPLICATION_FACTOR=1 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
-  -e CLICKHOUSE_DATABASE=test_db \
+  -e CLICKHOUSE_DATABASE=default \  
   -e CLICKHOUSE_USERNAME=default \
   -e CLICKHOUSE_PASSWORD= \
   -e METRICS_PORT=9090 \
@@ -179,7 +179,7 @@ All flags have environment variable equivalents:
 - `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
 - `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
 - `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
-- `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: test_db.checkpoints, ClickHouse table for checkpoints)
+- `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: default.checkpoints, ClickHouse table for checkpoints)
 - `--checkpoint-interval` / `-i` → `CHECKPOINT_INTERVAL` (default: 1m, checkpoint write interval)
 - `--gap-watchdog-interval` / `-g` → `GAP_WATCHDOG_INTERVAL` (default: 15m, gap check interval)
 - `--gap-watchdog-max-gap` / `-G` → `GAP_WATCHDOG_MAX_GAP` (default: 100, max gap before warning)

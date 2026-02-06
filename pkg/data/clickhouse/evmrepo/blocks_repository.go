@@ -16,13 +16,17 @@ type Blocks interface {
 
 type blocks struct {
 	client    clickhouse.Client
+	cluster   string
+	database  string
 	tableName string
 }
 
 // NewBlocks creates a new raw blocks repository and initializes the table
-func NewBlocks(ctx context.Context, client clickhouse.Client, tableName string) (Blocks, error) {
+func NewBlocks(ctx context.Context, client clickhouse.Client, cluster, database, tableName string) (Blocks, error) {
 	repo := &blocks{
 		client:    client,
+		cluster:   cluster,
+		database:  database,
 		tableName: tableName,
 	}
 	if err := repo.CreateTableIfNotExists(ctx); err != nil {
@@ -34,7 +38,9 @@ func NewBlocks(ctx context.Context, client clickhouse.Client, tableName string) 
 // CreateTableIfNotExists creates the raw_blocks table if it doesn't exist
 func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
+		CREATE TABLE IF NOT EXISTS %s.%s_local
+		ON CLUSTER %s
+		(
 			blockchain_id String,
 			evm_chain_id UInt256,
 			block_number UInt64,
@@ -65,10 +71,50 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 			parent_beacon_block_root Nullable(FixedString(32)),
 			min_delay_excess UInt64
 		)
-		ENGINE = MergeTree
+		ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
 		ORDER BY (blockchain_id, block_time, block_number)
 		SETTINGS index_granularity = 8192
-	`, r.tableName)
+	`, r.database, r.tableName, r.cluster, r.tableName)
+	if err := r.client.Conn().Exec(ctx, query); err != nil {
+		return fmt.Errorf("failed to create blocks local table: %w", err)
+	}
+
+	query = fmt.Sprintf(`
+	CREATE TABLE IF NOT EXISTS %s.%s
+		ON CLUSTER %s
+		(
+			blockchain_id String,
+			evm_chain_id UInt256,
+			block_number UInt64,
+			hash FixedString(32),
+			parent_hash FixedString(32),
+			block_time DateTime64(3, 'UTC'),
+			miner FixedString(20),
+			difficulty UInt256,
+			total_difficulty UInt256,
+			size UInt64,
+			gas_limit UInt64,
+			gas_used UInt64,
+			base_fee_per_gas UInt256,
+			block_gas_cost UInt256,
+			state_root FixedString(32),
+			transactions_root FixedString(32),
+			receipts_root FixedString(32),
+			extra_data String,
+			block_extra_data String,
+			ext_data_hash FixedString(32),
+			ext_data_gas_used UInt32,
+			mix_hash FixedString(32),
+			nonce Nullable(FixedString(8)),
+			sha3_uncles FixedString(32),
+			uncles Array(FixedString(32)),
+			blob_gas_used UInt64,
+			excess_blob_gas UInt64,
+			parent_beacon_block_root Nullable(FixedString(32)),
+			min_delay_excess UInt64
+		)
+		ENGINE = Distributed(%s, %s, %s_local, sipHash64(blockchain_id))
+		`, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create blocks table: %w", err)
 	}
@@ -78,7 +124,7 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 // WriteBlock inserts a raw block into ClickHouse
 func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (
+		INSERT INTO %s.%s (
 			blockchain_id, evm_chain_id, block_number, hash, parent_hash, block_time, miner,
 			difficulty, total_difficulty, size, gas_limit, gas_used,
 			base_fee_per_gas, block_gas_cost, state_root, transactions_root, receipts_root,
@@ -86,7 +132,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 			mix_hash, nonce, sha3_uncles, uncles,
 			blob_gas_used, excess_blob_gas, parent_beacon_block_root, min_delay_excess
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.tableName)
+	`, r.database, r.tableName)
 
 	// Convert hex strings to bytes for FixedString fields
 	hashBytes, err := utils.HexToBytes32(block.Hash)

@@ -9,11 +9,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-	"github.com/stretchr/testify/require"
 )
+
+var clickhouseTestConfig = clickhouse.Config{
+	Hosts:                []string{"localhost:9000"},
+	Cluster:              "default",
+	Database:             "default",
+	Username:             "default",
+	Password:             "",
+	Debug:                false,
+	InsecureSkipVerify:   true,
+	MaxExecutionTime:     60,
+	DialTimeout:          30,
+	MaxOpenConns:         5,
+	MaxIdleConns:         5,
+	ConnMaxLifetime:      10,
+	BlockBufferSize:      10,
+	MaxBlockSize:         1000,
+	MaxCompressionBuffer: 10240,
+	ClientName:           "avalanche-indexer-e2e",
+	ClientVersion:        "1.0",
+	UseHTTP:              false,
+}
 
 // verifyCheckpointFromMaxProcessed finds the max processed height and checks checkpoint lowest==max+1.
 func verifyCheckpointFromMaxProcessed(t *testing.T, ctx context.Context, repo checkpoint.Repository, chainID uint64, kafkaByNumber map[uint64][]byte) {
