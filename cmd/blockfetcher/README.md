@@ -67,6 +67,8 @@ bin/blockfetcher run \
   --kafka-topic blocks \
   --kafka-topic-num-partitions 1 \
   --kafka-topic-replication-factor 1 \
+  --clickhouse-cluster default \
+  --clickhouse-database default \
   --verbose
 ```
 
@@ -92,6 +94,8 @@ bin/blockfetcher run \
   --kafka-security-protocol "SASL_SSL" \
   --kafka-topic-num-partitions 3 \
   --kafka-topic-replication-factor 3 \
+  --clickhouse-cluster default \
+  --clickhouse-database default \
   --verbose
 ```
 
@@ -135,6 +139,7 @@ docker run --rm \
   -e KAFKA_TOPIC_NUM_PARTITIONS=1 \
   -e KAFKA_TOPIC_REPLICATION_FACTOR=1 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
+  -e CLICKHOUSE_CLUSTER=default \ 
   -e CLICKHOUSE_DATABASE=default \  
   -e CLICKHOUSE_USERNAME=default \
   -e CLICKHOUSE_PASSWORD= \
@@ -179,13 +184,24 @@ All flags have environment variable equivalents:
 - `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
 - `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
 - `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
-- `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: default.checkpoints, ClickHouse table for checkpoints)
+- `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: checkpoints, ClickHouse table for checkpoints)
 - `--checkpoint-interval` / `-i` → `CHECKPOINT_INTERVAL` (default: 1m, checkpoint write interval)
 - `--gap-watchdog-interval` / `-g` → `GAP_WATCHDOG_INTERVAL` (default: 15m, gap check interval)
 - `--gap-watchdog-max-gap` / `-G` → `GAP_WATCHDOG_MAX_GAP` (default: 100, max gap before warning)
 - `--metrics-host` → `METRICS_HOST` (default: empty, metrics server host)
 - `--metrics-port` / `-m` → `METRICS_PORT` (default: 9090, metrics server port)
 - `--verbose` / `-v` → none (enable verbose logging)
+
+**ClickHouse flags:**
+- `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000", comma-separated)
+- `--clickhouse-cluster` → `CLICKHOUSE_CLUSTER` (default: "default")
+- `--clickhouse-database` → `CLICKHOUSE_DATABASE` (default: "default")
+- `--clickhouse-username` → `CLICKHOUSE_USERNAME` (default: "default")
+- `--clickhouse-password` → `CLICKHOUSE_PASSWORD` (default: "")
+- `--clickhouse-debug` → `CLICKHOUSE_DEBUG` (default: false)
+- `--clickhouse-insecure-skip-verify` → `CLICKHOUSE_INSECURE_SKIP_VERIFY` (default: true)
+- `--raw-blocks-table-name` → `CLICKHOUSE_RAW_BLOCKS_TABLE_NAME` (default: "default.raw_blocks")
+- `--raw-transactions-table-name` → `CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME` (default: "default.raw_transactions")
 
 ### Configuration tips
 - `BACKFILL_PRIORITY` must be less than `CONCURRENCY`.

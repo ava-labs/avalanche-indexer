@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	_ "embed"
+
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
@@ -13,6 +15,15 @@ type Transactions interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteTransaction(ctx context.Context, tx *TransactionRow) error
 }
+
+//go:embed queries/transaction/create-transactions-table-local.sql
+var createTransactionsTableLocalQuery string
+
+//go:embed queries/transaction/create-transactions-table.sql
+var createTransactionsTableQuery string
+
+//go:embed queries/transaction/write-transaction.sql
+var writeTransactionQuery string
 
 type transactions struct {
 	client    clickhouse.Client
@@ -37,61 +48,12 @@ func NewTransactions(ctx context.Context, client clickhouse.Client, cluster, dat
 
 // CreateTableIfNotExists creates the raw_transactions table if it doesn't exist
 func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s.%s_local
-		ON CLUSTER %s
-		(
-			blockchain_id String,
-			evm_chain_id UInt256,
-			block_number UInt64,
-			block_hash FixedString(32),
-			block_time DateTime64(3, 'UTC'),
-			hash FixedString(32),
-			from_address FixedString(20),
-			to_address Nullable(FixedString(20)),
-			nonce UInt64,
-			value UInt256,
-			gas UInt64,
-			gas_price UInt256,
-			max_fee_per_gas Nullable(UInt256),
-			max_priority_fee Nullable(UInt256),
-			input String,
-			type UInt8,
-			transaction_index UInt64,
-			success UInt8
-		)
-		ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
-		ORDER BY (blockchain_id, block_time, hash)
-		SETTINGS index_granularity = 8192
-	`, r.database, r.tableName, r.cluster, r.tableName)
+	query := fmt.Sprintf(createTransactionsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create transactions local table: %w", err)
 	}
 
-	query = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s
-		ON CLUSTER %s
-		(
-			blockchain_id String,
-			evm_chain_id UInt256,
-			block_number UInt64,
-			block_hash FixedString(32),
-			block_time DateTime64(3, 'UTC'),
-			hash FixedString(32),
-			from_address FixedString(20),
-			to_address Nullable(FixedString(20)),
-			nonce UInt64,
-			value UInt256,
-			gas UInt64,
-			gas_price UInt256,
-			max_fee_per_gas Nullable(UInt256),
-			max_priority_fee Nullable(UInt256),
-			input String,
-			type UInt8,
-			transaction_index UInt64,
-			success UInt8
-		)
-		ENGINE = Distributed(%s, %s, %s_local, sipHash64(blockchain_id))
-	`, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
+	query = fmt.Sprintf(createTransactionsTableQuery, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create transactions table: %w", err)
 	}
@@ -100,13 +62,7 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 
 // WriteTransaction inserts a raw transaction into ClickHouse
 func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow) error {
-	query := fmt.Sprintf(`
-		INSERT INTO %s.%s (
-			blockchain_id, evm_chain_id, block_number, block_hash, block_time, hash,
-			from_address, to_address, nonce, value, gas, gas_price,
-			max_fee_per_gas, max_priority_fee, input, type, transaction_index, success
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.database, r.tableName)
+	query := fmt.Sprintf(writeTransactionQuery, r.database, r.tableName)
 
 	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
 	var blockchainID interface{}
