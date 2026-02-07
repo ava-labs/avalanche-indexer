@@ -104,19 +104,19 @@ func run(c *cli.Context) error {
 	sugar.Info("ClickHouse client created successfully")
 
 	// Initialize repositories (tables are created automatically)
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.RawBlocksTableName)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create blocks repository: %w", err)
 	}
 	sugar.Info("Blocks table ready", "tableName", cfg.RawBlocksTableName)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.RawTransactionsTableName)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create transactions repository: %w", err)
 	}
 	sugar.Info("Transactions table ready", "tableName", cfg.RawTransactionsTableName)
 
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.RawLogsTableName)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create logs repository: %w", err)
 	}

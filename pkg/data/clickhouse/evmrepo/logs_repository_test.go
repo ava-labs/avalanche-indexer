@@ -44,7 +44,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Convert topic bytes to string pointers (matching new return type)
 	topic0Str := string(topic0Bytes[:])
@@ -76,7 +76,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
 	require.NoError(t, err)
 	err = repo.WriteLog(ctx, log)
 	require.NoError(t, err)
@@ -113,7 +113,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Convert topic bytes to string pointers (matching new return type)
 	topic0Str := string(topic0Bytes[:])
@@ -142,7 +142,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
 	require.NoError(t, err)
 	err = repo.WriteLog(ctx, log)
 	require.ErrorIs(t, err, execErr)
@@ -177,7 +177,7 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteLog call
 	mockConn.
@@ -203,7 +203,7 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
 	require.NoError(t, err)
 	err = repo.WriteLog(ctx, log)
 	require.NoError(t, err)

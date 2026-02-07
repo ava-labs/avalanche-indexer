@@ -44,7 +44,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteTransaction call
 	mockConn.
@@ -74,7 +74,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteTransaction call that fails
 	mockConn.
@@ -138,7 +138,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.ErrorIs(t, err, execErr)
@@ -172,7 +172,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteTransaction call
 	mockConn.
@@ -201,7 +201,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)

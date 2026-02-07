@@ -177,11 +177,11 @@ host: http://127.0.0.1:8123
 login: default
 ```
 
-Select `test_db` in ClickHouse Server tab (on the left).
+Select `default` in ClickHouse Server tab (on the left).
 
 checkpoint records can be added manually:
 ```
-INSERT INTO test_db.checkpoints (chain_id, lowest_unprocessed_block, timestamp) 
+INSERT INTO default.checkpoints (chain_id, lowest_unprocessed_block, timestamp) 
 VALUES (43114, 48662238, 1767903034)
 ```
 

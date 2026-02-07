@@ -157,6 +157,12 @@ func flags() []cli.Flag {
 			Value:   cli.NewStringSlice("localhost:9000"),
 		},
 		&cli.StringFlag{
+			Name:    "clickhouse-cluster",
+			Usage:   "ClickHouse cluster name",
+			EnvVars: []string{"CLICKHOUSE_CLUSTER"},
+			Value:   "default",
+		},
+		&cli.StringFlag{
 			Name:    "clickhouse-database",
 			Usage:   "ClickHouse database name",
 			EnvVars: []string{"CLICKHOUSE_DATABASE"},
@@ -255,19 +261,19 @@ func flags() []cli.Flag {
 			Name:    "raw-blocks-table-name",
 			Usage:   "ClickHouse table name for raw blocks",
 			EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
-			Value:   "default.raw_blocks",
+			Value:   "raw_blocks",
 		},
 		&cli.StringFlag{
 			Name:    "raw-transactions-table-name",
 			Usage:   "ClickHouse table name for raw transactions",
 			EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
-			Value:   "default.raw_transactions",
+			Value:   "raw_transactions",
 		},
 		&cli.StringFlag{
 			Name:    "raw-logs-table-name",
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
-			Value:   "default.raw_logs",
+			Value:   "raw_logs",
 		},
 		// Metrics configuration flags
 		&cli.StringFlag{

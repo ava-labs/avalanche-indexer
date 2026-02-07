@@ -145,6 +145,7 @@ func buildClickHouseConfig(c *cli.Context) (clickhouse.Config, error) {
 
 	return clickhouse.Config{
 		Hosts:                hosts,
+		Cluster:              c.String("clickhouse-cluster"),
 		Database:             c.String("clickhouse-database"),
 		Username:             c.String("clickhouse-username"),
 		Password:             c.String("clickhouse-password"),

@@ -83,8 +83,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
 		})).
-		Return(nil).
-		Once()
+		Return(nil)
 
 	// Expect WriteBlock call
 	mockConn.
@@ -125,7 +124,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.NoError(t, err)
@@ -194,7 +193,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteBlock call that fails
 	mockConn.
@@ -232,7 +231,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.ErrorIs(t, err, execErr)

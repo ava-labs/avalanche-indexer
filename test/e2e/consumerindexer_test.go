@@ -53,8 +53,8 @@ func TestE2EConsumerIndexer(t *testing.T) {
 	testID := time.Now().UnixNano()
 	kafkaTopic := fmt.Sprintf("blocks_consumer_test_%d", testID)
 	groupID := fmt.Sprintf("e2e-consumerindexer-%d", testID)
-	blocksTable := getEnvStr("BLOCKS_TABLE", "test_db.raw_blocks_e2e")
-	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "test_db.raw_transactions_e2e")
+	blocksTable := getEnvStr("BLOCKS_TABLE", "raw_blocks_e2e")
+	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "raw_transactions_e2e")
 	concurrency := int64(3)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -65,20 +65,19 @@ func TestE2EConsumerIndexer(t *testing.T) {
 	defer log.Desugar().Sync() //nolint:errcheck
 
 	// ---- Prepare ClickHouse ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
 	// Initialize repositories (creates tables)
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, blocksTable)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
 	require.NoError(t, err, "failed to create blocks repository")
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, transactionsTable)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
 	require.NoError(t, err, "failed to create transactions repository")
 
-	logsTable := getEnvStr("LOGS_TABLE", "test_db.raw_logs_e2e")
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, logsTable)
+	logsTable := getEnvStr("LOGS_TABLE", "raw_logs_e2e")
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
 	require.NoError(t, err, "failed to create logs repository")
 
 	// Clean up any existing test data
@@ -169,8 +168,8 @@ func TestE2EConsumerIndexerWithDLQ(t *testing.T) {
 	kafkaTopic := fmt.Sprintf("blocks_consumer_dlq_test_%d", testID)
 	dlqTopic := kafkaTopic + "_dlq"
 	groupID := fmt.Sprintf("e2e-consumerindexer-dlq-%d", testID)
-	blocksTable := getEnvStr("BLOCKS_TABLE", "test_db.raw_blocks_e2e_dlq")
-	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "test_db.raw_transactions_e2e_dlq")
+	blocksTable := getEnvStr("BLOCKS_TABLE", "raw_blocks_e2e_dlq")
+	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "raw_transactions_e2e_dlq")
 
 	// ---- Test context ----
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -181,19 +180,18 @@ func TestE2EConsumerIndexerWithDLQ(t *testing.T) {
 	defer log.Desugar().Sync() //nolint:errcheck
 
 	// ---- Prepare ClickHouse ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err, "clickhouse connection failed")
 	defer chClient.Close()
 
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, blocksTable)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
 	require.NoError(t, err)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, transactionsTable)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
 	require.NoError(t, err)
 
-	logsTable := getEnvStr("LOGS_TABLE", "test_db.raw_logs_e2e_dlq")
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, logsTable)
+	logsTable := getEnvStr("LOGS_TABLE", "raw_logs_e2e_dlq")
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
 	require.NoError(t, err)
 
 	// Clean up tables - ensure they're empty before starting
@@ -515,8 +513,8 @@ func TestE2EConsumerIndexerConcurrency(t *testing.T) {
 	testID := time.Now().UnixNano()
 	kafkaTopic := fmt.Sprintf("blocks_consumer_concurrent_test_%d", testID)
 	groupID := fmt.Sprintf("e2e-consumerindexer-concurrent-%d", testID)
-	blocksTable := getEnvStr("BLOCKS_TABLE", "test_db.raw_blocks_e2e_concurrent")
-	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "test_db.raw_transactions_e2e_concurrent")
+	blocksTable := getEnvStr("BLOCKS_TABLE", "raw_blocks_e2e_concurrent")
+	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "raw_transactions_e2e_concurrent")
 	concurrency := int64(15) // Higher concurrency for this test
 
 	// ---- Test context ----
@@ -528,19 +526,18 @@ func TestE2EConsumerIndexerConcurrency(t *testing.T) {
 	defer log.Desugar().Sync() //nolint:errcheck
 
 	// ---- Prepare ClickHouse ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err, "clickhouse connection failed")
 	defer chClient.Close()
 
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, blocksTable)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
 	require.NoError(t, err)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, transactionsTable)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
 	require.NoError(t, err)
 
-	logsTable := getEnvStr("LOGS_TABLE", "test_db.raw_logs_e2e_concurrent")
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, logsTable)
+	logsTable := getEnvStr("LOGS_TABLE", "raw_logs_e2e_concurrent")
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
 	require.NoError(t, err)
 
 	// Clean up tables - ensure they're empty before starting
@@ -629,8 +626,8 @@ func TestE2EConsumerIndexerOffsetManagement(t *testing.T) {
 	testID := time.Now().UnixNano()
 	kafkaTopic := fmt.Sprintf("blocks_consumer_offset_test_%d", testID)
 	groupID := fmt.Sprintf("e2e-consumerindexer-offset-%d", testID)
-	blocksTable := getEnvStr("BLOCKS_TABLE", "test_db.raw_blocks_e2e_offset")
-	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "test_db.raw_transactions_e2e_offset")
+	blocksTable := getEnvStr("BLOCKS_TABLE", "raw_blocks_e2e_offset")
+	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "raw_transactions_e2e_offset")
 
 	// ---- Test context ----
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -641,19 +638,18 @@ func TestE2EConsumerIndexerOffsetManagement(t *testing.T) {
 	defer log.Desugar().Sync() //nolint:errcheck
 
 	// ---- Prepare ClickHouse ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err)
 	defer chClient.Close()
 
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, blocksTable)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
 	require.NoError(t, err)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, transactionsTable)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
 	require.NoError(t, err)
 
-	logsTable := getEnvStr("LOGS_TABLE", "test_db.raw_logs_e2e_offset")
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, logsTable)
+	logsTable := getEnvStr("LOGS_TABLE", "raw_logs_e2e_offset")
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
 	require.NoError(t, err)
 
 	// Clean up tables - ensure they're empty before starting
@@ -857,8 +853,8 @@ func TestE2EConsumerIndexerLargePayload(t *testing.T) {
 	testID := time.Now().UnixNano()
 	kafkaTopic := fmt.Sprintf("blocks_consumer_large_test_%d", testID)
 	groupID := fmt.Sprintf("e2e-consumerindexer-large-%d", testID)
-	blocksTable := getEnvStr("BLOCKS_TABLE", "test_db.raw_blocks_e2e_large")
-	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "test_db.raw_transactions_e2e_large")
+	blocksTable := getEnvStr("BLOCKS_TABLE", "raw_blocks_e2e_large")
+	transactionsTable := getEnvStr("TRANSACTIONS_TABLE", "raw_transactions_e2e_large")
 
 	// ---- Test context ----
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -869,19 +865,18 @@ func TestE2EConsumerIndexerLargePayload(t *testing.T) {
 	defer log.Desugar().Sync() //nolint:errcheck
 
 	// ---- Prepare ClickHouse ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err)
 	defer chClient.Close()
 
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, blocksTable)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
 	require.NoError(t, err)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, transactionsTable)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
 	require.NoError(t, err)
 
-	logsTable := getEnvStr("LOGS_TABLE", "test_db.raw_logs_e2e_large")
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, logsTable)
+	logsTable := getEnvStr("LOGS_TABLE", "raw_logs_e2e_large")
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
 	require.NoError(t, err)
 
 	// Clean up tables - ensure they're empty before starting
