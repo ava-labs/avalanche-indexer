@@ -1,5 +1,5 @@
-CREATE TABLE IF NOT EXISTS %s.%s_local
-ON CLUSTER %s
+CREATE TABLE IF NOT EXISTS `%s`.`%s_local`
+ON CLUSTER `%s`
 (
 	blockchain_id String,
 	evm_chain_id UInt256,

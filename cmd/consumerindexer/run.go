@@ -51,6 +51,7 @@ func run(c *cli.Context) error {
 		"goroutineWaitTimeout", cfg.GoroutineWaitTimeout,
 		"pollInterval", cfg.PollInterval,
 		"clickhouseHosts", cfg.ClickHouse.Hosts,
+		"clickhouseCluster", cfg.ClickHouse.Cluster,
 		"clickhouseDatabase", cfg.ClickHouse.Database,
 		"clickhouseUsername", cfg.ClickHouse.Username,
 		"clickhouseDebug", cfg.ClickHouse.Debug,
