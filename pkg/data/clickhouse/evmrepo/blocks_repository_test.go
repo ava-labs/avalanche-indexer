@@ -81,7 +81,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
 		Return(nil)
 
@@ -89,7 +89,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_blocks`")
 		}),
 			*block.BlockchainID,              // string: "11111111111111111111111111111111LpoYY"
 			block.EVMChainID.String(),        // string: "43113" (UInt256)
@@ -190,7 +190,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
 		Return(nil).
 		Times(2)

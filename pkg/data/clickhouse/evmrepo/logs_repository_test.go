@@ -38,10 +38,10 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	topic2Bytes, err := utils.HexToBytes32(*log.Topic2)
 	require.NoError(t, err, "topic2 conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
 		})).
 		Return(nil).
 		Times(2)
@@ -55,7 +55,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_logs`")
 		}),
 			*log.BlockchainID,         // string: blockchain ID
 			log.EVMChainID.String(),   // string: UInt256
@@ -107,10 +107,10 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 	topic2Bytes, err := utils.HexToBytes32(*log.Topic2)
 	require.NoError(t, err, "topic2 conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
 		})).
 		Return(nil).
 		Times(2)
@@ -171,10 +171,10 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 	addressBytes, err := utils.HexToBytes20(log.Address)
 	require.NoError(t, err, "address conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
 		})).
 		Return(nil).
 		Times(2)
@@ -182,7 +182,7 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 	// Expect WriteLog call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_logs`")
 		}),
 			*log.BlockchainID,         // string: blockchain ID
 			log.EVMChainID.String(),   // string: UInt256
