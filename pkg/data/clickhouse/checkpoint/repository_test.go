@@ -55,7 +55,7 @@ func TestRepository_WriteCheckpoint_Success(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO default.checkpoints (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
 			mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
 
@@ -79,7 +79,7 @@ func TestRepository_WriteCheckpoint_Error(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO default.checkpoints (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
 			mock.Anything, mock.Anything, mock.Anything).
 		Return(execErr)
 
@@ -104,7 +104,7 @@ func TestRepository_ReadCheckpoint_Success(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM default.checkpoints WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", mock.Anything).
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", mock.Anything).
 		Return(row)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
@@ -143,7 +143,7 @@ func TestRepository_ReadCheckpoint_Error(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM default.checkpoints WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", mock.Anything).
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", mock.Anything).
 		Return(rowErrMock{err: scanErr})
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")

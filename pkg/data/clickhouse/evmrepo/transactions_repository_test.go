@@ -41,7 +41,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
 		})).
 		Return(nil).
 		Times(2)
@@ -50,7 +50,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_transactions`")
 		}),
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
@@ -108,7 +108,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
 		})).
 		Return(nil).
 		Times(2)
@@ -169,7 +169,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
 		})).
 		Return(nil).
 		Times(2)
@@ -177,7 +177,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	// Expect WriteTransaction call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_transactions`")
 		}),
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
