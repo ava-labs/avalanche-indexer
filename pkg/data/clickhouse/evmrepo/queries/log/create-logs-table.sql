@@ -1,5 +1,5 @@
-CREATE TABLE IF NOT EXISTS %s.%s
-ON CLUSTER %s
+CREATE TABLE IF NOT EXISTS `%s`.`%s`
+ON CLUSTER `%s`
 (
 	blockchain_id String,
 	evm_chain_id UInt256,
@@ -17,4 +17,4 @@ ON CLUSTER %s
 	log_index UInt32,
 	removed Bool
 )
-ENGINE = Distributed(%s, %s, %s_local, sipHash64(blockchain_id))
+ENGINE = Distributed(`%s`, `%s`, `%s_local`, sipHash64(blockchain_id))

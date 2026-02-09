@@ -62,6 +62,9 @@ func run(c *cli.Context) error {
 		"cloudProvider", cfg.CloudProvider,
 		"checkpointTableName", cfg.CheckpointTableName,
 		"checkpointInterval", cfg.CheckpointInterval,
+		"clickhouseCluster", cfg.ClickHouse.Cluster,
+		"clickhouseDatabase", cfg.ClickHouse.Database,
+		"clickhouseTableName", cfg.CheckpointTableName,
 	)
 
 	var fetchStartHeight bool

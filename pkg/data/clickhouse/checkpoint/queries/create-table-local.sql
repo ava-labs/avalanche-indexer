@@ -1,5 +1,5 @@
-CREATE TABLE IF NOT EXISTS %s.%s_local
-ON CLUSTER %s
+CREATE TABLE IF NOT EXISTS `%s`.`%s_local`
+ON CLUSTER `%s`
 (
 	chain_id UInt64,
 	lowest_unprocessed_block UInt64,
