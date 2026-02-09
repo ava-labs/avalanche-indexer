@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	_ "embed"
+
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
@@ -14,15 +16,28 @@ type Logs interface {
 	WriteLog(ctx context.Context, log *LogRow) error
 }
 
+//go:embed queries/log/create-logs-table-local.sql
+var createLogsTableLocalQuery string
+
+//go:embed queries/log/create-logs-table.sql
+var createLogsTableQuery string
+
+//go:embed queries/log/write-log.sql
+var writeLogQuery string
+
 type logs struct {
 	client    clickhouse.Client
+	cluster   string
+	database  string
 	tableName string
 }
 
 // NewLogs creates a new raw logs repository and initializes the table
-func NewLogs(ctx context.Context, client clickhouse.Client, tableName string) (Logs, error) {
+func NewLogs(ctx context.Context, client clickhouse.Client, cluster, database, tableName string) (Logs, error) {
 	repo := &logs{
 		client:    client,
+		cluster:   cluster,
+		database:  database,
 		tableName: tableName,
 	}
 	if err := repo.CreateTableIfNotExists(ctx); err != nil {
@@ -33,28 +48,12 @@ func NewLogs(ctx context.Context, client clickhouse.Client, tableName string) (L
 
 // CreateTableIfNotExists creates the raw_logs table if it doesn't exist
 func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			blockchain_id String,
-			evm_chain_id UInt256,
-			block_number UInt64,
-			block_hash FixedString(32),
-			block_time DateTime64(3, 'UTC'),
-			tx_hash FixedString(32),
-			tx_index UInt32,
-			address FixedString(20),
-			topic0 Nullable(FixedString(32)),
-			topic1 Nullable(FixedString(32)),
-			topic2 Nullable(FixedString(32)),
-			topic3 Nullable(FixedString(32)),
-			data String,
-			log_index UInt32,
-			removed Bool
-		)
-		ENGINE = MergeTree
-		ORDER BY (blockchain_id, block_time, tx_hash, log_index)
-		SETTINGS index_granularity = 8192
-	`, r.tableName)
+	query := fmt.Sprintf(createLogsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
+	if err := r.client.Conn().Exec(ctx, query); err != nil {
+		return fmt.Errorf("failed to create logs local table: %w", err)
+	}
+
+	query = fmt.Sprintf(createLogsTableQuery, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create logs table: %w", err)
 	}
@@ -63,12 +62,7 @@ func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 
 // WriteLog inserts a raw log into ClickHouse
 func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
-	query := fmt.Sprintf(`
-		INSERT INTO %s (
-			blockchain_id, evm_chain_id, block_number, block_hash, block_time,
-			tx_hash, tx_index, address, topic0, topic1, topic2, topic3, data, log_index, removed
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.tableName)
+	query := fmt.Sprintf(writeLogQuery, r.database, r.tableName)
 
 	// Convert BlockchainID
 	var blockchainID interface{}

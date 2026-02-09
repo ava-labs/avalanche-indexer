@@ -3,7 +3,6 @@ package clickhouse
 import (
 	"errors"
 	"net"
-	"os"
 	"strings"
 	"testing"
 
@@ -16,71 +15,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
-const envTrue = "true"
-
 // testLogger creates a test logger for use in tests
 func testLogger(t *testing.T) *zap.SugaredLogger {
 	logger, err := utils.NewSugaredLogger(true) // Use verbose mode for tests
 	require.NoError(t, err)
 	return logger
-}
-
-func TestLoad(t *testing.T) {
-	cfg := Load()
-
-	// Get expected values from environment or use defaults
-	// This allows the test to work both with and without .env.test loaded
-	expectedHost := os.Getenv("CLICKHOUSE_HOSTS")
-	if expectedHost == "" {
-		expectedHost = "localhost:9000"
-	}
-
-	expectedDatabase := os.Getenv("CLICKHOUSE_DATABASE")
-	if expectedDatabase == "" {
-		expectedDatabase = "default"
-	}
-
-	expectedUsername := os.Getenv("CLICKHOUSE_USERNAME")
-	if expectedUsername == "" {
-		expectedUsername = "default"
-	}
-
-	expectedPassword := os.Getenv("CLICKHOUSE_PASSWORD")
-
-	expectedDebug := os.Getenv("CLICKHOUSE_DEBUG") == envTrue
-
-	expectedInsecureSkipVerify := os.Getenv("CLICKHOUSE_INSECURE_SKIP_VERIFY")
-	if expectedInsecureSkipVerify == "" {
-		expectedInsecureSkipVerify = envTrue // default
-	}
-
-	// Verify values match environment or defaults
-	assert.Equal(t, expectedHost, cfg.Hosts[0])
-	assert.Equal(t, expectedDatabase, cfg.Database)
-	assert.Equal(t, expectedUsername, cfg.Username)
-	assert.Equal(t, expectedPassword, cfg.Password)
-	assert.Equal(t, expectedDebug, cfg.Debug)
-	assert.Equal(t, expectedInsecureSkipVerify == envTrue, cfg.InsecureSkipVerify)
-
-	// These values come from defaults or environment (if set)
-	assert.GreaterOrEqual(t, cfg.MaxExecutionTime, 0)
-	assert.GreaterOrEqual(t, cfg.DialTimeout, 0)
-	assert.GreaterOrEqual(t, cfg.MaxOpenConns, 0)
-	assert.GreaterOrEqual(t, cfg.MaxIdleConns, 0)
-	assert.GreaterOrEqual(t, cfg.ConnMaxLifetime, 0)
-	assert.NotZero(t, cfg.BlockBufferSize)
-	assert.GreaterOrEqual(t, cfg.MaxBlockSize, 0)
-	assert.GreaterOrEqual(t, cfg.MaxCompressionBuffer, 0)
-	assert.NotEmpty(t, cfg.ClientName)
-	assert.NotEmpty(t, cfg.ClientVersion)
-}
-
-// TestLoad_ConfigParseError tests the config parsing error path
-// Note: Testing os.Exit(1) directly is difficult without subprocess testing.
-func TestLoad_ConfigParseError(t *testing.T) {
-	// The config parsing error path (zap logger + os.Exit(1)) is difficult to test
-	cfg := Load()
-	assert.NotNil(t, cfg)
 }
 
 func TestNew_InvalidConfig(t *testing.T) {

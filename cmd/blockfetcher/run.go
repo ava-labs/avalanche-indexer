@@ -32,7 +32,10 @@ const flushTimeoutOnClose = 15 * time.Second
 
 func run(c *cli.Context) error {
 	// Build configuration from CLI flags
-	cfg := buildConfig(c)
+	cfg, err := buildConfig(c)
+	if err != nil {
+		return fmt.Errorf("failed to build config: %w", err)
+	}
 
 	sugar, err := utils.NewSugaredLogger(cfg.Verbose)
 	if err != nil {
@@ -142,8 +145,7 @@ func run(c *cli.Context) error {
 	}
 
 	// Initialize ClickHouse client
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, sugar)
+	chClient, err := clickhouse.New(cfg.ClickHouse, sugar)
 	if err != nil {
 		return fmt.Errorf("failed to create ClickHouse client: %w", err)
 	}
@@ -159,11 +161,9 @@ func run(c *cli.Context) error {
 		sugar.Infof("latest block height: %d", end)
 	}
 
-	repo := checkpoint.NewRepository(chClient, cfg.CheckpointTableName)
-
-	err = repo.CreateTableIfNotExists(ctx)
+	repo, err := checkpoint.NewRepository(chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.CheckpointTableName)
 	if err != nil {
-		return fmt.Errorf("failed to check existence or create checkpoints table: %w", err)
+		return fmt.Errorf("failed to create checkpoint repository: %w", err)
 	}
 
 	if fetchStartHeight {
