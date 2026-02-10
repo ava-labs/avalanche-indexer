@@ -31,6 +31,6 @@ ON CLUSTER `%s`
 	parent_beacon_block_root Nullable(FixedString(32)),
 	min_delay_excess UInt64
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
 ORDER BY (blockchain_id, block_time, block_number)
 SETTINGS index_granularity = 8192
