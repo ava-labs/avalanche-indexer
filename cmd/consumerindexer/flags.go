@@ -13,6 +13,8 @@ func runFlags() []cli.Flag {
 			Name:    "verbose",
 			Aliases: []string{"v"},
 			Usage:   "Enable verbose logging",
+			EnvVars: []string{"VERBOSE"},
+			Value:   false,
 		},
 		// Kafka configuration flags
 		&cli.StringFlag{

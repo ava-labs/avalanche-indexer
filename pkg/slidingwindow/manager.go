@@ -135,6 +135,7 @@ func (m *Manager) Run(ctx context.Context) error {
 				m.workerSem.Release(1)
 				break
 			}
+			m.log.Debugw("dispatching backfill worker", "height", next)
 			go m.process(ctx, next, true)
 		}
 
@@ -183,9 +184,13 @@ func (m *Manager) handleNewHeight(ctx context.Context, h uint64) {
 	if ok := m.tryAcquireWorker(); ok {
 		if ok := m.state.TrySetInflight(h); !ok {
 			m.workerSem.Release(1)
+			m.log.Debugw("height already inflight, skipping realtime dispatch", "height", h)
 			return
 		}
+		m.log.Debugw("dispatching realtime worker", "height", h)
 		go m.process(ctx, h, false)
+	} else {
+		m.log.Debugw("no worker capacity available, dropping realtime height", "height", h)
 	}
 }
 
@@ -197,8 +202,17 @@ func (m *Manager) handleNewHeight(ctx context.Context, h uint64) {
 // It is used as a timeout between queries for the same block height.
 func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 	count := m.state.GetFailureCount(h)
+	if count > 0 {
+		m.log.Debugw("delaying processing due to previous failures", "height", h, "failures", count, "delay_seconds", count)
+	}
 	time.Sleep(time.Duration(count) * time.Second)
 	start := time.Now()
+
+	workerType := "realtime"
+	if isBackfill {
+		workerType = "backfill"
+	}
+	m.log.Debugw("processing block", "height", h, "type", workerType)
 
 	defer func() {
 		if isBackfill {
@@ -233,8 +247,10 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 	}
 
 	// Record block processing duration on success
+	duration := time.Since(start)
+	m.log.Debugw("block processing completed", "height", h, "type", workerType, "duration_ms", duration.Milliseconds())
 	if m.metrics != nil {
-		m.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
+		m.metrics.ObserveBlockProcessingDuration(duration.Seconds())
 	}
 
 	// Get current lowest before attempting to advance (needed for commit count)
@@ -249,6 +265,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 		if advanced {
 			// Window advanced - record committed blocks
 			blocksCommitted := newLowest - oldLowest
+			m.log.Debugw("window advanced", "old_lowest", oldLowest, "new_lowest", newLowest, "blocks_committed", blocksCommitted, "highest", highest)
 			m.metrics.CommitBlocks(blocksCommitted, newLowest, highest, processedCount)
 		} else {
 			m.metrics.UpdateWindowMetrics(newLowest, highest, processedCount)
