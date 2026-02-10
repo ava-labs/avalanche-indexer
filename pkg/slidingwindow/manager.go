@@ -227,6 +227,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 	if err != nil {
 		// Treat context cancellation as a normal shutdown: do not warn or count as failure.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			m.log.Debugw("context cancelled or deadline exceeded, skipping failure handling", "height", h, "error", err)
 			return
 		}
 		m.log.Debugw("failed processing block height", "height", h, "error", err)
