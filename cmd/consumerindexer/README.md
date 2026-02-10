@@ -202,4 +202,8 @@ docker run --rm \
 - DLQ producer flushes pending messages with `--flush-timeout` (default: 15s) before shutdown
 - Returns non-zero exit code on fatal errors
 
-
+### Delete Resources 
+As a clean up it might be needed to delete all blocks, transactions and logs for specific chain. Use `remove` in this case:
+```bash
+./bin/consumerindexer remove --evm-chain-id 43114
+```

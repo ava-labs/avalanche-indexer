@@ -14,6 +14,7 @@ import (
 type Transactions interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteTransaction(ctx context.Context, tx *TransactionRow) error
+	DeleteTransactions(ctx context.Context, chainID uint64) error
 }
 
 //go:embed queries/transaction/create-transactions-table-local.sql
@@ -24,6 +25,9 @@ var createTransactionsTableQuery string
 
 //go:embed queries/transaction/write-transaction.sql
 var writeTransactionQuery string
+
+//go:embed queries/transaction/delete-transactions.sql
+var deleteTransactionsQuery string
 
 type transactions struct {
 	client    clickhouse.Client
@@ -149,6 +153,14 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write transaction: %w", err)
+	}
+	return nil
+}
+
+func (r *transactions) DeleteTransactions(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf(deleteTransactionsQuery, r.database, r.tableName, r.cluster)
+	if err := r.client.Conn().Exec(ctx, query, chainID); err != nil {
+		return fmt.Errorf("failed to delete transactions: %w", err)
 	}
 	return nil
 }

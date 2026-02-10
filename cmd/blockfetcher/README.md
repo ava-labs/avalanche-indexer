@@ -216,3 +216,8 @@ All flags have environment variable equivalents:
 - Returns a non-zero exit code on unrecoverable errors (e.g., RPC dial failure, failure threshold exceeded, Kafka fatal errors).
 - Gracefully exits on `SIGTERM`/`SIGINT`.
 
+### Delete Resources (checkpoints)
+As a clean up it might be needed to delete all checkpoints for specific chain. Use `remove` in this case:
+```bash
+./bin/blockfetcher remove --evm-chain-id 43114
+```

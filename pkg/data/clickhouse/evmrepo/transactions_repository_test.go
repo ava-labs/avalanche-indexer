@@ -208,6 +208,64 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	mockConn.AssertExpectations(t)
 }
 
+func TestTransactionsRepository_DeleteTransactions_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
+		})).
+		Return(nil).
+		Times(2)
+
+	// Expect DeleteTransactions call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_transactions_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+	err = repo.DeleteTransactions(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_DeleteTransactions_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
+		})).
+		Return(nil).
+		Times(2)
+
+	// Expect DeleteTransactions call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_transactions_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+	err = repo.DeleteTransactions(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete transactions")
+	mockConn.AssertExpectations(t)
+}
+
 // Helper function to create a test transaction with all fields populated
 func createTestTransaction() *TransactionRow {
 	blockHash := testBlockHash

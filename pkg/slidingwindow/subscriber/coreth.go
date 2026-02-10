@@ -38,6 +38,7 @@ func (s *Coreth) Subscribe(ctx context.Context, capacity int, manager *slidingwi
 			return ctx.Err()
 		case header := <-ch:
 			h := header.Number.Uint64()
+			s.log.Debugw("received new block from subscription", "height", h)
 			if !manager.SubmitHeight(h) {
 				s.log.Debugw("dropped realtime height; queued for backfill", "height", h)
 			}
