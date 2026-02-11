@@ -43,6 +43,10 @@ services:
       KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
+      # Message size limits (20MB for large blocks)
+      KAFKA_MESSAGE_MAX_BYTES: 20971521
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 20971521
+
     volumes:
       - kafka-data:/var/lib/kafka/data
     networks:

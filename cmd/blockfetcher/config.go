@@ -18,6 +18,7 @@ const (
 	minBlockBufferSize = 0
 	// maxBlockBufferSize is the maximum valid value for BlockBufferSize (uint8: 255)
 	maxBlockBufferSize = 255
+	messageMaxBytes    = 20971521 // 20MB
 )
 
 // Config holds all configuration for the blockfetcher application
@@ -90,6 +91,7 @@ func (c *Config) KafkaProducerConfig() *confluentKafka.ConfigMap {
 
 		// Go channel for logs (optional, enable for debugging)
 		"go.logs.channel.enable": c.KafkaEnableLogs,
+		"message.max.bytes":      messageMaxBytes,
 	}
 	// Apply SASL configuration if enabled
 	c.KafkaSASL.ApplyToConfigMap(cfg)

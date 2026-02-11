@@ -13,6 +13,7 @@ const (
 	DefaultFlushTimeout         = 15 * time.Second
 	DefaultGoroutineWaitTimeout = 30 * time.Second
 	DefaultPollInterval         = 100 * time.Millisecond
+	DefaultMessageMaxBytes      = 20971521 // 20MB
 )
 
 // ConsumerConfig holds the configuration for a Kafka consumer
@@ -32,6 +33,7 @@ type ConsumerConfig struct {
 	EnableLogs                  bool           // Enable librdkafka client logs
 	PublishToDLQ                bool           // If true, failed messages are published to DLQ
 	SASL                        SASLConfig     // SASL authentication configuration
+	MessageMaxBytes             int            // Maximum message size in bytes
 }
 
 // WithDefaults returns a copy of the config with default values filled in for any nil pointer fields.
@@ -56,6 +58,9 @@ func (c ConsumerConfig) WithDefaults() ConsumerConfig {
 	if c.PollInterval == nil {
 		interval := DefaultPollInterval
 		c.PollInterval = &interval
+	}
+	if c.MessageMaxBytes == 0 {
+		c.MessageMaxBytes = DefaultMessageMaxBytes
 	}
 	return c
 }
