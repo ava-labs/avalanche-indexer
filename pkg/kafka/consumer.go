@@ -69,6 +69,7 @@ func NewConsumer(
 		"max.poll.interval.ms":          int(cfg.MaxPollInterval.Milliseconds()),
 		"partition.assignment.strategy": defaultPartitionAssignmentStrategy,
 		"go.logs.channel.enable":        cfg.EnableLogs,
+		"fetch.message.max.bytes":       cfg.MessageMaxBytes,
 	}
 	cfg.SASL.ApplyToConfigMap(&consumerConfig)
 	consumer, err := cKafka.NewConsumer(&consumerConfig)
@@ -82,6 +83,7 @@ func NewConsumer(
 		"linger.ms":              5,     // Batch messages for 5ms
 		"batch.size":             16384, // 16KB batch size
 		"compression.type":       "lz4", // Fast compression
+		"message.max.bytes":      cfg.MessageMaxBytes,
 		"enable.idempotence":     true,
 		"go.logs.channel.enable": cfg.EnableLogs,
 	}
