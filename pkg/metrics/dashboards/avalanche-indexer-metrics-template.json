@@ -1,0 +1,776 @@
+{
+  "uid": "avalanche-indexer-metrics",
+  "title": "Avalanche Indexer - Metrics",
+  "tags": [
+    "avalanche",
+    "indexer",
+    "prometheus"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 42,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "refresh": 1
+      },
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "refresh": 2,
+        "query": "label_values(indexer_blocks_processed_total, job)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "refresh": 2,
+        "query": "label_values(indexer_blocks_processed_total, environment)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "name": "evm_chain_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "refresh": 2,
+        "query": "label_values(indexer_blocks_processed_total, evm_chain_id)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "name": "region",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "refresh": 2,
+        "query": "label_values(indexer_blocks_processed_total, region)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "name": "cloud_provider",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "refresh": 2,
+        "query": "label_values(indexer_blocks_processed_total, cloud_provider)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Lowest Active Block",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "min(indexer_lowest{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"} and on(job, environment, evm_chain_id, region, cloud_provider, instance) (indexer_highest{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"} > 0))"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Backlog (blocks)",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "max(clamp_min(indexer_highest{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"} - indexer_lowest{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}, 0))"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "RPC Error Rate",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(indexer_rpc_calls_total{status=\"error\",job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval])) / clamp_min(sum(rate(indexer_rpc_calls_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval])), 0.000001)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "RPC In Flight",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(indexer_rpc_in_flight{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"})"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Receipt Fetches In Flight",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(indexer_receipts_fetches_in_flight{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"})"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Receipt Success Rate",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max(clamp_min(sum(increase(indexer_receipts_fetched_total{status=\"success\",job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__range])) / clamp_min(sum(increase(indexer_receipts_fetched_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__range])), 1), 0), 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 0.95
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Receipt Error Rate",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max(clamp_min(sum(increase(indexer_receipts_fetched_total{status=\"error\",job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__range])) / clamp_min(sum(increase(indexer_receipts_fetched_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__range])), 1), 0), 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Blocks Processed / sec",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(indexer_blocks_processed_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "LUB Advances / sec",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(indexer_lowest_advances_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval]))"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Receipt Fetches / sec by Status",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(indexer_receipts_fetched_total{status=\"success\",job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval]))",
+          "legendFormat": "success"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(indexer_receipts_fetched_total{status=\"error\",job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval]))",
+          "legendFormat": "error"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Block Processing Latency (p95/p99)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(indexer_block_processing_duration_seconds_bucket{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(indexer_block_processing_duration_seconds_bucket{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Receipt Fetch Latency (p95/p99)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(indexer_receipts_fetch_duration_seconds_bucket{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(indexer_receipts_fetch_duration_seconds_bucket{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "RPC Latency p95 by Method",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (method, le) (rate(indexer_rpc_duration_seconds_bucket{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval])))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Logs Fetched vs Processed / sec",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(indexer_logs_fetched_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval]))",
+          "legendFormat": "fetched"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(indexer_logs_processed_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__rate_interval]))",
+          "legendFormat": "processed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Log Processing Ratio",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max(clamp_min(sum(increase(indexer_logs_processed_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__range])) / clamp_min(sum(increase(indexer_logs_fetched_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[$__range])), 1), 0), 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 0.9
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Net Log Accumulation (30m)",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(indexer_logs_fetched_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[30m])) - sum(increase(indexer_logs_processed_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[30m]))"
+        }
+      ],
+      "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Indexer Errors by Type",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type) (rate(indexer_errors_total{job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[5m]))",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "RPC Errors by Method",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (method) (rate(indexer_rpc_calls_total{status=\"error\",job=~\"$job\",environment=~\"$environment\",evm_chain_id=~\"$evm_chain_id\",region=~\"$region\",cloud_provider=~\"$cloud_provider\"}[5m]))",
+          "legendFormat": "{{method}}"
+        }
+      ]
+    }
+  ]
+}
