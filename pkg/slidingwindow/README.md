@@ -4,7 +4,7 @@ A concurrent scheduler that processes block heights within a sliding window. It 
 
 ### Terminology
 - **lowest**: the lowest unprocessed height in the window.
-- **highest**: the highest unprocessed height. The active window is `[lowest..highest]`, inclusive, and the invariant `highest >= lowest` and `lowest >= 0` holds.
+- **highest**: the highest unprocessed height. The active window is `[lowest..highest]`, inclusive. When there is unprocessed work, the invariant `highest >= lowest` holds. When backfill is complete (all blocks processed), `lowest` may equal `highest + 1`, indicating no unprocessed blocks remain.
 
 ### Main Components
 - **Manager**: coordinator and scheduler.
