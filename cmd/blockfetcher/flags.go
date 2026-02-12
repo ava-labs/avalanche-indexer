@@ -36,6 +36,13 @@ func runFlags() []cli.Flag {
 			EnvVars:  []string{"RPC_URL"},
 			Required: true,
 		},
+		&cli.StringFlag{
+			Name:    "client-type",
+			Aliases: []string{"ct"},
+			Usage:   "The type of client to use to fetch blocks from (coreth or subnet-evm)",
+			EnvVars: []string{"CLIENT_TYPE"},
+			Value:   "coreth",
+		},
 		&cli.Uint64Flag{
 			Name:    "start-height",
 			Aliases: []string{"s"},

@@ -6,19 +6,19 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ava-labs/coreth/plugin/evm/customtypes"
-	"github.com/ava-labs/coreth/rpc"
+	"github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
+	"github.com/ava-labs/subnet-evm/rpc"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
 )
 
-type CorethWorker struct {
-	client         *evmclient.Client
+type SubnetEVMWorker struct {
+	client         subnetClient.Client
 	producer       *kafka.Producer
 	topic          string
 	evmChainID     *big.Int
@@ -28,8 +28,8 @@ type CorethWorker struct {
 	receiptTimeout time.Duration // Timeout for fetching block receipts
 }
 
-func NewCorethWorker(
-	client *evmclient.Client,
+func NewSubnetEVMWorker(
+	client subnetClient.Client,
 	producer *kafka.Producer,
 	topic string,
 	evmChainID uint64,
@@ -37,12 +37,12 @@ func NewCorethWorker(
 	log *zap.SugaredLogger,
 	metrics *metrics.Metrics,
 	receiptTimeout time.Duration,
-) (*CorethWorker, error) {
+) (*SubnetEVMWorker, error) {
 	RegisterCustomTypesOnce.Do(func() {
 		customtypes.Register()
 	})
 
-	return &CorethWorker{
+	return &SubnetEVMWorker{
 		client:         client,
 		producer:       producer,
 		topic:          topic,
@@ -54,16 +54,16 @@ func NewCorethWorker(
 	}, nil
 }
 
-func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
+func (cw *SubnetEVMWorker) Process(ctx context.Context, height uint64) error {
 	cw.log.Debugw("worker starting block processing", "height", height)
 
-	corethBlock, err := cw.GetBlock(ctx, height)
+	evmBlock, err := cw.GetBlock(ctx, height)
 	if err != nil {
 		return fmt.Errorf("fetch block failed %d: %w", height, err)
 	}
 
-	cw.log.Debugw("block fetched, serializing", "height", height, "txs", len(corethBlock.Transactions))
-	bytes, err := corethBlock.Marshal()
+	cw.log.Debugw("block fetched, serializing", "height", height, "txs", len(evmBlock.Transactions))
+	bytes, err := evmBlock.Marshal()
 	if err != nil {
 		return fmt.Errorf("serialize block failed %d: %w", height, err)
 	}
@@ -73,7 +73,7 @@ func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 	err = cw.producer.Produce(ctx, kafka.Msg{
 		Topic: cw.topic,
 		Value: bytes,
-		Key:   []byte(corethBlock.Number.String()),
+		Key:   []byte(evmBlock.Number.String()),
 	})
 	if err != nil {
 		return fmt.Errorf("produce block failed %d: %w", height, err)
@@ -81,17 +81,17 @@ func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 	cw.log.Debugw("kafka produce completed", "height", height, "duration_ms", time.Since(produceStart).Milliseconds())
 
 	cw.log.Debugw("processed block",
-		"height", corethBlock.Number.Uint64(),
-		"hash", corethBlock.Hash,
-		"txs", len(corethBlock.Transactions),
+		"height", evmBlock.Number.Uint64(),
+		"hash", evmBlock.Hash,
+		"txs", len(evmBlock.Transactions),
 	)
 
 	return nil
 }
 
-// GetBlock fetches the block and transaction logs from the coreth rpc
-// and converts it to a messages.CorethBlock.
-func (cw *CorethWorker) GetBlock(ctx context.Context, height uint64) (*messages.EVMBlock, error) {
+// GetBlock fetches the block and transaction logs from the subnet-evm rpc
+// and converts it to a messages.EVMBlock.
+func (cw *SubnetEVMWorker) GetBlock(ctx context.Context, height uint64) (*messages.EVMBlock, error) {
 	const method = "eth_getBlockByNumber"
 	start := time.Now()
 
@@ -116,25 +116,25 @@ func (cw *CorethWorker) GetBlock(ctx context.Context, height uint64) (*messages.
 
 	cw.log.Debugw("eth_getBlockByNumber succeeded", "height", height, "duration_ms", rpcDuration.Milliseconds(), "txs", len(block.Transactions()))
 
-	corethBlock, err := messages.EVMBlockFromLibevmCoreth(block, cw.evmChainID, cw.blockchainID)
+	evmBlock, err := messages.EVMBlockFromLibevmSubnetEVM(block, cw.evmChainID, cw.blockchainID)
 	if err != nil {
 		return nil, fmt.Errorf("convert block failed %d: %w", height, err)
 	}
 
-	if len(corethBlock.Transactions) > 0 {
-		cw.log.Debugw("fetching receipts", "height", height, "tx_count", len(corethBlock.Transactions), "receipt_timeout", cw.receiptTimeout)
-		err = cw.FetchBlockReceipts(ctx, corethBlock.Transactions, block.Number().Int64())
+	if len(evmBlock.Transactions) > 0 {
+		cw.log.Debugw("fetching receipts", "height", height, "tx_count", len(evmBlock.Transactions), "receipt_timeout", cw.receiptTimeout)
+		err = cw.FetchBlockReceipts(ctx, evmBlock.Transactions, block.Number().Int64())
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		cw.log.Debugw("no transactions, skipping receipt fetch", "height", height)
 	}
-	return corethBlock, nil
+	return evmBlock, nil
 }
 
 // FetchBlockReceipts fetches the receipts for the given transactions and block number.
-func (cw *CorethWorker) FetchBlockReceipts(ctx context.Context, transactions []*messages.EVMTransaction, blockNumber int64) error {
+func (cw *SubnetEVMWorker) FetchBlockReceipts(ctx context.Context, transactions []*messages.EVMTransaction, blockNumber int64) error {
 	start := time.Now()
 	if cw.metrics != nil {
 		cw.metrics.IncReceiptFetchInFlight()

@@ -265,16 +265,16 @@ func TestE2EConsumerIndexerWithDLQ(t *testing.T) {
 }
 
 // createTestBlocks creates test block data
-func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messages.CorethBlock {
-	blocks := make([]messages.CorethBlock, count)
+func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messages.EVMBlock {
+	blocks := make([]messages.EVMBlock, count)
 
 	for i := 0; i < count; i++ {
 		blockNum := uint64(1000 + i)
 
 		// Create test transactions
-		txs := make([]*messages.CorethTransaction, 2)
+		txs := make([]*messages.EVMTransaction, 2)
 		for j := 0; j < 2; j++ {
-			tx := &messages.CorethTransaction{
+			tx := &messages.EVMTransaction{
 				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*txHashMultiplier+uint64(j))).Hex(),
 				Nonce:    uint64(j),
 				From:     common.HexToAddress(fmt.Sprintf("0x%040d", 1)).Hex(),
@@ -290,7 +290,7 @@ func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messa
 
 		bcID := blockchainID
 		evmID := new(big.Int).SetUint64(evmChainID)
-		block := messages.CorethBlock{
+		block := messages.EVMBlock{
 			EVMChainID:       evmID,
 			BlockchainID:     &bcID,
 			Hash:             common.HexToHash(fmt.Sprintf("0x%064d", blockNum)).Hex(),
@@ -320,7 +320,7 @@ func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messa
 }
 
 // produceBlocksToKafka produces test blocks to Kafka
-func produceBlocksToKafka(t *testing.T, brokers, topic string, blocks []messages.CorethBlock) {
+func produceBlocksToKafka(t *testing.T, brokers, topic string, blocks []messages.EVMBlock) {
 	t.Helper()
 
 	producer, err := ckafka.NewProducer(&ckafka.ConfigMap{
@@ -394,7 +394,7 @@ func produceInvalidMessage(t *testing.T, brokers, topic string) {
 }
 
 // verifyBlocksInClickHouse verifies blocks are written to ClickHouse
-func verifyBlocksInClickHouse(t *testing.T, ctx context.Context, client clickhouse.Client, tableName string, expectedBlocks []messages.CorethBlock) {
+func verifyBlocksInClickHouse(t *testing.T, ctx context.Context, client clickhouse.Client, tableName string, expectedBlocks []messages.EVMBlock) {
 	t.Helper()
 
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
@@ -434,7 +434,7 @@ func verifyBlocksInClickHouse(t *testing.T, ctx context.Context, client clickhou
 }
 
 // verifyTransactionsInClickHouse verifies transactions are written to ClickHouse
-func verifyTransactionsInClickHouse(t *testing.T, ctx context.Context, client clickhouse.Client, tableName string, blocks []messages.CorethBlock) {
+func verifyTransactionsInClickHouse(t *testing.T, ctx context.Context, client clickhouse.Client, tableName string, blocks []messages.EVMBlock) {
 	t.Helper()
 
 	expectedTxCount := 0
@@ -956,16 +956,16 @@ func TestE2EConsumerIndexerLargePayload(t *testing.T) {
 }
 
 // createTestBlocksStartingFrom creates test blocks starting from a specific number
-func createTestBlocksStartingFrom(evmChainID uint64, blockchainID string, startNum uint64, count int) []messages.CorethBlock {
-	blocks := make([]messages.CorethBlock, count)
+func createTestBlocksStartingFrom(evmChainID uint64, blockchainID string, startNum uint64, count int) []messages.EVMBlock {
+	blocks := make([]messages.EVMBlock, count)
 
 	for i := 0; i < count; i++ {
 		blockNum := startNum + uint64(i)
 
 		// Create test transactions
-		txs := make([]*messages.CorethTransaction, 2)
+		txs := make([]*messages.EVMTransaction, 2)
 		for j := 0; j < 2; j++ {
-			tx := &messages.CorethTransaction{
+			tx := &messages.EVMTransaction{
 				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*txHashMultiplier+uint64(j))).Hex(),
 				Nonce:    uint64(j),
 				From:     common.HexToAddress(fmt.Sprintf("0x%040d", 1)).Hex(),
@@ -981,7 +981,7 @@ func createTestBlocksStartingFrom(evmChainID uint64, blockchainID string, startN
 
 		bcID := blockchainID
 		evmID := new(big.Int).SetUint64(evmChainID)
-		block := messages.CorethBlock{
+		block := messages.EVMBlock{
 			EVMChainID:       evmID,
 			BlockchainID:     &bcID,
 			Hash:             common.HexToHash(fmt.Sprintf("0x%064d", blockNum)).Hex(),
@@ -1011,16 +1011,16 @@ func createTestBlocksStartingFrom(evmChainID uint64, blockchainID string, startN
 }
 
 // createTestBlocksWithTransactions creates test blocks with a specified number of transactions
-func createTestBlocksWithTransactions(evmChainID uint64, blockchainID string, blockCount, txPerBlock int) []messages.CorethBlock {
-	blocks := make([]messages.CorethBlock, blockCount)
+func createTestBlocksWithTransactions(evmChainID uint64, blockchainID string, blockCount, txPerBlock int) []messages.EVMBlock {
+	blocks := make([]messages.EVMBlock, blockCount)
 
 	for i := 0; i < blockCount; i++ {
 		blockNum := uint64(2000 + i)
 
 		// Create many test transactions
-		txs := make([]*messages.CorethTransaction, txPerBlock)
+		txs := make([]*messages.EVMTransaction, txPerBlock)
 		for j := 0; j < txPerBlock; j++ {
-			tx := &messages.CorethTransaction{
+			tx := &messages.EVMTransaction{
 				Hash:     common.HexToHash(fmt.Sprintf("0x%064d", blockNum*txHashMultiplierLarge+uint64(j))).Hex(),
 				Nonce:    uint64(j),
 				From:     common.HexToAddress(fmt.Sprintf("0x%040d", j%10+1)).Hex(),
@@ -1036,7 +1036,7 @@ func createTestBlocksWithTransactions(evmChainID uint64, blockchainID string, bl
 
 		bcID := blockchainID
 		evmID := new(big.Int).SetUint64(evmChainID)
-		block := messages.CorethBlock{
+		block := messages.EVMBlock{
 			EVMChainID:       evmID,
 			BlockchainID:     &bcID,
 			Hash:             common.HexToHash(fmt.Sprintf("0x%064d", blockNum)).Hex(),

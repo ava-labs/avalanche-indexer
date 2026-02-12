@@ -256,11 +256,11 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	t.Parallel()
 
-	blockJSON := &kafkamsg.CorethBlock{
+	blockJSON := &kafkamsg.EVMBlock{
 		Number: big.NewInt(1647),
 		Hash:   testBlockHash,
 		// BlockchainID is nil
-		Transactions: []*kafkamsg.CorethTransaction{},
+		Transactions: []*kafkamsg.EVMTransaction{},
 	}
 
 	data, err := json.Marshal(blockJSON)
@@ -279,9 +279,9 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 }
 
 // Helper function to create a test block
-func createTestBlock() *kafkamsg.CorethBlock {
+func createTestBlock() *kafkamsg.EVMBlock {
 	blockchainID := "11111111111111111111111111111111LpoYY"
-	return &kafkamsg.CorethBlock{
+	return &kafkamsg.EVMBlock{
 		BlockchainID:     &blockchainID,
 		EVMChainID:       big.NewInt(43113),
 		Number:           big.NewInt(1647),
@@ -301,7 +301,7 @@ func createTestBlock() *kafkamsg.CorethBlock {
 		MixHash:          testBlockHash,
 		ExtraData:        "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		BaseFee:          big.NewInt(470000000000),
-		Transactions: []*kafkamsg.CorethTransaction{
+		Transactions: []*kafkamsg.EVMTransaction{
 			{
 				Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 				From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
@@ -316,8 +316,8 @@ func createTestBlock() *kafkamsg.CorethBlock {
 }
 
 // Helper function to create a test transaction
-func createTestTransaction() *kafkamsg.CorethTransaction {
-	return &kafkamsg.CorethTransaction{
+func createTestTransaction() *kafkamsg.EVMTransaction {
+	return &kafkamsg.EVMTransaction{
 		Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 		From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
 		To:       "0x55565758595a5b5c5d5e5f6061626364656667",
