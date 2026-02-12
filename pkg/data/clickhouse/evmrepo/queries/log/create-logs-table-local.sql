@@ -17,6 +17,6 @@ ON CLUSTER `%s`
 	log_index UInt32,
 	removed Bool
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
 ORDER BY (blockchain_id, block_time, tx_hash, log_index)
 SETTINGS index_granularity = 8192
