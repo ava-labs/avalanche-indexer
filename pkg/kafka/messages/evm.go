@@ -12,9 +12,10 @@ import (
 
 	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
+	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 )
 
-type CorethBlock struct {
+type EVMBlock struct {
 	EVMChainID   *big.Int `json:"evmChainId,omitempty"`
 	BlockchainID *string  `json:"blockchainId,omitempty"`
 	Number       *big.Int `json:"number"`
@@ -50,40 +51,40 @@ type CorethBlock struct {
 
 	ParentBeaconBlockRoot string `json:"parentBeaconBlockRoot,omitempty"`
 
-	Withdrawals  []*CorethWithdrawal  `json:"withdrawals"`
-	Transactions []*CorethTransaction `json:"transactions"`
+	Withdrawals  []*EVMWithdrawal  `json:"withdrawals"`
+	Transactions []*EVMTransaction `json:"transactions"`
 }
 
-type CorethTransaction struct {
-	Hash           string           `json:"hash"`
-	From           string           `json:"from"`
-	To             string           `json:"to"`
-	Nonce          uint64           `json:"nonce"`
-	Value          *big.Int         `json:"value"`
-	Gas            uint64           `json:"gas"`
-	GasPrice       *big.Int         `json:"gasPrice"`
-	MaxFeePerGas   *big.Int         `json:"maxFeePerGas"`
-	MaxPriorityFee *big.Int         `json:"maxPriorityFeePerGas"`
-	Input          string           `json:"input"`
-	Type           uint8            `json:"type"`
-	Receipt        *CorethTxReceipt `json:"receipt,omitempty"`
+type EVMTransaction struct {
+	Hash           string        `json:"hash"`
+	From           string        `json:"from"`
+	To             string        `json:"to"`
+	Nonce          uint64        `json:"nonce"`
+	Value          *big.Int      `json:"value"`
+	Gas            uint64        `json:"gas"`
+	GasPrice       *big.Int      `json:"gasPrice"`
+	MaxFeePerGas   *big.Int      `json:"maxFeePerGas"`
+	MaxPriorityFee *big.Int      `json:"maxPriorityFeePerGas"`
+	Input          string        `json:"input"`
+	Type           uint8         `json:"type"`
+	Receipt        *EVMTxReceipt `json:"receipt,omitempty"`
 }
 
-type CorethWithdrawal struct {
+type EVMWithdrawal struct {
 	Index          uint64 `json:"index"`
 	ValidatorIndex uint64 `json:"validatorIndex"`
 	Address        string `json:"address"`
 	Amount         uint64 `json:"amount"`
 }
 
-type CorethTxReceipt struct {
+type EVMTxReceipt struct {
 	ContractAddress common.Address `json:"contractAddress"`
 	Status          uint64         `json:"status"`
 	GasUsed         uint64         `json:"gasUsed"`
-	Logs            []*CorethLog   `json:"logs"`
+	Logs            []*EVMLog      `json:"logs"`
 }
 
-type CorethLog struct {
+type EVMLog struct {
 	Address     common.Address `json:"address"`
 	Topics      []common.Hash  `json:"topics"`
 	Data        []byte         `json:"data"`
@@ -95,10 +96,10 @@ type CorethLog struct {
 	Removed     bool           `json:"removed"`
 }
 
-// BlockFromLibevm converts a libevm Block to a Coreth Block.
+// EVMBlockFromLibevmCoreth converts a libevm coreth Block to a EVM Block.
 // chainID should be provided since blocks may not have transactions to extract it from.
-func CorethBlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*CorethBlock, error) {
-	transactions, err := CorethTransactionsFromLibevm(block.Transactions())
+func EVMBlockFromLibevmCoreth(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*EVMBlock, error) {
+	transactions, err := EVMTransactionFromLibevm(block.Transactions())
 	if err != nil {
 		return nil, fmt.Errorf("convert transactions: %w", err)
 	}
@@ -118,7 +119,7 @@ func CorethBlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockc
 		minDelayExcess = extra.MinDelayExcess.Delay()
 	}
 
-	return &CorethBlock{
+	return &EVMBlock{
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
 		Number:                block.Number(),
@@ -144,14 +145,68 @@ func CorethBlockFromLibevm(block *libevmtypes.Block, evmChainID *big.Int, blockc
 		ParentBeaconBlockRoot: beaconRoot,
 		ExcessBlobGas:         block.ExcessBlobGas(),
 		BlobGasUsed:           block.BlobGasUsed(),
-		Withdrawals:           CorethWithdrawalFromLibevm(block.Withdrawals()),
+		Withdrawals:           EVMWithdrawalFromLibevm(block.Withdrawals()),
 		Transactions:          transactions,
 	}, nil
 }
 
-// CorethTransactionsFromLibevm converts libevm Transactions to Coreth Transactions.
-func CorethTransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*CorethTransaction, error) {
-	result := make([]*CorethTransaction, len(transactions))
+// EVMBlockFromLibevmSubnetEVM converts a libevm subnet-evm Block to a EVM Block.
+// chainID should be provided since blocks may not have transactions to extract it from.
+func EVMBlockFromLibevmSubnetEVM(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*EVMBlock, error) {
+	transactions, err := EVMTransactionFromLibevm(block.Transactions())
+	if err != nil {
+		return nil, fmt.Errorf("convert transactions: %w", err)
+	}
+
+	var beaconRoot string
+	if block.BeaconRoot() != nil {
+		beaconRoot = block.BeaconRoot().Hex()
+	}
+
+	var timestampMilliseconds uint64
+	var minDelayExcess uint64
+	extra := subnetevmCustomtypes.GetHeaderExtra(block.Header())
+	if extra.TimeMilliseconds != nil {
+		timestampMilliseconds = *extra.TimeMilliseconds
+	}
+	if extra.MinDelayExcess != nil {
+		minDelayExcess = extra.MinDelayExcess.Delay()
+	}
+
+	return &EVMBlock{
+		Size:                  block.Size(),
+		Hash:                  block.Hash().Hex(),
+		Number:                block.Number(),
+		EVMChainID:            evmChainID,
+		BlockchainID:          blockchainID,
+		GasLimit:              block.GasLimit(),
+		GasUsed:               block.GasUsed(),
+		BaseFee:               block.BaseFee(),
+		Difficulty:            block.Difficulty(),
+		Timestamp:             block.Time(),
+		TimestampMs:           timestampMilliseconds,
+		MinDelayExcess:        minDelayExcess,
+		MixHash:               block.MixDigest().Hex(),
+		Nonce:                 block.Nonce(),
+		LogsBloom:             hexutil.Encode(block.Bloom().Bytes()),
+		Miner:                 block.Coinbase().Hex(),
+		StateRoot:             block.Root().Hex(),
+		ParentHash:            block.ParentHash().Hex(),
+		TransactionsRoot:      block.TxHash().Hex(),
+		ReceiptsRoot:          block.ReceiptHash().Hex(),
+		UncleHash:             block.UncleHash().Hex(),
+		ExtraData:             hexutil.Encode(block.Extra()),
+		ParentBeaconBlockRoot: beaconRoot,
+		ExcessBlobGas:         block.ExcessBlobGas(),
+		BlobGasUsed:           block.BlobGasUsed(),
+		Withdrawals:           EVMWithdrawalFromLibevm(block.Withdrawals()),
+		Transactions:          transactions,
+	}, nil
+}
+
+// EVMTransactionFromLibevm converts libevm Transactions to EVM Transactions.
+func EVMTransactionFromLibevm(transactions []*libevmtypes.Transaction) ([]*EVMTransaction, error) {
+	result := make([]*EVMTransaction, len(transactions))
 
 	for i, tx := range transactions {
 		signer := libevmtypes.LatestSignerForChainID(tx.ChainId())
@@ -165,7 +220,7 @@ func CorethTransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*C
 			to = tx.To().Hex()
 		}
 
-		result[i] = &CorethTransaction{
+		result[i] = &EVMTransaction{
 			Hash:           tx.Hash().Hex(),
 			From:           from.Hex(),
 			To:             to,
@@ -182,12 +237,12 @@ func CorethTransactionsFromLibevm(transactions []*libevmtypes.Transaction) ([]*C
 	return result, nil
 }
 
-// CorethWithdrawalFromLibevm converts libevm Withdrawals to Coreth Withdrawals.
-func CorethWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*CorethWithdrawal {
-	result := make([]*CorethWithdrawal, len(withdrawals))
+// EVMWithdrawalFromLibevm converts libevm Withdrawals to EVM Withdrawals.
+func EVMWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*EVMWithdrawal {
+	result := make([]*EVMWithdrawal, len(withdrawals))
 
 	for i, w := range withdrawals {
-		result[i] = &CorethWithdrawal{
+		result[i] = &EVMWithdrawal{
 			Index:          w.Index,
 			ValidatorIndex: w.Validator,
 			Address:        w.Address.Hex(),
@@ -197,20 +252,20 @@ func CorethWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*Coreth
 	return result
 }
 
-func CorethTxReceiptFromLibevm(tx *libevmtypes.Receipt) *CorethTxReceipt {
-	return &CorethTxReceipt{
+func EVMTxReceiptFromLibevm(tx *libevmtypes.Receipt) *EVMTxReceipt {
+	return &EVMTxReceipt{
 		ContractAddress: tx.ContractAddress,
 		Status:          tx.Status,
 		GasUsed:         tx.GasUsed,
-		Logs:            CorethLogsFromLibevm(tx.Logs),
+		Logs:            EVMLogsFromLibevm(tx.Logs),
 	}
 }
 
-func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
-	logWrappers := make([]*CorethLog, len(logs))
+func EVMLogsFromLibevm(logs []*libevmtypes.Log) []*EVMLog {
+	logWrappers := make([]*EVMLog, len(logs))
 
 	for i, log := range logs {
-		logWrappers[i] = &CorethLog{
+		logWrappers[i] = &EVMLog{
 			Address:     log.Address,
 			Topics:      log.Topics,
 			Data:        log.Data,
@@ -225,9 +280,9 @@ func CorethLogsFromLibevm(logs []*libevmtypes.Log) []*CorethLog {
 	return logWrappers
 }
 
-func (b *CorethBlock) Marshal() ([]byte, error) {
+func (b *EVMBlock) Marshal() ([]byte, error) {
 	// Convert big.Int fields to strings for JSON
-	type BlockAlias CorethBlock
+	type BlockAlias EVMBlock
 	alias := (*BlockAlias)(b)
 
 	// Create a map and manually convert big.Int to strings
@@ -257,7 +312,7 @@ func (b *CorethBlock) Marshal() ([]byte, error) {
 	return json.Marshal(result)
 }
 
-func (b *CorethBlock) Unmarshal(data []byte) error {
+func (b *EVMBlock) Unmarshal(data []byte) error {
 	// Use a map to handle big.Int fields as strings
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -282,13 +337,13 @@ func (b *CorethBlock) Unmarshal(data []byte) error {
 	delete(raw, "difficulty")
 
 	// Unmarshal everything else
-	type BlockAlias CorethBlock
+	type BlockAlias EVMBlock
 	var alias BlockAlias
 	aliasData, _ := json.Marshal(raw)
 	if err := json.Unmarshal(aliasData, &alias); err != nil {
 		return err
 	}
-	*b = CorethBlock(alias)
+	*b = EVMBlock(alias)
 
 	// Handle big.Int fields manually
 	if evmChainIDStr != "" {
@@ -319,18 +374,18 @@ func (b *CorethBlock) Unmarshal(data []byte) error {
 	return nil
 }
 
-func (t *CorethTransaction) Marshal() ([]byte, error) {
+func (t *EVMTransaction) Marshal() ([]byte, error) {
 	return json.Marshal(t)
 }
 
-func (t *CorethTransaction) Unmarshal(data []byte) error {
+func (t *EVMTransaction) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, t)
 }
 
-func (w *CorethWithdrawal) Marshal() ([]byte, error) {
+func (w *EVMWithdrawal) Marshal() ([]byte, error) {
 	return json.Marshal(w)
 }
 
-func (w *CorethWithdrawal) Unmarshal(data []byte) error {
+func (w *EVMWithdrawal) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, w)
 }

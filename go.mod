@@ -6,6 +6,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
 	github.com/ava-labs/coreth v0.16.0
 	github.com/ava-labs/libevm v1.13.15-0.20251016142715-1bccf4f2ddb2
+	github.com/ava-labs/subnet-evm v0.8.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.13.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0

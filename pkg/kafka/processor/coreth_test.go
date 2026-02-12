@@ -479,11 +479,11 @@ func TestProcess_MissingBlockchainID(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
-	block := &kafkamsg.CorethBlock{
+	block := &kafkamsg.EVMBlock{
 		Number:       big.NewInt(1647),
 		Hash:         testBlockHash,
 		BlockchainID: nil,
-		Transactions: []*kafkamsg.CorethTransaction{},
+		Transactions: []*kafkamsg.EVMTransaction{},
 	}
 
 	data, err := block.Marshal()
@@ -669,7 +669,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, txsRepo, logsRepo, nil)
 
 	block := createTestBlock()
-	block.Transactions = []*kafkamsg.CorethTransaction{} // No transactions
+	block.Transactions = []*kafkamsg.EVMTransaction{} // No transactions
 	data, err := block.Marshal()
 	require.NoError(t, err)
 
@@ -824,9 +824,9 @@ func TestMockLogsRepo_DeleteLogs_NilFunc(t *testing.T) {
 // Helper Functions
 // ============================================================================
 
-func createTestBlock() *kafkamsg.CorethBlock {
+func createTestBlock() *kafkamsg.EVMBlock {
 	blockchainID := testBlockchainID
-	return &kafkamsg.CorethBlock{
+	return &kafkamsg.EVMBlock{
 		BlockchainID:     &blockchainID,
 		EVMChainID:       big.NewInt(43113),
 		Number:           big.NewInt(1647),
@@ -846,7 +846,7 @@ func createTestBlock() *kafkamsg.CorethBlock {
 		MixHash:          testBlockHash,
 		ExtraData:        "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		BaseFee:          big.NewInt(470000000000),
-		Transactions: []*kafkamsg.CorethTransaction{
+		Transactions: []*kafkamsg.EVMTransaction{
 			{
 				Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 				From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
@@ -860,12 +860,12 @@ func createTestBlock() *kafkamsg.CorethBlock {
 	}
 }
 
-func createTestBlockWithLogs() *kafkamsg.CorethBlock {
+func createTestBlockWithLogs() *kafkamsg.EVMBlock {
 	block := createTestBlock()
-	block.Transactions[0].Receipt = &kafkamsg.CorethTxReceipt{
+	block.Transactions[0].Receipt = &kafkamsg.EVMTxReceipt{
 		Status:  1,
 		GasUsed: 21000,
-		Logs: []*kafkamsg.CorethLog{
+		Logs: []*kafkamsg.EVMLog{
 			createTestLog(),
 			{
 				Address:     common.HexToAddress("0x55565758595a5b5c5d5e5f6061626364656667"),
@@ -883,8 +883,8 @@ func createTestBlockWithLogs() *kafkamsg.CorethBlock {
 	return block
 }
 
-func createTestTransaction() *kafkamsg.CorethTransaction {
-	return &kafkamsg.CorethTransaction{
+func createTestTransaction() *kafkamsg.EVMTransaction {
+	return &kafkamsg.EVMTransaction{
 		Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 		From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
 		To:       "0x55565758595a5b5c5d5e5f6061626364656667",
@@ -895,8 +895,8 @@ func createTestTransaction() *kafkamsg.CorethTransaction {
 	}
 }
 
-func createTestLog() *kafkamsg.CorethLog {
-	return &kafkamsg.CorethLog{
+func createTestLog() *kafkamsg.EVMLog {
+	return &kafkamsg.EVMLog{
 		Address: common.HexToAddress("0x4142434445464748494a4b4c4d4e4f5051525354"),
 		Topics: []common.Hash{
 			common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"),

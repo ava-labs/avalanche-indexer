@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/coreth/rpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -18,33 +17,29 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
-	dto "github.com/prometheus/client_model/go"
+	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
+	subnetevmrpc "github.com/ava-labs/subnet-evm/rpc"
 )
 
-type rpcRequest struct {
-	JSONRPC string        `json:"jsonrpc"`
-	Method  string        `json:"method"`
-	Params  []interface{} `json:"params"`
-	ID      interface{}   `json:"id"`
+func newSubnetEVMTestWorker(t *testing.T, serverURL string) *SubnetEVMWorker {
+	t.Helper()
+	c, err := subnetevmrpc.Dial(serverURL)
+	if err != nil {
+		require.Fail(t, "failed to dial test rpc server", err)
+	}
+	return &SubnetEVMWorker{
+		client:         subnetClient.NewClient(c),
+		log:            zap.NewNop().Sugar(),
+		producer:       nil,
+		topic:          "",
+		receiptTimeout: 10 * time.Second,
+	}
 }
 
-type rpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *rpcError       `json:"error,omitempty"`
-	ID      interface{}     `json:"id"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-// testRPCServerWithBlock returns a server that responds to:
+// testSubnetEVMRPCServerWithBlock returns a server that responds to:
 // - eth_getBlockByNumber with a static, minimally valid block (empty txs)
 // - eth_getTransactionReceipt with defaults (rarely used here)
-func testRPCServerWithBlock(t *testing.T, block map[string]interface{}, rpcErr *rpcError) *httptest.Server {
+func testSubnetEVMRPCServerWithBlock(t *testing.T, block map[string]interface{}, rpcErr *rpcError) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -92,30 +87,10 @@ func testRPCServerWithBlock(t *testing.T, block map[string]interface{}, rpcErr *
 	}))
 }
 
-func mustJSONMarshal(v interface{}) json.RawMessage {
-	b, _ := json.Marshal(v)
-	return b
-}
-
-func newTestWorker(t *testing.T, serverURL string) *CorethWorker {
-	t.Helper()
-	c, err := rpc.Dial(serverURL)
-	if err != nil {
-		require.Fail(t, "failed to dial test rpc server", err)
-	}
-	return &CorethWorker{
-		client:         evmclient.New(c),
-		log:            zap.NewNop().Sugar(),
-		producer:       nil,
-		topic:          "",
-		receiptTimeout: 10 * time.Second,
-	}
-}
-
-// testRPCServerForBlockReceipts creates a JSON-RPC server that responds to
+// testSubnetEVMRPCServerForBlockReceipts creates a JSON-RPC server that responds to
 // eth_getBlockReceipts with a configurable list of receipts or error.
 // If delay is non-zero, the handler will sleep for that duration before responding.
-func testRPCServerForBlockReceipts(t *testing.T, receipts []map[string]interface{}, rpcErr *rpcError, delay time.Duration) *httptest.Server {
+func testSubnetEVMRPCServerForBlockReceipts(t *testing.T, receipts []map[string]interface{}, rpcErr *rpcError, delay time.Duration) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -146,18 +121,18 @@ func testRPCServerForBlockReceipts(t *testing.T, receipts []map[string]interface
 	}))
 }
 
-func TestGetBlock_BlockFetchError(t *testing.T) {
-	server := testRPCServerWithBlock(t, nil, &rpcError{Code: -32000, Message: "block not found"})
+func TestSubnetEVMGetBlock_BlockFetchError(t *testing.T) {
+	server := testSubnetEVMRPCServerWithBlock(t, nil, &rpcError{Code: -32000, Message: "block not found"})
 	defer server.Close()
 
-	c, err := rpc.Dial(server.URL)
+	c, err := subnetevmrpc.Dial(server.URL)
 	if err != nil {
 		require.Fail(t, "failed to dial test rpc server", err)
 	}
 
 	log := zap.NewNop().Sugar()
 	ctx := t.Context()
-	w, err := NewCorethWorker(evmclient.New(c), nil, "", 43114, "C", log, nil, 10*time.Second)
+	w, err := NewSubnetEVMWorker(subnetClient.NewClient(c), nil, "", 43114, "C", log, nil, 10*time.Second)
 	if err != nil {
 		require.Fail(t, "failed to create worker", err)
 	}
@@ -167,7 +142,7 @@ func TestGetBlock_BlockFetchError(t *testing.T) {
 	}
 }
 
-func TestFetchBlockReceipts_SetsReceipts(t *testing.T) {
+func TestSubnetEVMFetchBlockReceipts_SetsReceipts(t *testing.T) {
 	// Prepare two minimal receipts with different fields
 	receipts := []map[string]interface{}{
 		{
@@ -197,10 +172,10 @@ func TestFetchBlockReceipts_SetsReceipts(t *testing.T) {
 			"logsBloom":         "0x" + strings.Repeat("0", 512),
 		},
 	}
-	server := testRPCServerForBlockReceipts(t, receipts, nil, 0)
+	server := testSubnetEVMRPCServerForBlockReceipts(t, receipts, nil, 0)
 	defer server.Close()
 
-	w := newTestWorker(t, server.URL)
+	w := newSubnetEVMTestWorker(t, server.URL)
 	// Ensure a small timeout so the test is fast if something goes wrong
 	w.receiptTimeout = 2 * time.Second
 
@@ -227,11 +202,11 @@ func TestFetchBlockReceipts_SetsReceipts(t *testing.T) {
 	require.Equal(t, uint64(0), txs[1].Receipt.GasUsed)
 }
 
-func TestFetchBlockReceipts_ErrorFromRPC(t *testing.T) {
+func TestSubnetEVMFetchBlockReceipts_ErrorFromRPC(t *testing.T) {
 	server := testRPCServerForBlockReceipts(t, nil, &rpcError{Code: -32000, Message: "bad block"}, 0)
 	defer server.Close()
 
-	w := newTestWorker(t, server.URL)
+	w := newSubnetEVMTestWorker(t, server.URL)
 	w.receiptTimeout = 2 * time.Second
 
 	txs := []*messages.EVMTransaction{
@@ -242,7 +217,7 @@ func TestFetchBlockReceipts_ErrorFromRPC(t *testing.T) {
 	require.Contains(t, err.Error(), "fetch block receipts failed for block")
 }
 
-func TestFetchBlockReceipts_Timeout(t *testing.T) {
+func TestSubnetEVMFetchBlockReceipts_Timeout(t *testing.T) {
 	// Server delays longer than receiptTimeout; expect deadline exceeded.
 	delayMs := 200
 	server := testRPCServerForBlockReceipts(t, []map[string]interface{}{
@@ -250,7 +225,7 @@ func TestFetchBlockReceipts_Timeout(t *testing.T) {
 	}, nil, time.Duration(delayMs)*time.Millisecond)
 	defer server.Close()
 
-	w := newTestWorker(t, server.URL)
+	w := newSubnetEVMTestWorker(t, server.URL)
 	w.receiptTimeout = 50 * time.Millisecond
 
 	txs := []*messages.EVMTransaction{{Hash: "0x" + strings.Repeat("1", 64)}}
@@ -262,7 +237,7 @@ func TestFetchBlockReceipts_Timeout(t *testing.T) {
 		strings.Contains(err.Error(), strconv.Itoa(1)))
 }
 
-func TestFetchBlockReceipts_MetricsSuccess(t *testing.T) {
+func TestSubnetEVMFetchBlockReceipts_MetricsSuccess(t *testing.T) {
 	receipts := []map[string]interface{}{
 		{
 			"status":            "0x1",
@@ -321,7 +296,7 @@ func TestFetchBlockReceipts_MetricsSuccess(t *testing.T) {
 	m, err := metrics.New(reg)
 	require.NoError(t, err)
 
-	w := newTestWorker(t, server.URL)
+	w := newSubnetEVMTestWorker(t, server.URL)
 	w.metrics = m
 	w.receiptTimeout = 2 * time.Second
 
@@ -339,7 +314,7 @@ func TestFetchBlockReceipts_MetricsSuccess(t *testing.T) {
 	require.Equal(t, 2.0, getCounterValue(t, reg, "indexer_logs_fetched_total", nil))
 }
 
-func TestFetchBlockReceipts_MetricsError(t *testing.T) {
+func TestSubnetEVMFetchBlockReceipts_MetricsError(t *testing.T) {
 	server := testRPCServerForBlockReceipts(t, nil, &rpcError{Code: -32000, Message: "bad block"}, 0)
 	defer server.Close()
 
@@ -347,7 +322,7 @@ func TestFetchBlockReceipts_MetricsError(t *testing.T) {
 	m, err := metrics.New(reg)
 	require.NoError(t, err)
 
-	w := newTestWorker(t, server.URL)
+	w := newSubnetEVMTestWorker(t, server.URL)
 	w.metrics = m
 	w.receiptTimeout = 2 * time.Second
 
@@ -364,7 +339,7 @@ func TestFetchBlockReceipts_MetricsError(t *testing.T) {
 	require.Equal(t, 0.0, getCounterValue(t, reg, "indexer_logs_fetched_total", nil))
 }
 
-func TestFetchBlockReceipts_CountMismatch(t *testing.T) {
+func TestSubnetEVMFetchBlockReceipts_CountMismatch(t *testing.T) {
 	// Server returns 1 receipt but we have 2 transactions - this is a data integrity error
 	receipts := []map[string]interface{}{
 		{
@@ -388,7 +363,7 @@ func TestFetchBlockReceipts_CountMismatch(t *testing.T) {
 	m, err := metrics.New(reg)
 	require.NoError(t, err)
 
-	w := newTestWorker(t, server.URL)
+	w := newSubnetEVMTestWorker(t, server.URL)
 	w.metrics = m
 	w.receiptTimeout = 2 * time.Second
 
@@ -412,63 +387,4 @@ func TestFetchBlockReceipts_CountMismatch(t *testing.T) {
 	// Verify error metrics were recorded
 	require.Equal(t, 1.0, getCounterValue(t, reg, "indexer_receipts_fetched_total", map[string]string{"status": "error"}))
 	require.Equal(t, 0.0, getCounterValue(t, reg, "indexer_logs_fetched_total", nil))
-}
-
-func getCounterValue(t *testing.T, reg *prometheus.Registry, name string, labels map[string]string) float64 {
-	t.Helper()
-	metric := findMetric(t, reg, name, labels)
-	if metric == nil || metric.Counter == nil {
-		return 0
-	}
-	return metric.Counter.GetValue()
-}
-
-func getGaugeValue(t *testing.T, reg *prometheus.Registry) float64 {
-	t.Helper()
-	metric := findMetric(t, reg, "indexer_receipts_fetch_duration_seconds", nil)
-	if metric == nil || metric.Gauge == nil {
-		return 0
-	}
-	return metric.Gauge.GetValue()
-}
-
-func getHistogramCount(t *testing.T, reg *prometheus.Registry) uint64 {
-	t.Helper()
-	metric := findMetric(t, reg, "indexer_receipts_fetch_duration_seconds", nil)
-	if metric == nil || metric.Histogram == nil {
-		return 0
-	}
-	return metric.Histogram.GetSampleCount()
-}
-
-func findMetric(t *testing.T, reg *prometheus.Registry, name string, labels map[string]string) *dto.Metric {
-	t.Helper()
-	mfs, err := reg.Gather()
-	require.NoError(t, err)
-	for _, mf := range mfs {
-		if mf.GetName() != name {
-			continue
-		}
-		for _, m := range mf.Metric {
-			if labelsMatch(m, labels) {
-				return m
-			}
-		}
-	}
-	return nil
-}
-
-func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
-	if len(labels) == 0 {
-		return len(metric.Label) == 0
-	}
-	if len(metric.Label) != len(labels) {
-		return false
-	}
-	for _, l := range metric.Label {
-		if val, ok := labels[l.GetName()]; !ok || val != l.GetValue() {
-			return false
-		}
-	}
-	return true
 }

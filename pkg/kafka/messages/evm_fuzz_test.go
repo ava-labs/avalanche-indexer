@@ -4,10 +4,10 @@ import (
 	"testing"
 )
 
-// FuzzCorethBlockUnmarshal tests CorethBlock.Unmarshal with random JSON inputs.
+// FuzzEVMBlockUnmarshal tests EVMBlock.Unmarshal with random JSON inputs.
 // This is critical for security as it processes external Kafka messages.
-// Run with: go test -fuzz=FuzzCorethBlockUnmarshal -fuzztime=30s ./pkg/kafka/messages/
-func FuzzCorethBlockUnmarshal(f *testing.F) {
+// Run with: go test -fuzz=FuzzEVMBlockUnmarshal -fuzztime=30s ./pkg/kafka/messages/
+func FuzzEVMBlockUnmarshal(f *testing.F) {
 	// Seed corpus with valid JSON structures
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"number": "123"}`))
@@ -27,15 +27,15 @@ func FuzzCorethBlockUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"gasLimit": -1}`))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		block := &CorethBlock{}
+		block := &EVMBlock{}
 		// Should never panic, only return errors for invalid input
 		_ = block.Unmarshal(data)
 	})
 }
 
-// FuzzCorethTransactionUnmarshal tests CorethTransaction.Unmarshal with random inputs.
-// Run with: go test -fuzz=FuzzCorethTransactionUnmarshal -fuzztime=30s ./pkg/kafka/messages/
-func FuzzCorethTransactionUnmarshal(f *testing.F) {
+// FuzzEVMTransactionUnmarshal tests EVMTransaction.Unmarshal with random inputs.
+// Run with: go test -fuzz=FuzzEVMTransactionUnmarshal -fuzztime=30s ./pkg/kafka/messages/
+func FuzzEVMTransactionUnmarshal(f *testing.F) {
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"hash": "0x123", "from": "0xabc", "to": "0xdef"}`))
 	f.Add([]byte(`{"nonce": 0, "value": 1000000000000000000, "gas": 21000}`))
@@ -47,14 +47,14 @@ func FuzzCorethTransactionUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"gas": 999999999999999999}`))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		tx := &CorethTransaction{}
+		tx := &EVMTransaction{}
 		_ = tx.Unmarshal(data)
 	})
 }
 
-// FuzzCorethWithdrawalUnmarshal tests CorethWithdrawal.Unmarshal with random inputs.
-// Run with: go test -fuzz=FuzzCorethWithdrawalUnmarshal -fuzztime=30s ./pkg/kafka/messages/
-func FuzzCorethWithdrawalUnmarshal(f *testing.F) {
+// FuzzEVMWithdrawalUnmarshal tests EVMWithdrawal.Unmarshal with random inputs.
+// Run with: go test -fuzz=FuzzEVMWithdrawalUnmarshal -fuzztime=30s ./pkg/kafka/messages/
+func FuzzEVMWithdrawalUnmarshal(f *testing.F) {
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"index": 1, "validatorIndex": 100, "address": "0x123", "amount": 32000000000}`))
 
@@ -64,19 +64,19 @@ func FuzzCorethWithdrawalUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"amount": 999999999999999999999999}`))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		w := &CorethWithdrawal{}
+		w := &EVMWithdrawal{}
 		_ = w.Unmarshal(data)
 	})
 }
 
-// FuzzCorethBlockMarshalRoundtrip tests that Marshal/Unmarshal are consistent.
+// FuzzEVMBlockMarshalRoundtrip tests that Marshal/Unmarshal are consistent.
 // If Unmarshal succeeds, Marshal should not panic.
-func FuzzCorethBlockMarshalRoundtrip(f *testing.F) {
+func FuzzEVMBlockMarshalRoundtrip(f *testing.F) {
 	f.Add([]byte(`{"number": "123", "hash": "0xabc"}`))
 	f.Add([]byte(`{"evmChainId": "43114", "number": "1000000"}`))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		block := &CorethBlock{}
+		block := &EVMBlock{}
 		if err := block.Unmarshal(data); err == nil {
 			// If unmarshal succeeded, marshal should not panic
 			_, _ = block.Marshal()

@@ -30,6 +30,7 @@ type Config struct {
 	EVMChainID uint64
 	BCID       string
 	RPCURL     string
+	ClientType string
 	Start      uint64
 	End        uint64
 
@@ -110,6 +111,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		EVMChainID:                  c.Uint64("evm-chain-id"),
 		BCID:                        c.String("bc-id"),
 		RPCURL:                      c.String("rpc-url"),
+		ClientType:                  c.String("client-type"),
 		Start:                       c.Uint64("start-height"),
 		End:                         c.Uint64("end-height"),
 		Concurrency:                 c.Int64("concurrency"),

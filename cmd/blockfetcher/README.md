@@ -13,6 +13,9 @@ Fetches blocks from an RPC endpoint, processes them concurrently using a sliding
 - **Prometheus metrics** for monitoring
 - **Graceful shutdown** with proper resource cleanup
 
+## Clients
+Block fetcher currently supports two types of clients: coreth (c-chain) and subnet-evm (L1s)
+
 ## Architecture
 
 ```
@@ -58,6 +61,7 @@ bin/blockfetcher run \
   --evm-chain-id 43114 \
   --bc-id "11111111111111111111111111111111LpoYY" \
   --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --client-type coreth \
   --start-height 0 \
   --concurrency 16 \
   --backfill-priority 4 \
@@ -81,6 +85,7 @@ bin/blockfetcher run \
   --evm-chain-id 43114 \
   --bc-id "11111111111111111111111111111111LpoYY" \
   --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --client-type coreth \
   --start-height 0 \
   --concurrency 16 \
   --backfill-priority 4 \
@@ -129,6 +134,7 @@ docker run --rm \
   -e EVM_CHAIN_ID=43114 \
   -e BLOCKCHAIN_ID=11111111111111111111111111111111LpoYY \
   -e RPC_URL=wss://api.avax-test.network/ext/bc/C/ws \
+  -e CLIENT_TYPE=coreth \
   -e START_HEIGHT=0 \
   -e CONCURRENCY=16 \
   -e BACKFILL_PRIORITY=4 \
@@ -172,6 +178,7 @@ All flags have environment variable equivalents:
 - `--kafka-topic` / `-t` → `KAFKA_TOPIC` (Kafka topic for blocks)
 
 **Optional flags:**
+- `--client-type` / `-ct` → `CLIENT_TYPE` (default: coreth)
 - `--start-height` / `-s` → `START_HEIGHT` (default: 0, fetches from checkpoint if 0)
 - `--end-height` / `-e` → `END_HEIGHT` (optional; if unset the latest is used)
 - `--blocks-ch-capacity` / `-B` → `BLOCKS_CH_CAPACITY` (default: 100, subscription channel capacity)

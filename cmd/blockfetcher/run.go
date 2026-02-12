@@ -9,8 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ava-labs/coreth/plugin/evm/customethclient"
-	"github.com/ava-labs/coreth/rpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
@@ -25,6 +23,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
+	corethClient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
 	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -48,6 +48,7 @@ func run(c *cli.Context) error {
 		"evmChainID", cfg.EVMChainID,
 		"bcID", cfg.BCID,
 		"rpcURL", cfg.RPCURL,
+		"clientType", cfg.ClientType,
 		"start", cfg.Start,
 		"end", cfg.End,
 		"concurrency", cfg.Concurrency,
@@ -109,12 +110,6 @@ func run(c *cli.Context) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	client, err := rpc.DialContext(ctx, cfg.RPCURL)
-	if err != nil {
-		return fmt.Errorf("failed to dial rpc: %w", err)
-	}
-	defer client.Close()
-
 	// Create Kafka admin client to ensure topic exists
 	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
@@ -142,9 +137,53 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
-	w, err := worker.NewCorethWorker(ctx, cfg.RPCURL, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
-	if err != nil {
-		return fmt.Errorf("failed to create worker: %w", err)
+	var w worker.Worker
+	var sub subscriber.Subscriber
+	switch cfg.ClientType {
+	case "coreth":
+		client, err := corethClient.DialContext(ctx, cfg.RPCURL)
+		if err != nil {
+			return fmt.Errorf("failed to dial rpc: %w", err)
+		}
+		defer client.Close()
+
+		// Create worker and subscriber
+		w, err = worker.NewCorethWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
+		if err != nil {
+			return fmt.Errorf("failed to create worker: %w", err)
+		}
+		sub = subscriber.NewCoreth(sugar, client)
+
+		if fetchLatestHeight {
+			end, err = client.BlockNumber(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get latest block height: %w", err)
+			}
+			sugar.Infof("latest block height: %d", end)
+		}
+	case "subnet-evm":
+		client, err := subnetClient.DialContext(ctx, cfg.RPCURL)
+		if err != nil {
+			return fmt.Errorf("failed to dial rpc: %w", err)
+		}
+		defer client.Close()
+
+		// Create subscriber and worker
+		w, err = worker.NewSubnetEVMWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
+		if err != nil {
+			return fmt.Errorf("failed to create worker: %w", err)
+		}
+		sub = subscriber.NewSubnetEVM(sugar, client)
+
+		if fetchLatestHeight {
+			end, err = client.BlockNumber(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get latest block height: %w", err)
+			}
+			sugar.Infof("latest block height: %d", end)
+		}
+	default:
+		return fmt.Errorf("invalid client type: %s", cfg.ClientType)
 	}
 
 	// Initialize ClickHouse client
@@ -155,14 +194,6 @@ func run(c *cli.Context) error {
 	defer chClient.Close()
 
 	sugar.Info("ClickHouse client created successfully")
-
-	if fetchLatestHeight {
-		end, err = customethclient.New(client).BlockNumber(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get latest block height: %w", err)
-		}
-		sugar.Infof("latest block height: %d", end)
-	}
 
 	repo, err := checkpoint.NewRepository(chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.CheckpointTableName)
 	if err != nil {
@@ -196,7 +227,6 @@ func run(c *cli.Context) error {
 	// Initialize window metrics with starting state
 	m.UpdateWindowMetrics(start, end, 0)
 
-	sub := subscriber.NewCoreth(sugar, customethclient.New(client))
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return sub.Subscribe(gctx, cfg.BlocksCap, mgr)

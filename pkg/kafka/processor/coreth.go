@@ -60,7 +60,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		return ErrNilMessage
 	}
 
-	var block kafkamsg.CorethBlock
+	var block kafkamsg.EVMBlock
 	if err := block.Unmarshal(msg.Value); err != nil {
 		p.metrics.IncError("coreth_unmarshal_error")
 		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
@@ -120,7 +120,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 
 // CorethBlockToBlockRow converts a kafkamsg.CorethBlock to BlockRow
 // Exported for testing purposes
-func CorethBlockToBlockRow(block *kafkamsg.CorethBlock) (*evmrepo.BlockRow, error) {
+func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) {
 	// Validate blockchain ID
 	if block.BlockchainID == nil {
 		return nil, evmrepo.ErrBlockChainIDRequired
@@ -206,8 +206,8 @@ func CorethBlockToBlockRow(block *kafkamsg.CorethBlock) (*evmrepo.BlockRow, erro
 // CorethTransactionToTransactionRow converts a coreth.Transaction to TransactionRow
 // Exported for testing purposes
 func CorethTransactionToTransactionRow(
-	tx *kafkamsg.CorethTransaction,
-	block *kafkamsg.CorethBlock,
+	tx *kafkamsg.EVMTransaction,
+	block *kafkamsg.EVMBlock,
 	txIndex uint64,
 ) (*evmrepo.TransactionRow, error) {
 	// Extract blockchain ID from block
@@ -279,7 +279,7 @@ func CorethTransactionToTransactionRow(
 // them to ClickHouse
 func (p *CorethProcessor) processTransactions(
 	ctx context.Context,
-	block *kafkamsg.CorethBlock,
+	block *kafkamsg.EVMBlock,
 ) error {
 	// Convert and write each transaction
 	// TODO: Add batching (in a future PR)
@@ -322,7 +322,7 @@ func (p *CorethProcessor) processTransactions(
 // processLogs extracts logs from transaction receipts and writes them to ClickHouse
 func (p *CorethProcessor) processLogs(
 	ctx context.Context,
-	block *kafkamsg.CorethBlock,
+	block *kafkamsg.EVMBlock,
 ) error {
 	totalLogs := 0
 	for _, tx := range block.Transactions {
@@ -361,8 +361,8 @@ func (p *CorethProcessor) processLogs(
 // CorethLogToLogRow converts a CorethLog to LogRow
 // Exported for testing purposes
 func CorethLogToLogRow(
-	log *kafkamsg.CorethLog,
-	block *kafkamsg.CorethBlock,
+	log *kafkamsg.EVMLog,
+	block *kafkamsg.EVMBlock,
 ) (*evmrepo.LogRow, error) {
 	if block.BlockchainID == nil {
 		return nil, evmrepo.ErrBlockChainIDRequired

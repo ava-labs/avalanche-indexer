@@ -144,7 +144,13 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, m, 10*time.Second)
+	client, err := customethclient.DialContext(ctx, rpcURL)
+	if err != nil {
+		require.Fail(t, "failed to dial rpc", err)
+	}
+	defer client.Close()
+
+	w, err := worker.NewCorethWorker(client, producer, kafkaTopic, evmChainID, bcID, log, m, 10*time.Second)
 	require.NoError(t, err)
 	state, err := slidingwindow.NewState(seed.Lowest, latest)
 	require.NoError(t, err)
@@ -181,7 +187,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	minMsgs := 5
 	received := 0
 	kafkaByNumber := make(map[uint64][]byte)
-	kafkaBlocks := make(map[uint64]kafkamsg.CorethBlock)
+	kafkaBlocks := make(map[uint64]kafkamsg.EVMBlock)
 	var receivedOrder []uint64
 	for received < minMsgs {
 		ev := testConsumer.Poll(2000)
@@ -203,7 +209,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 				}
 				kafkaByNumber[n] = e.Value
 				// decode once to help ClickHouse verification
-				var blk kafkamsg.CorethBlock
+				var blk kafkamsg.EVMBlock
 				require.NoError(t, blk.Unmarshal(e.Value), "decode kafka block %d", n)
 				kafkaBlocks[n] = blk
 			}
@@ -240,7 +246,7 @@ func verifyBlocksPersistedInClickHouse(
 	ctx context.Context,
 	ch clickhouse.Client,
 	blocksTable, txTable, logsTable string,
-	kafkaBlocks map[uint64]kafkamsg.CorethBlock,
+	kafkaBlocks map[uint64]kafkamsg.EVMBlock,
 	order []uint64,
 ) {
 	t.Helper()
