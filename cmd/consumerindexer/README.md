@@ -27,6 +27,8 @@ bin/consumerindexer run \
   --kafka-dlq-topic-num-partitions 1 \
   --kafka-dlq-topic-replication-factor 1 \
   --clickhouse-hosts localhost:9000 \
+  --clickhouse-cluster default \
+  --clickhouse-database default \
   --clickhouse-username default
 ```
 
@@ -51,6 +53,8 @@ bin/consumerindexer run \
   --kafka-dlq-topic-num-partitions 3 \
   --kafka-dlq-topic-replication-factor 3 \
   --clickhouse-hosts localhost:9000 \
+  --clickhouse-cluster default \
+  --clickhouse-database default \
   --clickhouse-username default
 ```
 
@@ -70,6 +74,8 @@ export KAFKA_TOPIC_NUM_PARTITIONS="3"
 export KAFKA_TOPIC_REPLICATION_FACTOR="3"
 export CLICKHOUSE_HOSTS="localhost:9000"
 export CLICKHOUSE_USERNAME="default"
+export CLICKHOUSE_CLUSTER="default"
+export CLICKHOUSE_DATABASE="default"
 bin/consumerindexer run --verbose
 ```
 
@@ -104,6 +110,7 @@ All flags have environment variable equivalents:
 
 **ClickHouse flags:**
 - `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000", comma-separated)
+- `--clickhouse-cluster` → `CLICKHOUSE_CLUSTER` (default: "default")
 - `--clickhouse-database` → `CLICKHOUSE_DATABASE` (default: "default")
 - `--clickhouse-username` → `CLICKHOUSE_USERNAME` (default: "default")
 - `--clickhouse-password` → `CLICKHOUSE_PASSWORD` (default: "")
@@ -148,6 +155,8 @@ docker run --rm \
   -e KAFKA_DLQ_TOPIC_REPLICATION_FACTOR=1 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
   -e CLICKHOUSE_USERNAME=default \
+  -e CLICKHOUSE_CLUSTER=default \
+  -e CLICKHOUSE_DATABASE=default \
   -e METRICS_PORT=9090 \
   -e CHAIN_ID=43114 \
   -e ENVIRONMENT=production \
@@ -193,4 +202,8 @@ docker run --rm \
 - DLQ producer flushes pending messages with `--flush-timeout` (default: 15s) before shutdown
 - Returns non-zero exit code on fatal errors
 
-
+### Delete Resources 
+As a clean up it might be needed to delete all blocks, transactions and logs for specific chain. Use `remove` in this case:
+```bash
+./bin/consumerindexer remove --evm-chain-id 43114
+```

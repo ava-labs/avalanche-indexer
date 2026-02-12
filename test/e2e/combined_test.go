@@ -45,10 +45,10 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_combined")
 	kafkaClientID := getEnvStr("KAFKA_CLIENT_ID", "blockfetcher-combined-e2e")
 
-	checkpointTable := getEnvStr("CHECKPOINT_TABLE_NAME", "test_db.checkpoints_combined")
-	rawBlocksTable := getEnvStr("CLICKHOUSE_RAW_BLOCKS_TABLE_NAME", "default.raw_blocks")
-	rawTxTable := getEnvStr("CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME", "default.raw_transactions")
-	rawLogsTable := getEnvStr("CLICKHOUSE_RAW_LOGS_TABLE_NAME", "default.raw_logs")
+	checkpointTable := getEnvStr("CHECKPOINT_TABLE_NAME", "checkpoints_combined")
+	rawBlocksTable := getEnvStr("CLICKHOUSE_RAW_BLOCKS_TABLE_NAME", "raw_blocks")
+	rawTxTable := getEnvStr("CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME", "raw_transactions")
+	rawLogsTable := getEnvStr("CLICKHOUSE_RAW_LOGS_TABLE_NAME", "raw_logs")
 
 	concurrency := int64(3)
 	backfill := int64(1)
@@ -65,15 +65,13 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	defer log.Desugar().Sync() //nolint:errcheck
 
 	// ---- Prepare ClickHouse ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
 	// ---- Seed checkpoint near latest finalized height ----
-	repo := checkpoint.NewRepository(chClient, checkpointTable)
-	err = repo.CreateTableIfNotExists(ctx)
-	require.NoError(t, err, "failed to ensure checkpoints table exists")
+	repo, err := checkpoint.NewRepository(chClient, "default", "default", checkpointTable)
+	require.NoError(t, err)
 
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
@@ -110,11 +108,11 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	m, err := metrics.New(reg)
 	require.NoError(t, err)
 
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, rawBlocksTable)
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", rawBlocksTable)
 	require.NoError(t, err)
-	txsRepo, err := evmrepo.NewTransactions(ctx, chClient, rawTxTable)
+	txsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", rawTxTable)
 	require.NoError(t, err)
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, rawLogsTable)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", rawLogsTable)
 	require.NoError(t, err)
 	proc := processor.NewCorethProcessor(log, blocksRepo, txsRepo, logsRepo, m)
 
@@ -146,7 +144,13 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, m, 10*time.Second)
+	client, err := customethclient.DialContext(ctx, rpcURL)
+	if err != nil {
+		require.Fail(t, "failed to dial rpc", err)
+	}
+	defer client.Close()
+
+	w, err := worker.NewCorethWorker(client, producer, kafkaTopic, evmChainID, bcID, log, m, 10*time.Second)
 	require.NoError(t, err)
 	state, err := slidingwindow.NewState(seed.Lowest, latest)
 	require.NoError(t, err)
@@ -183,7 +187,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	minMsgs := 5
 	received := 0
 	kafkaByNumber := make(map[uint64][]byte)
-	kafkaBlocks := make(map[uint64]kafkamsg.CorethBlock)
+	kafkaBlocks := make(map[uint64]kafkamsg.EVMBlock)
 	var receivedOrder []uint64
 	for received < minMsgs {
 		ev := testConsumer.Poll(2000)
@@ -205,7 +209,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 				}
 				kafkaByNumber[n] = e.Value
 				// decode once to help ClickHouse verification
-				var blk kafkamsg.CorethBlock
+				var blk kafkamsg.EVMBlock
 				require.NoError(t, blk.Unmarshal(e.Value), "decode kafka block %d", n)
 				kafkaBlocks[n] = blk
 			}
@@ -242,7 +246,7 @@ func verifyBlocksPersistedInClickHouse(
 	ctx context.Context,
 	ch clickhouse.Client,
 	blocksTable, txTable, logsTable string,
-	kafkaBlocks map[uint64]kafkamsg.CorethBlock,
+	kafkaBlocks map[uint64]kafkamsg.EVMBlock,
 	order []uint64,
 ) {
 	t.Helper()

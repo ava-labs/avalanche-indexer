@@ -26,7 +26,8 @@ const (
 
 // Mock implementations for testing
 type mockBlocksRepo struct {
-	writeBlockFunc func(ctx context.Context, block *evmrepo.BlockRow) error
+	writeBlockFunc   func(ctx context.Context, block *evmrepo.BlockRow) error
+	deleteBlocksFunc func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockBlocksRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -37,8 +38,16 @@ func (m *mockBlocksRepo) WriteBlock(ctx context.Context, block *evmrepo.BlockRow
 	return nil
 }
 
+func (m *mockBlocksRepo) DeleteBlocks(ctx context.Context, chainID uint64) error {
+	if m.deleteBlocksFunc != nil {
+		return m.deleteBlocksFunc(ctx, chainID)
+	}
+	return nil
+}
+
 type mockTransactionsRepo struct {
-	writeTransactionFunc func(ctx context.Context, tx *evmrepo.TransactionRow) error
+	writeTransactionFunc   func(ctx context.Context, tx *evmrepo.TransactionRow) error
+	deleteTransactionsFunc func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockTransactionsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -49,14 +58,29 @@ func (m *mockTransactionsRepo) WriteTransaction(ctx context.Context, tx *evmrepo
 	return nil
 }
 
+func (m *mockTransactionsRepo) DeleteTransactions(ctx context.Context, chainID uint64) error {
+	if m.deleteTransactionsFunc != nil {
+		return m.deleteTransactionsFunc(ctx, chainID)
+	}
+	return nil
+}
+
 type mockLogsRepo struct {
-	writeLogFunc func(ctx context.Context, log *evmrepo.LogRow) error
+	writeLogFunc   func(ctx context.Context, log *evmrepo.LogRow) error
+	deleteLogsFunc func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockLogsRepo) CreateTableIfNotExists(context.Context) error { return nil }
 func (m *mockLogsRepo) WriteLog(ctx context.Context, log *evmrepo.LogRow) error {
 	if m.writeLogFunc != nil {
 		return m.writeLogFunc(ctx, log)
+	}
+	return nil
+}
+
+func (m *mockLogsRepo) DeleteLogs(ctx context.Context, chainID uint64) error {
+	if m.deleteLogsFunc != nil {
+		return m.deleteLogsFunc(ctx, chainID)
 	}
 	return nil
 }
@@ -455,11 +479,11 @@ func TestProcess_MissingBlockchainID(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
-	block := &kafkamsg.CorethBlock{
+	block := &kafkamsg.EVMBlock{
 		Number:       big.NewInt(1647),
 		Hash:         testBlockHash,
 		BlockchainID: nil,
-		Transactions: []*kafkamsg.CorethTransaction{},
+		Transactions: []*kafkamsg.EVMTransaction{},
 	}
 
 	data, err := block.Marshal()
@@ -645,7 +669,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, txsRepo, logsRepo, nil)
 
 	block := createTestBlock()
-	block.Transactions = []*kafkamsg.CorethTransaction{} // No transactions
+	block.Transactions = []*kafkamsg.EVMTransaction{} // No transactions
 	data, err := block.Marshal()
 	require.NoError(t, err)
 
@@ -658,12 +682,151 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 }
 
 // ============================================================================
+// Repository Delete Method Tests
+// ============================================================================
+
+func TestMockBlocksRepo_DeleteBlocks_Success(t *testing.T) {
+	t.Parallel()
+
+	deleteCalled := false
+	var capturedChainID uint64
+
+	blocksRepo := &mockBlocksRepo{
+		deleteBlocksFunc: func(_ context.Context, chainID uint64) error {
+			deleteCalled = true
+			capturedChainID = chainID
+			return nil
+		},
+	}
+
+	err := blocksRepo.DeleteBlocks(t.Context(), 43114)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, uint64(43114), capturedChainID)
+}
+
+func TestMockBlocksRepo_DeleteBlocks_Error(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("delete blocks failed")
+	blocksRepo := &mockBlocksRepo{
+		deleteBlocksFunc: func(_ context.Context, _ uint64) error {
+			return expectedErr
+		},
+	}
+
+	err := blocksRepo.DeleteBlocks(t.Context(), 43114)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestMockBlocksRepo_DeleteBlocks_NilFunc(t *testing.T) {
+	t.Parallel()
+
+	blocksRepo := &mockBlocksRepo{
+		deleteBlocksFunc: nil, // No function set
+	}
+
+	err := blocksRepo.DeleteBlocks(t.Context(), 43114)
+	require.NoError(t, err, "should return nil when deleteBlocksFunc is not set")
+}
+
+func TestMockTransactionsRepo_DeleteTransactions_Success(t *testing.T) {
+	t.Parallel()
+
+	deleteCalled := false
+	var capturedChainID uint64
+
+	txsRepo := &mockTransactionsRepo{
+		deleteTransactionsFunc: func(_ context.Context, chainID uint64) error {
+			deleteCalled = true
+			capturedChainID = chainID
+			return nil
+		},
+	}
+
+	err := txsRepo.DeleteTransactions(t.Context(), 43114)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, uint64(43114), capturedChainID)
+}
+
+func TestMockTransactionsRepo_DeleteTransactions_Error(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("delete transactions failed")
+	txsRepo := &mockTransactionsRepo{
+		deleteTransactionsFunc: func(_ context.Context, _ uint64) error {
+			return expectedErr
+		},
+	}
+
+	err := txsRepo.DeleteTransactions(t.Context(), 43114)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestMockTransactionsRepo_DeleteTransactions_NilFunc(t *testing.T) {
+	t.Parallel()
+
+	txsRepo := &mockTransactionsRepo{
+		deleteTransactionsFunc: nil, // No function set
+	}
+
+	err := txsRepo.DeleteTransactions(t.Context(), 43114)
+	require.NoError(t, err, "should return nil when deleteTransactionsFunc is not set")
+}
+
+func TestMockLogsRepo_DeleteLogs_Success(t *testing.T) {
+	t.Parallel()
+
+	deleteCalled := false
+	var capturedChainID uint64
+
+	logsRepo := &mockLogsRepo{
+		deleteLogsFunc: func(_ context.Context, chainID uint64) error {
+			deleteCalled = true
+			capturedChainID = chainID
+			return nil
+		},
+	}
+
+	err := logsRepo.DeleteLogs(t.Context(), 43114)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, uint64(43114), capturedChainID)
+}
+
+func TestMockLogsRepo_DeleteLogs_Error(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("delete logs failed")
+	logsRepo := &mockLogsRepo{
+		deleteLogsFunc: func(_ context.Context, _ uint64) error {
+			return expectedErr
+		},
+	}
+
+	err := logsRepo.DeleteLogs(t.Context(), 43114)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestMockLogsRepo_DeleteLogs_NilFunc(t *testing.T) {
+	t.Parallel()
+
+	logsRepo := &mockLogsRepo{
+		deleteLogsFunc: nil, // No function set
+	}
+
+	err := logsRepo.DeleteLogs(t.Context(), 43114)
+	require.NoError(t, err, "should return nil when deleteLogsFunc is not set")
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
-func createTestBlock() *kafkamsg.CorethBlock {
+func createTestBlock() *kafkamsg.EVMBlock {
 	blockchainID := testBlockchainID
-	return &kafkamsg.CorethBlock{
+	return &kafkamsg.EVMBlock{
 		BlockchainID:     &blockchainID,
 		EVMChainID:       big.NewInt(43113),
 		Number:           big.NewInt(1647),
@@ -683,7 +846,7 @@ func createTestBlock() *kafkamsg.CorethBlock {
 		MixHash:          testBlockHash,
 		ExtraData:        "0xd883010916846765746888676f312e31332e38856c696e7578236a756571a22fb6b759507d25baa07790e2dcb952924471d436785469db4655",
 		BaseFee:          big.NewInt(470000000000),
-		Transactions: []*kafkamsg.CorethTransaction{
+		Transactions: []*kafkamsg.EVMTransaction{
 			{
 				Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 				From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
@@ -697,12 +860,12 @@ func createTestBlock() *kafkamsg.CorethBlock {
 	}
 }
 
-func createTestBlockWithLogs() *kafkamsg.CorethBlock {
+func createTestBlockWithLogs() *kafkamsg.EVMBlock {
 	block := createTestBlock()
-	block.Transactions[0].Receipt = &kafkamsg.CorethTxReceipt{
+	block.Transactions[0].Receipt = &kafkamsg.EVMTxReceipt{
 		Status:  1,
 		GasUsed: 21000,
-		Logs: []*kafkamsg.CorethLog{
+		Logs: []*kafkamsg.EVMLog{
 			createTestLog(),
 			{
 				Address:     common.HexToAddress("0x55565758595a5b5c5d5e5f6061626364656667"),
@@ -720,8 +883,8 @@ func createTestBlockWithLogs() *kafkamsg.CorethBlock {
 	return block
 }
 
-func createTestTransaction() *kafkamsg.CorethTransaction {
-	return &kafkamsg.CorethTransaction{
+func createTestTransaction() *kafkamsg.EVMTransaction {
+	return &kafkamsg.EVMTransaction{
 		Hash:     "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273",
 		From:     "0x4142434445464748494a4b4c4d4e4f5051525354",
 		To:       "0x55565758595a5b5c5d5e5f6061626364656667",
@@ -732,8 +895,8 @@ func createTestTransaction() *kafkamsg.CorethTransaction {
 	}
 }
 
-func createTestLog() *kafkamsg.CorethLog {
-	return &kafkamsg.CorethLog{
+func createTestLog() *kafkamsg.EVMLog {
+	return &kafkamsg.EVMLog{
 		Address: common.HexToAddress("0x4142434445464748494a4b4c4d4e4f5051525354"),
 		Topics: []common.Hash{
 			common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"),

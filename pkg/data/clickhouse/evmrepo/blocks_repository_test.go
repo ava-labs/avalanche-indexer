@@ -81,16 +81,15 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
-		Return(nil).
-		Once()
+		Return(nil)
 
 	// Expect WriteBlock call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_blocks")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_blocks`")
 		}),
 			*block.BlockchainID,              // string: "11111111111111111111111111111111LpoYY"
 			block.EVMChainID.String(),        // string: "43113" (UInt256)
@@ -125,7 +124,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.NoError(t, err)
@@ -191,10 +190,10 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_blocks")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteBlock call that fails
 	mockConn.
@@ -232,7 +231,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default.raw_blocks")
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
 	require.NoError(t, err)
 	err = repo.WriteBlock(ctx, block)
 	require.ErrorIs(t, err, execErr)
@@ -280,6 +279,62 @@ func createTestBlock() *BlockRow {
 		ParentBeaconBlockRoot: "",
 		MinDelayExcess:        0,
 	}
+}
+
+func TestRepository_DeleteBlocks_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+		})).
+		Return(nil)
+
+	// Expect DeleteBlocks call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_blocks_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
+	require.NoError(t, err)
+	err = repo.DeleteBlocks(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_DeleteBlocks_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+		})).
+		Return(nil)
+
+	// Expect DeleteBlocks call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_blocks_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewBlocks(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_blocks")
+	require.NoError(t, err)
+	err = repo.DeleteBlocks(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete blocks")
+	mockConn.AssertExpectations(t)
 }
 
 // Helper function to check if a string contains a substring (case-insensitive)

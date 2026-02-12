@@ -150,9 +150,14 @@ func TestGetBlock_BlockFetchError(t *testing.T) {
 	server := testRPCServerWithBlock(t, nil, &rpcError{Code: -32000, Message: "block not found"})
 	defer server.Close()
 
+	c, err := rpc.Dial(server.URL)
+	if err != nil {
+		require.Fail(t, "failed to dial test rpc server", err)
+	}
+
 	log := zap.NewNop().Sugar()
 	ctx := t.Context()
-	w, err := NewCorethWorker(ctx, server.URL, nil, "", 43114, "C", log, nil, 10*time.Second)
+	w, err := NewCorethWorker(evmclient.New(c), nil, "", 43114, "C", log, nil, 10*time.Second)
 	if err != nil {
 		require.Fail(t, "failed to create worker", err)
 	}
@@ -200,7 +205,7 @@ func TestFetchBlockReceipts_SetsReceipts(t *testing.T) {
 	w.receiptTimeout = 2 * time.Second
 
 	// Prepare transactions slice with matching length
-	txs := []*messages.CorethTransaction{
+	txs := []*messages.EVMTransaction{
 		{Hash: "0x" + strings.Repeat("1", 64)},
 		{Hash: "0x" + strings.Repeat("2", 64)},
 	}
@@ -229,7 +234,7 @@ func TestFetchBlockReceipts_ErrorFromRPC(t *testing.T) {
 	w := newTestWorker(t, server.URL)
 	w.receiptTimeout = 2 * time.Second
 
-	txs := []*messages.CorethTransaction{
+	txs := []*messages.EVMTransaction{
 		{Hash: "0x" + strings.Repeat("1", 64)},
 	}
 	ctx := t.Context()
@@ -248,7 +253,7 @@ func TestFetchBlockReceipts_Timeout(t *testing.T) {
 	w := newTestWorker(t, server.URL)
 	w.receiptTimeout = 50 * time.Millisecond
 
-	txs := []*messages.CorethTransaction{{Hash: "0x" + strings.Repeat("1", 64)}}
+	txs := []*messages.EVMTransaction{{Hash: "0x" + strings.Repeat("1", 64)}}
 	ctx := t.Context()
 	err := w.FetchBlockReceipts(ctx, txs, 1)
 	// Error message might be wrapped; check it mentions timeout/deadline or contains our method
@@ -320,7 +325,7 @@ func TestFetchBlockReceipts_MetricsSuccess(t *testing.T) {
 	w.metrics = m
 	w.receiptTimeout = 2 * time.Second
 
-	txs := []*messages.CorethTransaction{
+	txs := []*messages.EVMTransaction{
 		{Hash: "0x" + strings.Repeat("1", 64)},
 		{Hash: "0x" + strings.Repeat("2", 64)},
 	}
@@ -328,9 +333,9 @@ func TestFetchBlockReceipts_MetricsSuccess(t *testing.T) {
 	err = w.FetchBlockReceipts(ctx, txs, 1)
 	require.NoError(t, err)
 
-	require.Equal(t, 0.0, getGaugeValue(t, reg, "indexer_receipts_fetches_in_flight", nil))
+	require.Equal(t, 0.0, getGaugeValue(t, reg))
 	require.Equal(t, 1.0, getCounterValue(t, reg, "indexer_receipts_fetched_total", map[string]string{"status": "success"}))
-	require.Equal(t, uint64(1), getHistogramCount(t, reg, "indexer_receipts_fetch_duration_seconds", nil))
+	require.Equal(t, uint64(1), getHistogramCount(t, reg))
 	require.Equal(t, 2.0, getCounterValue(t, reg, "indexer_logs_fetched_total", nil))
 }
 
@@ -346,16 +351,16 @@ func TestFetchBlockReceipts_MetricsError(t *testing.T) {
 	w.metrics = m
 	w.receiptTimeout = 2 * time.Second
 
-	txs := []*messages.CorethTransaction{
+	txs := []*messages.EVMTransaction{
 		{Hash: "0x" + strings.Repeat("1", 64)},
 	}
 	ctx := t.Context()
 	err = w.FetchBlockReceipts(ctx, txs, 123)
 	require.ErrorIs(t, err, ErrReceiptFetchFailed)
 
-	require.Equal(t, 0.0, getGaugeValue(t, reg, "indexer_receipts_fetches_in_flight", nil))
+	require.Equal(t, 0.0, getGaugeValue(t, reg))
 	require.Equal(t, 1.0, getCounterValue(t, reg, "indexer_receipts_fetched_total", map[string]string{"status": "error"}))
-	require.Equal(t, uint64(1), getHistogramCount(t, reg, "indexer_receipts_fetch_duration_seconds", nil))
+	require.Equal(t, uint64(1), getHistogramCount(t, reg))
 	require.Equal(t, 0.0, getCounterValue(t, reg, "indexer_logs_fetched_total", nil))
 }
 
@@ -388,7 +393,7 @@ func TestFetchBlockReceipts_CountMismatch(t *testing.T) {
 	w.receiptTimeout = 2 * time.Second
 
 	// 2 transactions but only 1 receipt returned
-	txs := []*messages.CorethTransaction{
+	txs := []*messages.EVMTransaction{
 		{Hash: "0x" + strings.Repeat("1", 64)},
 		{Hash: "0x" + strings.Repeat("2", 64)},
 	}
@@ -418,18 +423,18 @@ func getCounterValue(t *testing.T, reg *prometheus.Registry, name string, labels
 	return metric.Counter.GetValue()
 }
 
-func getGaugeValue(t *testing.T, reg *prometheus.Registry, name string, labels map[string]string) float64 {
+func getGaugeValue(t *testing.T, reg *prometheus.Registry) float64 {
 	t.Helper()
-	metric := findMetric(t, reg, name, labels)
+	metric := findMetric(t, reg, "indexer_receipts_fetch_duration_seconds", nil)
 	if metric == nil || metric.Gauge == nil {
 		return 0
 	}
 	return metric.Gauge.GetValue()
 }
 
-func getHistogramCount(t *testing.T, reg *prometheus.Registry, name string, labels map[string]string) uint64 {
+func getHistogramCount(t *testing.T, reg *prometheus.Registry) uint64 {
 	t.Helper()
-	metric := findMetric(t, reg, name, labels)
+	metric := findMetric(t, reg, "indexer_receipts_fetch_duration_seconds", nil)
 	if metric == nil || metric.Histogram == nil {
 		return 0
 	}

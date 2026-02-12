@@ -38,13 +38,13 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	topic2Bytes, err := utils.HexToBytes32(*log.Topic2)
 	require.NoError(t, err, "topic2 conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Convert topic bytes to string pointers (matching new return type)
 	topic0Str := string(topic0Bytes[:])
@@ -55,7 +55,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_logs`")
 		}),
 			*log.BlockchainID,         // string: blockchain ID
 			log.EVMChainID.String(),   // string: UInt256
@@ -76,7 +76,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
 	require.NoError(t, err)
 	err = repo.WriteLog(ctx, log)
 	require.NoError(t, err)
@@ -107,13 +107,13 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 	topic2Bytes, err := utils.HexToBytes32(*log.Topic2)
 	require.NoError(t, err, "topic2 conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Convert topic bytes to string pointers (matching new return type)
 	topic0Str := string(topic0Bytes[:])
@@ -142,7 +142,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
 	require.NoError(t, err)
 	err = repo.WriteLog(ctx, log)
 	require.ErrorIs(t, err, execErr)
@@ -171,18 +171,18 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 	addressBytes, err := utils.HexToBytes20(log.Address)
 	require.NoError(t, err, "address conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteLog call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_logs")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_logs`")
 		}),
 			*log.BlockchainID,         // string: blockchain ID
 			log.EVMChainID.String(),   // string: UInt256
@@ -203,10 +203,68 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default.raw_logs")
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
 	require.NoError(t, err)
 	err = repo.WriteLog(ctx, log)
 	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestLogsRepository_DeleteLogs_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
+		})).
+		Return(nil).
+		Times(2)
+
+	// Expect DeleteLogs call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_logs_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+	err = repo.DeleteLogs(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestLogsRepository_DeleteLogs_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
+		})).
+		Return(nil).
+		Times(2)
+
+	// Expect DeleteLogs call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_logs_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+	err = repo.DeleteLogs(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete logs")
 	mockConn.AssertExpectations(t)
 }
 

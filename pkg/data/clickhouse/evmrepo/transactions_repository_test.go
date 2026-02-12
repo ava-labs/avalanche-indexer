@@ -41,16 +41,16 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteTransaction call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			// Verify the query contains INSERT INTO and the table name
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_transactions`")
 		}),
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
@@ -74,7 +74,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -108,10 +108,10 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteTransaction call that fails
 	mockConn.
@@ -138,7 +138,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.ErrorIs(t, err, execErr)
@@ -169,15 +169,15 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	// Expect CreateTableIfNotExists call during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
 		})).
 		Return(nil).
-		Once()
+		Times(2)
 
 	// Expect WriteTransaction call
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "default.raw_transactions")
+			return len(q) > 0 && containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`raw_transactions`")
 		}),
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
@@ -201,10 +201,68 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default.raw_transactions")
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
 	require.NoError(t, err)
 	err = repo.WriteTransaction(ctx, tx)
 	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_DeleteTransactions_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
+		})).
+		Return(nil).
+		Times(2)
+
+	// Expect DeleteTransactions call
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_transactions_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(nil).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+	err = repo.DeleteTransactions(ctx, chainID)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_DeleteTransactions_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	chainID := uint64(43114)
+	deleteErr := errors.New("delete failed")
+
+	// Expect CreateTableIfNotExists call during initialization
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_transactions_local`") || containsSubstring(q, "`default`.`raw_transactions`"))
+		})).
+		Return(nil).
+		Times(2)
+
+	// Expect DeleteTransactions call that fails
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`raw_transactions_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n", chainID).
+		Return(deleteErr).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+	err = repo.DeleteTransactions(ctx, chainID)
+	require.ErrorIs(t, err, deleteErr)
+	assert.Contains(t, err.Error(), "failed to delete transactions")
 	mockConn.AssertExpectations(t)
 }
 

@@ -5,7 +5,8 @@ networks:
 volumes:
   kafka-data:
   grafana-data:
-  clickhouse-test-data:
+  clickhouse-01-data:
+  clickhouse-02-data:
 
 services:
   # Kafka Broker with KRaft (no Zookeeper) - Official Apache Kafka
@@ -41,6 +42,10 @@ services:
       KAFKA_LOG_SEGMENT_BYTES: 1073741824
       KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Message size limits (20MB for large blocks)
+      KAFKA_MESSAGE_MAX_BYTES: 20971521
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 20971521
 
     volumes:
       - kafka-data:/var/lib/kafka/data
@@ -92,6 +97,8 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - app-network
 
   grafana:
     image: grafana/grafana:latest
@@ -101,21 +108,38 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana-data:/var/lib/grafana
-  # ClickHouse Server
-  clickhouse:
-    image: clickhouse/clickhouse-server:latest
-    container_name: clickhouse-test
-    hostname: clickhouse
+    networks:
+      - app-network
+
+  # ZooKeeper (required for ClickHouse replication)
+  zookeeper:
+    image: zookeeper:3.8
+    container_name: zookeeper
+    hostname: zookeeper
     ports:
-      - "8123:8123"  # HTTP interface
-      - "9000:9000"  # Native protocol
+      - "2181:2181"
+    networks:
+      - app-network
+
+  # ClickHouse Server 1
+  clickhouse-01:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-01
+    hostname: clickhouse-01
+    ports:
+      - "8123:8123"
+      - "9000:9000"
     environment:
-      CLICKHOUSE_DB: test_db
+      CLICKHOUSE_DB: default
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     volumes:
-      - clickhouse-test-data:/var/lib/clickhouse
+      - clickhouse-01-data:/var/lib/clickhouse
+      - ./clickhouse-config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml
+      - ./clickhouse-config/macros-01.xml:/etc/clickhouse-server/config.d/macros.xml
+    depends_on:
+      - zookeeper
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 5s
@@ -124,31 +148,36 @@ services:
       start_period: 10s
     networks:
       - app-network
-  
-  # ClickHouse Init (create tables)
-  clickhouse-init:
+
+  # ClickHouse Server 2
+  clickhouse-02:
     image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-02
+    hostname: clickhouse-02
+    ports:
+      - "8124:8123"
+      - "9001:9000"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse-02-data:/var/lib/clickhouse
+      - ./clickhouse-config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml
+      - ./clickhouse-config/macros-02.xml:/etc/clickhouse-server/config.d/macros.xml
     depends_on:
-      clickhouse:
-        condition: service_healthy
-    entrypoint: >
-      bash -lc '
-      clickhouse-client --host clickhouse --query "
-      CREATE TABLE IF NOT EXISTS test_db.checkpoints
-      (
-        chain_id UInt64,
-        lowest_unprocessed_block UInt64,
-        timestamp Int64
-      )
-      ENGINE = ReplacingMergeTree(timestamp)
-      ORDER BY chain_id
-      "
-      '
-    restart: "no"
+      - zookeeper
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     networks:
       - app-network
 
-  # Tabix UI for ClickHouse - pre-configured with local credentials
+  # Tabix UI for ClickHouse - connects to clickhouse-01
   tabix:
     image: spoonest/clickhouse-tabix-web-client
     platform: linux/amd64
@@ -161,5 +190,7 @@ services:
       CH_LOGIN: default
       CH_PASSWORD: ""
     depends_on:
-      clickhouse:
+      clickhouse-01:
         condition: service_healthy
+    networks:
+      - app-network

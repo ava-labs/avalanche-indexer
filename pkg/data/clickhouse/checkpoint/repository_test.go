@@ -50,13 +50,19 @@ func TestRepository_WriteCheckpoint_Success(t *testing.T) {
 	ctx := t.Context()
 	// Expect Exec with query and args
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO checkpoints (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)",
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+	mockConn.
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
 			mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
 	now := time.Now().Unix()
-	err := repo.WriteCheckpoint(ctx, &Checkpoint{ChainID: 43114, Lowest: 123, Timestamp: now})
+	err = repo.WriteCheckpoint(ctx, &Checkpoint{ChainID: 43114, Lowest: 123, Timestamp: now})
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
@@ -66,13 +72,20 @@ func TestRepository_WriteCheckpoint_Error(t *testing.T) {
 	mockConn := &testutils.MockConn{}
 	execErr := errors.New("exec failed")
 	ctx := t.Context()
+
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO checkpoints (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)",
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+	mockConn.
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
 			mock.Anything, mock.Anything, mock.Anything).
 		Return(execErr)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
-	err := repo.WriteCheckpoint(ctx, &Checkpoint{ChainID: 43114, Lowest: 1, Timestamp: 2})
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
+	err = repo.WriteCheckpoint(ctx, &Checkpoint{ChainID: 43114, Lowest: 1, Timestamp: 2})
 	require.ErrorIs(t, err, execErr)
 	mockConn.AssertExpectations(t)
 }
@@ -84,11 +97,18 @@ func TestRepository_ReadCheckpoint_Success(t *testing.T) {
 
 	// Prepare row with values
 	row := rowMock{chainID: 43114, lowestUnprocessedBlock: 777, timestamp: 1700000000}
+
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM checkpoints WHERE chain_id = 43114").
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+	mockConn.
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", mock.Anything).
 		Return(row)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
 	got, err := repo.ReadCheckpoint(ctx, 43114)
 	require.NoError(t, err)
 	assert.NotNil(t, got)
@@ -118,10 +138,16 @@ func TestRepository_ReadCheckpoint_Error(t *testing.T) {
 
 	scanErr := errors.New("scan failed")
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM checkpoints WHERE chain_id = 43114").
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+	mockConn.
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", mock.Anything).
 		Return(rowErrMock{err: scanErr})
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "checkpoints")
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
 	got, err := repo.ReadCheckpoint(ctx, 43114)
 	assert.Nil(t, got)
 	require.ErrorIs(t, err, scanErr)
@@ -135,12 +161,18 @@ func TestRepository_CreateTableIfNotExists_Success(t *testing.T) {
 
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			return len(q) > 0 // Just verify a query is passed
 		})).
 		Return(nil)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "test_db.checkpoints")
-	err := repo.CreateTableIfNotExists(ctx)
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
+	err = repo.CreateTableIfNotExists(ctx)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
@@ -148,15 +180,71 @@ func TestRepository_CreateTableIfNotExists_Success(t *testing.T) {
 func TestRepository_CreateTableIfNotExists_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
-	ctx := t.Context()
 
 	createTableErr := errors.New("table creation failed")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything).
 		Return(createTableErr)
 
-	repo := NewRepository(testutils.NewTestClient(mockConn), "test_db.checkpoints")
-	err := repo.CreateTableIfNotExists(ctx)
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.Nil(t, repo)
 	require.ErrorIs(t, err, createTableErr)
+	mockConn.AssertExpectations(t)
+}
+
+func containsSubstring(s, substr string) bool {
+	if len(substr) > len(s) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`checkpoints_local` ON CLUSTER 'default' WHERE chain_id = ?\n", mock.Anything).
+		Return(nil)
+
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
+	err = repo.DeleteCheckpoints(ctx, 43114)
+	require.NoError(t, err)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+		})).
+		Return(nil)
+
+	deleteErr := errors.New("delete failed")
+	mockConn.
+		On("Exec", mock.Anything, "DELETE FROM `default`.`checkpoints_local` ON CLUSTER 'default' WHERE chain_id = ?\n", mock.Anything).
+		Return(deleteErr)
+
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
+	err = repo.DeleteCheckpoints(ctx, 43114)
+	require.ErrorIs(t, err, deleteErr)
 	mockConn.AssertExpectations(t)
 }
