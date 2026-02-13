@@ -212,7 +212,7 @@ func run(c *cli.Context) error {
 			sugar.Infof("checkpoint not found, will start from block height 0")
 			start = 0
 		} else {
-			start = checkpoint.Lowest
+			start = lowestUnprocessed
 			sugar.Infof("checkpoint found, lowest unprocessed block: %d", start)
 		}
 	}

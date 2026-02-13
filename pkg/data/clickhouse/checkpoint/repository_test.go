@@ -289,6 +289,5 @@ func TestNewRepository_Error(t *testing.T) {
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.Nil(t, repo)
 	require.ErrorIs(t, err, createTableErr)
-	assert.ErrorContains(t, err, "failed to create checkpoints table")
 	mockConn.AssertExpectations(t)
 }

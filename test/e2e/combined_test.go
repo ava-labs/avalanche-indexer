@@ -70,9 +70,8 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	defer chClient.Close()
 
 	// ---- Seed checkpoint near latest finalized height ----
-	chkpt := checkpoint.NewRepository(chClient, checkpointTable)
-	err = chkpt.Initialize(ctx)
-	require.NoError(t, err, "failed to ensure checkpoints table exists")
+	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, checkpointTable)
+	require.NoError(t, err, "failed to create checkpoint repository")
 
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
@@ -148,7 +147,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 
 	w, err := worker.NewCorethWorker(client, producer, kafkaTopic, evmChainID, bcID, log, m, 10*time.Second)
 	require.NoError(t, err)
-	state, err := slidingwindow.NewState(seed.Lowest, latest)
+	state, err := slidingwindow.NewState(startHeight, latest)
 	require.NoError(t, err)
 	mgr, err := slidingwindow.NewManager(log, state, w, concurrency, backfill, blocksCap, maxFailures, nil)
 	require.NoError(t, err)

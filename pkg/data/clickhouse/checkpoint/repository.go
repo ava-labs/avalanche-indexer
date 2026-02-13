@@ -3,10 +3,11 @@ package checkpoint
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"fmt"
 	"time"
+
+	_ "embed"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
@@ -20,8 +21,10 @@ type Repository interface {
 	DeleteCheckpoints(ctx context.Context, chainID uint64) error
 }
 
-var _ Repository = (*repository)(nil)
-var _ checkpointer.Checkpointer = (*repository)(nil)
+var (
+	_ Repository                = (*repository)(nil)
+	_ checkpointer.Checkpointer = (*repository)(nil)
+)
 
 //go:embed queries/create-table-local.sql
 var createTableLocalQuery string

@@ -37,7 +37,6 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_realtime")
 	kafkaClientID := getEnvStr("KAFKA_CLIENT_ID", "blockfetcher-e2e")
-	clickhouseTable := getEnvStr("CHECKPOINT_TABLE_NAME", "test_db.checkpoints")
 	concurrency := int64(3)
 	backfill := int64(1)
 	blocksCap := 100
@@ -54,14 +53,12 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	defer log.Desugar().Sync() //nolint:errcheck
 
 	// ---- Prepare ClickHouse (create DB/table if needed, seed checkpoint at latest height) ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	chkpt := checkpoint.NewRepository(chClient, clickhouseTable)
-	err = chkpt.Initialize(ctx)
-	require.NoError(t, err, "failed to initialize checkpointer")
+	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, "checkpoints")
+	require.NoError(t, err, "failed to create checkpoint repository")
 
 	// Get latest block height from RPC to seed checkpoint.
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
@@ -109,7 +106,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
 	require.NoError(t, err)
 
-	state, err := slidingwindow.NewState(seed.Lowest, latest)
+	state, err := slidingwindow.NewState(startHeight, latest)
 	require.NoError(t, err)
 	mgr, err := slidingwindow.NewManager(log, state, w, concurrency, backfill, blocksCap, maxFailures, nil)
 	require.NoError(t, err)
@@ -197,7 +194,6 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_backfill")
 	kafkaClientID := "blockfetcher-e2e-backfill"
-	clickhouseTable := getEnvStr("CHECKPOINT_TABLE_NAME", "test_db.checkpoints")
 	concurrency := int64(4)
 	backfill := int64(2)
 	blocksCap := 50
@@ -228,16 +224,12 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	end := latest
 
 	// ---- Prepare ClickHouse (create DB/table if needed) ----
-	chCfg := clickhouse.Load()
-	chClient, err := clickhouse.New(chCfg, log)
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	chkpt := checkpoint.NewRepository(chClient, clickhouseTable)
-	err = chkpt.Initialize(ctx)
-	if err != nil {
-		require.NoError(t, err, "failed to initialize checkpointer")
-	}
+	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, "checkpoints")
+	require.NoError(t, err, "failed to create checkpoint repository")
 
 	// ---- Kafka consumer to observe backfilled blocks ----
 	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
