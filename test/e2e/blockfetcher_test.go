@@ -103,7 +103,13 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
+	client, err := customethclient.DialContext(ctx, rpcURL)
+	if err != nil {
+		require.Fail(t, "failed to dial rpc", err)
+	}
+	defer client.Close()
+
+	w, err := worker.NewCorethWorker(client, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
 	require.NoError(t, err)
 
 	state, err := slidingwindow.NewState(startHeight, latest)
@@ -168,6 +174,11 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 			break
 		}
 	}
+
+	// Wait for at least one checkpoint interval to ensure scheduler writes updated checkpoint
+	// (Scheduler writes every 2 seconds, wait a bit longer to be safe)
+	time.Sleep(2500 * time.Millisecond)
+
 	// Shutdown gracefully
 	cancel()
 	_ = g.Wait()
@@ -256,7 +267,13 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	w, err := worker.NewCorethWorker(ctx, rpcURL, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
+	client, err := customethclient.DialContext(ctx, rpcURL)
+	if err != nil {
+		require.Fail(t, "failed to dial rpc", err)
+	}
+	defer client.Close()
+
+	w, err := worker.NewCorethWorker(client, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
 	require.NoError(t, err)
 
 	state, err := slidingwindow.NewState(start, end)
@@ -316,6 +333,11 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 			break
 		}
 	}
+
+	// Wait for at least one checkpoint interval to ensure scheduler writes a checkpoint
+	// (Scheduler writes every 2 seconds, wait a bit longer to be safe)
+	time.Sleep(2500 * time.Millisecond)
+
 	// Shutdown
 	cancel()
 	_ = g.Wait()
@@ -349,7 +371,7 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 			continue
 		}
 		// Decode Kafka payload
-		var got kafkamsg.CorethBlock
+		var got kafkamsg.EVMBlock
 		require.NoError(t, got.Unmarshal(val), "decode kafka block %d", n)
 
 		// Fetch from RPC and convert to our Block type
@@ -359,9 +381,8 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 
 		evmChainID := got.EVMChainID
 		blockchainIDStr := got.BlockchainID
-		expPtr, err := kafkamsg.CorethBlockFromLibevm(lb, evmChainID, blockchainIDStr)
+		exp, err := kafkamsg.EVMBlockFromLibevmCoreth(lb, evmChainID, blockchainIDStr)
 		require.NoError(t, err, "convert rpc block %d", n)
-		exp := *expPtr
 
 		// Compare a set of critical fields for robustness
 		require.Equal(t, exp.EVMChainID, got.EVMChainID, "evmChainID %d", n)
