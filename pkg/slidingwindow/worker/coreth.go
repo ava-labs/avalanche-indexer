@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -110,7 +111,11 @@ func (cw *CorethWorker) GetBlock(ctx context.Context, height uint64) (*messages.
 	}
 
 	if err != nil {
-		cw.log.Warnw("eth_getBlockByNumber failed", "height", height, "error", err, "duration_ms", rpcDuration.Milliseconds())
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			cw.log.Debugw("eth_getBlockByNumber canceled due to context cancellation or deadline exceeded", "height", height, "error", err)
+		} else {
+			cw.log.Warnw("eth_getBlockByNumber failed", "height", height, "error", err, "duration_ms", rpcDuration.Milliseconds())
+		}
 		return nil, fmt.Errorf("fetch block failed %d: %w", height, err)
 	}
 
@@ -151,7 +156,11 @@ func (cw *CorethWorker) FetchBlockReceipts(ctx context.Context, transactions []*
 	receiptDuration := time.Since(start)
 
 	if err != nil {
-		cw.log.Warnw("BlockReceipts failed", "block", blockNumber, "error", err, "duration_ms", receiptDuration.Milliseconds())
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			cw.log.Debugw("BlockReceipts canceled due to context cancellation or deadline exceeded", "block", blockNumber, "error", err)
+		} else {
+			cw.log.Warnw("BlockReceipts failed", "block", blockNumber, "error", err, "duration_ms", receiptDuration.Milliseconds())
+		}
 		if cw.metrics != nil {
 			cw.metrics.RecordReceiptFetch(err, receiptDuration.Seconds(), 0)
 		}
