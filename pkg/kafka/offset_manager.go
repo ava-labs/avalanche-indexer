@@ -295,7 +295,7 @@ func (om *OffsetManager) InsertOffsetWithRetry(
 			if ctx.Err() != nil {
 				om.log.Warnf("context cancelled, returning: %v", ctx.Err())
 			} else {
-				om.log.Infof("InsertOffset successful, returning")
+				om.log.Debugf("InsertOffset successful, returning for offset %d and partition %d", msg.TopicPartition.Offset+1, msg.TopicPartition.Partition)
 			}
 			return
 		}
