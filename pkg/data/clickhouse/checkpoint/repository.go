@@ -5,20 +5,26 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	_ "embed"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// Checkpoint Repository is used to write and read the checkpoint of the sliding window state
-// to the persistent storage (ClickHouse).
+// Repository is used to write and read the checkpoint of the sliding window state
+// to persistent storage (ClickHouse). It implements the checkpointer.Checkpointer interface
+// and adds ClickHouse-specific operations.
 type Repository interface {
-	CreateTableIfNotExists(ctx context.Context) error
-	WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint) error
-	ReadCheckpoint(ctx context.Context, chainID uint64) (*Checkpoint, error)
+	checkpointer.Checkpointer
 	DeleteCheckpoints(ctx context.Context, chainID uint64) error
 }
+
+var (
+	_ Repository                = (*repository)(nil)
+	_ checkpointer.Checkpointer = (*repository)(nil)
+)
 
 //go:embed queries/create-table-local.sql
 var createTableLocalQuery string
@@ -47,18 +53,19 @@ func NewRepository(
 	cluster, database, tableName string,
 ) (Repository, error) {
 	repo := &repository{client: client, cluster: cluster, database: database, tableName: tableName}
-	if err := repo.CreateTableIfNotExists(context.Background()); err != nil {
+	if err := repo.Initialize(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to create checkpoints table: %w", err)
 	}
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the checkpoints table if it doesn't exist.
+// Initialize ensures the checkpoints table exists in ClickHouse.
+// Implements checkpointer.Checkpointer interface.
 // Schema:
 //   - chain_id: UInt64 (primary key)
 //   - lowest_unprocessed_block: UInt64
 //   - timestamp: Int64 (used by ReplacingMergeTree for deduplication)
-func (r *repository) CreateTableIfNotExists(ctx context.Context) error {
+func (r *repository) Initialize(ctx context.Context) error {
 	query := fmt.Sprintf(createTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create checkpoints local table: %w", err)
@@ -72,7 +79,18 @@ func (r *repository) CreateTableIfNotExists(ctx context.Context) error {
 	return nil
 }
 
-func (r *repository) WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint) error {
+// Write persists a checkpoint to ClickHouse with the current Unix timestamp in seconds.
+// Implements checkpointer.Checkpointer interface.
+func (r *repository) Write(
+	ctx context.Context,
+	evmChainID uint64,
+	lowestUnprocessed uint64,
+) error {
+	checkpoint := &Checkpoint{
+		ChainID:   evmChainID,
+		Lowest:    lowestUnprocessed,
+		Timestamp: time.Now().Unix(),
+	}
 	query := fmt.Sprintf(writeCheckpointQuery, r.database, r.tableName)
 	err := r.client.Conn().
 		Exec(ctx, query, checkpoint.ChainID, checkpoint.Lowest, checkpoint.Timestamp)
@@ -82,19 +100,24 @@ func (r *repository) WriteCheckpoint(ctx context.Context, checkpoint *Checkpoint
 	return nil
 }
 
-func (r *repository) ReadCheckpoint(ctx context.Context, chainID uint64) (*Checkpoint, error) {
+// Read retrieves the latest checkpoint for given EVM chain ID.
+// Implements checkpointer.Checkpointer interface.
+func (r *repository) Read(
+	ctx context.Context,
+	evmChainID uint64,
+) (lowestUnprocessed uint64, exists bool, err error) {
 	var checkpoint Checkpoint
 	query := fmt.Sprintf(readCheckpointQuery, r.database, r.tableName)
-	err := r.client.Conn().
-		QueryRow(ctx, query, chainID).
+	err = r.client.Conn().
+		QueryRow(ctx, query, evmChainID).
 		Scan(&checkpoint.ChainID, &checkpoint.Lowest, &checkpoint.Timestamp)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return 0, false, nil
 		}
-		return nil, err
+		return 0, false, err
 	}
-	return &checkpoint, nil
+	return checkpoint.Lowest, true, nil
 }
 
 func (r *repository) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
