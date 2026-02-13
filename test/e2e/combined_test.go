@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
@@ -20,7 +21,6 @@ import (
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
-	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -70,8 +70,9 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	defer chClient.Close()
 
 	// ---- Seed checkpoint near latest finalized height ----
-	repo, err := checkpoint.NewRepository(chClient, "default", "default", checkpointTable)
-	require.NoError(t, err)
+	chkpt := checkpoint.NewRepository(chClient, checkpointTable)
+	err = chkpt.Initialize(ctx)
+	require.NoError(t, err, "failed to ensure checkpoints table exists")
 
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
@@ -88,7 +89,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 		Lowest:    startHeight,
 		Timestamp: time.Now().Unix(),
 	}
-	err = repo.WriteCheckpoint(ctx, seed)
+	err = chkpt.WriteCheckpoint(ctx, seed)
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Ensure Kafka topic exists ----
@@ -180,7 +181,11 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
+	g.Go(func() error {
+		cfg := checkpointer.DefaultConfig()
+		cfg.Interval = checkpointInterval
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+	})
 	g.Go(func() error { return indexerConsumer.Start(gctx) })
 
 	// ---- Collect realtime Kafka messages ----
@@ -234,7 +239,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	verifyCtx, vcancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer vcancel()
 	verifyBlocksPersistedInClickHouse(t, verifyCtx, chClient, rawBlocksTable, rawTxTable, rawLogsTable, kafkaBlocks, receivedOrder)
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, chkpt, evmChainID, kafkaByNumber)
 
 	// Now cancel and wait goroutines to exit
 	cancel()

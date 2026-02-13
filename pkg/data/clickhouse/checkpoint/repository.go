@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
-	_ "embed"
-
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
@@ -97,6 +97,47 @@ func (r *repository) ReadCheckpoint(ctx context.Context, chainID uint64) (*Check
 	return &checkpoint, nil
 }
 
+// Initialize ensures the checkpoints table exists in ClickHouse.
+// Implements checkpointer.Checkpointer interface.
+func (r *repository) Initialize(ctx context.Context) error {
+	return r.CreateTableIfNotExists(ctx)
+}
+
+// Write persists a checkpoint to ClickHouse with the current Unix timestamp in seconds.
+// Implements checkpointer.Checkpointer interface.
+func (r *repository) Write(
+	ctx context.Context,
+	evmChainID uint64,
+	lowestUnprocessed uint64,
+) error {
+	return r.WriteCheckpoint(ctx, &Checkpoint{
+		ChainID:   evmChainID,
+		Lowest:    lowestUnprocessed,
+		Timestamp: time.Now().Unix(),
+	})
+}
+
+// Read retrieves the latest checkpoint for given EVM chain ID.
+// Implements checkpointer.Checkpointer interface.
+func (r *repository) Read(
+	ctx context.Context,
+	evmChainID uint64,
+) (lowestUnprocessed uint64, exists bool, err error) {
+	checkpoint, err := r.ReadCheckpoint(ctx, evmChainID)
+	if err != nil {
+		return 0, false, err
+	}
+	if checkpoint == nil {
+		return 0, false, nil
+	}
+	return checkpoint.Lowest, true, nil
+}
+
+// Interface compliance checks
+var (
+	_ checkpointer.Checkpointer = (*repository)(nil)
+	_ Repository                = (*repository)(nil)
+)
 func (r *repository) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
 	query := fmt.Sprintf(deleteCheckpointsQuery, r.database, r.tableName, r.cluster)
 	if err := r.client.Conn().Exec(ctx, query, chainID); err != nil {

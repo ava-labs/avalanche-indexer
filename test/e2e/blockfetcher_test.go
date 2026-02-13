@@ -59,8 +59,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	repo := checkpoint.NewRepository(chClient, clickhouseTable)
-	chkpt := checkpoint.NewCheckpointer(repo)
+	chkpt := checkpoint.NewRepository(chClient, clickhouseTable)
 	err = chkpt.Initialize(ctx)
 	require.NoError(t, err, "failed to initialize checkpointer")
 
@@ -84,7 +83,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 		Lowest:    startHeight,
 		Timestamp: time.Now().Unix(),
 	}
-	err = repo.WriteCheckpoint(ctx, seed)
+	err = chkpt.WriteCheckpoint(ctx, seed)
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Kafka consumer to observe realtime blocks ----
@@ -190,7 +189,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, receivedOrder)
 
 	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, chkpt, evmChainID, kafkaByNumber)
 }
 
 // TestE2EBlockfetcherBackfill runs backfill over a small recent range and verifies
@@ -239,8 +238,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	repo := checkpoint.NewRepository(chClient, clickhouseTable)
-	chkpt := checkpoint.NewCheckpointer(repo)
+	chkpt := checkpoint.NewRepository(chClient, clickhouseTable)
 	err = chkpt.Initialize(ctx)
 	if err != nil {
 		require.NoError(t, err, "failed to initialize checkpointer")
@@ -344,7 +342,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, numbers)
 
 	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, chkpt, evmChainID, kafkaByNumber)
 }
 
 // verifyBlocksFromRPC fetches blocks by number from RPC and compares to Kafka payloads.
