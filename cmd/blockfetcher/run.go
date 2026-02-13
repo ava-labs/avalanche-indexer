@@ -212,9 +212,17 @@ func run(c *cli.Context) error {
 			sugar.Infof("checkpoint not found, will start from block height 0")
 			start = 0
 		} else {
-			start = lowestUnprocessed
-			sugar.Infof("start block height: %d", start)
+			start = checkpoint.Lowest
+			sugar.Infof("checkpoint found, lowest unprocessed block: %d", start)
 		}
+	}
+
+	// When backfill is complete, lowest can advance past highest (lowest = highest + 1).
+	// On restart, if the persisted lowest > current chain height, it means all blocks
+	// have been processed. Reset start to end so we can create a valid initial state.
+	if start > end {
+		sugar.Infof("backfill was complete (lowest=%d > highest=%d), resetting start to end", start, end)
+		start = end
 	}
 
 	s, err := slidingwindow.NewState(start, end)

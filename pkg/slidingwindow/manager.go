@@ -139,21 +139,16 @@ func (m *Manager) Run(ctx context.Context) error {
 			go m.process(ctx, next, true)
 		}
 
-		// Check for failure threshold
+		// Blocking wait for event (backfill, realtime, failure)
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case h := <-m.failureChan:
 			return fmt.Errorf(
 				"max failures exceeded for block %d, failed after %d attempts",
 				h,
 				m.state.GetFailureCount(h),
 			)
-		default:
-		}
-
-		// Blocking wait for event (backfill, realtime)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case h := <-m.heightChan:
 			m.handleNewHeight(ctx, h)
 		case <-m.workReady:
