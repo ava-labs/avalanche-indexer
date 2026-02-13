@@ -78,12 +78,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 		startHeight = latest - safetyMargin
 	}
 
-	seed := &checkpoint.Checkpoint{
-		ChainID:   evmChainID,
-		Lowest:    startHeight,
-		Timestamp: time.Now().Unix(),
-	}
-	err = chkpt.WriteCheckpoint(ctx, seed)
+	err = chkpt.Write(ctx, evmChainID, startHeight)
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Kafka consumer to observe realtime blocks ----

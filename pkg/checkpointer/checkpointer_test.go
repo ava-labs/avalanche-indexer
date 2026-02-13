@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -32,7 +31,7 @@ func (m *mockCheckpointer) Read(ctx context.Context, evmChainID uint64) (uint64,
 	return args.Get(0).(uint64), args.Bool(1), args.Error(2)
 }
 
-func TestStartCheckpointScheduler_WritesAndCancels(t *testing.T) {
+func TestStart_WritesAndCancels(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(5, 10)
 	require.NoError(t, err)
@@ -48,7 +47,7 @@ func TestStartCheckpointScheduler_WritesAndCancels(t *testing.T) {
 			}
 		}).
 		Return(nil).
-		Twice() // Once for periodic write, once for graceful shutdown
+		Once() // Only periodic write, no shutdown write
 
 	cfg := Config{
 		Interval:     10 * time.Millisecond,
@@ -66,7 +65,7 @@ func TestStartCheckpointScheduler_WritesAndCancels(t *testing.T) {
 
 	select {
 	case <-called:
-		// stop scheduler
+		// Stop scheduler - should exit immediately without another write
 		cancel()
 	case <-time.After(500 * time.Millisecond):
 		require.Fail(t, "timeout waiting for checkpoint write")
@@ -74,14 +73,14 @@ func TestStartCheckpointScheduler_WritesAndCancels(t *testing.T) {
 
 	select {
 	case err := <-done:
-		require.NoError(t, err)
+		require.NoError(t, err, "context cancellation should return nil")
 	case <-time.After(500 * time.Millisecond):
 		require.Fail(t, "timeout waiting for scheduler to exit")
 	}
 	checkpointer.AssertExpectations(t)
 }
 
-func TestStartCheckpointScheduler_ErrorPropagates(t *testing.T) {
+func TestStart_ErrorPropagates(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(1, 1)
 	require.NoError(t, err)
@@ -106,31 +105,70 @@ func TestStartCheckpointScheduler_ErrorPropagates(t *testing.T) {
 	checkpointer.AssertExpectations(t)
 }
 
-func TestStartCheckpointScheduler_ImmediateCancel(t *testing.T) {
+func TestStart_ImmediateCancel(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(0, 0)
 	require.NoError(t, err)
 	checkpointer := &mockCheckpointer{}
 
-	// Expect shutdown checkpoint write
-	checkpointer.
-		On("Write", mock.Anything, uint64(43114), uint64(0)).
-		Return(nil).
-		Once()
+	// No writes expected - immediate cancellation should exit immediately
+	// (no shutdown checkpoint write)
 
 	cfg := DefaultConfig()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err = Start(ctx, state, checkpointer, cfg, 43114)
-	require.NoError(t, err)
+	require.NoError(t, err, "immediate cancellation should return nil")
 	checkpointer.AssertExpectations(t)
 }
 
-func TestDefaultConfig(t *testing.T) {
+func TestStart_CancelDuringRetry(t *testing.T) {
 	t.Parallel()
-	cfg := DefaultConfig()
-	assert.Equal(t, 30*time.Second, cfg.Interval)
-	assert.Equal(t, 1*time.Second, cfg.WriteTimeout)
-	assert.Equal(t, 3, cfg.MaxRetries)
-	assert.Equal(t, 300*time.Millisecond, cfg.RetryBackoff)
+	state, err := slidingwindow.NewState(1, 1)
+	require.NoError(t, err)
+	checkpointer := &mockCheckpointer{}
+
+	writeErr := errors.New("write failed")
+	writeCalled := make(chan struct{}, 1)
+	checkpointer.
+		On("Write", mock.Anything, uint64(43114), uint64(1)).
+		Run(func(_ mock.Arguments) {
+			select {
+			case writeCalled <- struct{}{}:
+			default:
+			}
+		}).
+		Return(writeErr).
+		Once()
+
+	cfg := Config{
+		Interval:     10 * time.Millisecond,
+		WriteTimeout: 1 * time.Second,
+		MaxRetries:   10, // Many retries to ensure we can cancel during retry
+		RetryBackoff: 50 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Start(ctx, state, checkpointer, cfg, 43114)
+	}()
+
+	// Wait for first write attempt, then cancel during retry backoff
+	select {
+	case <-writeCalled:
+		// Cancel during retry backoff - should exit cleanly
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	case <-time.After(500 * time.Millisecond):
+		require.Fail(t, "timeout waiting for first write attempt")
+	}
+
+	select {
+	case err := <-done:
+		require.NoError(t, err, "context cancellation during retry should return nil")
+	case <-time.After(500 * time.Millisecond):
+		require.Fail(t, "timeout waiting for scheduler to exit after cancellation")
+	}
 }

@@ -195,18 +195,13 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	if fetchLatestHeight {
-		end, err = customethclient.New(client).BlockNumber(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get latest block height: %w", err)
-		}
-		sugar.Infof("latest block height: %d", end)
-	}
-
-	repo, err := checkpoint.NewRepository(chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.CheckpointTableName)
+	checkpointRepo, err := checkpoint.NewRepository(chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.CheckpointTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create checkpoint repository: %w", err)
 	}
+
+	// Cast to checkpointer.Checkpointer interface to use Read/Write/Initialize methods
+	chkpt := checkpointRepo.(checkpointer.Checkpointer)
 
 	if fetchStartHeight {
 		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID)

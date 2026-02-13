@@ -16,7 +16,8 @@ type Checkpointer interface {
 	// should be idempotent and safe to call multiple times.
 	Initialize(ctx context.Context) error
 
-	// Write atomically persists a checkpoint for the specified EVM chain.
+	// Write atomically persists a checkpoint. The EVM chain ID should be included in the key or
+	// row in the data store. The timestamp used should be the current Unix timestamp in seconds.
 	Write(ctx context.Context, evmChainID uint64, lowestUnprocessed uint64) error
 
 	// Read retrieves the latest checkpoint for a chain. Returns the lowestUnprocessed block height
@@ -25,35 +26,10 @@ type Checkpointer interface {
 	Read(ctx context.Context, evmChainID uint64) (lowestUnprocessed uint64, exists bool, err error)
 }
 
-// Checkpointer config
-type Config struct {
-	Interval     time.Duration
-	WriteTimeout time.Duration
-	MaxRetries   int
-	RetryBackoff time.Duration
-}
-
-// DefaultConfig returns a Config with sensible defaults.
-func DefaultConfig() Config {
-	return Config{
-		Interval:     30 * time.Second,
-		WriteTimeout: 1 * time.Second,
-		MaxRetries:   3,
-		RetryBackoff: 300 * time.Millisecond,
-	}
-}
-
-// Start periodically persists the sliding window state to durable storage. Attempts a final
-// checkpoint write on graceful shutdown (context cancellation).
+// Start periodically persists the sliding window state to durable storage.
 //
-// Parameters:
-//   - ctx: Context
-//   - s: Sliding window state to read current progress from
-//   - checkpointer: Storage backend implementation for checkpoint persistence
-//   - cfg: Configuration
-//   - evmChainID: EVM chain ID
-//
-// Returns an error if checkpoint writes fail after all retries, or nil on graceful shutdown.
+// Returns nil on context cancellation (graceful shutdown), or an error if checkpoint writes
+// fail after all retries.
 func Start(
 	ctx context.Context,
 	s *slidingwindow.State,
@@ -67,50 +43,50 @@ func Start(
 	for {
 		select {
 		case <-ctx.Done():
-			// Attempt a final checkpoint write on graceful shutdown
-			// Use a fresh context with timeout to avoid immediate cancellation
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			lowest := s.GetLowest()
-			_ = writeCheckpointWithRetry(
-				shutdownCtx,
-				checkpointer,
-				evmChainID,
-				lowest,
-				cfg,
-			) // Best effort, ignore error on shutdown
-			cancel()
+			// Graceful shutdown - exit without error
 			return nil
 
 		case <-t.C:
-			// Read state atomically and persist
 			lowest := s.GetLowest()
-			if err := writeCheckpointWithRetry(ctx, checkpointer, evmChainID, lowest, cfg); err != nil {
-				return err
+
+			var lastErr error
+			for attempt := 0; attempt <= cfg.MaxRetries; attempt++ {
+				// Check if context was cancelled before attempting write
+				if ctx.Err() != nil {
+					return nil
+				}
+
+				writeCtx, cancel := context.WithTimeout(ctx, cfg.WriteTimeout)
+				lastErr = checkpointer.Write(writeCtx, evmChainID, lowest)
+				cancel()
+
+				// Write succeeded
+				if lastErr == nil {
+					break
+				}
+
+				// Check if error was due to context cancellation
+				if ctx.Err() != nil {
+					return nil
+				}
+
+				// Don't sleep after the last attempt
+				if attempt < cfg.MaxRetries {
+					// Sleep with context awareness
+					select {
+					case <-time.After(cfg.RetryBackoff):
+						// Continue to next retry
+					case <-ctx.Done():
+						return nil
+					}
+				}
+			}
+
+			// If we exhausted retries and still have an error, return it
+			if lastErr != nil {
+				return fmt.Errorf("failed to write checkpoint (lowest: %d) after %d retries: %w",
+					lowest, cfg.MaxRetries+1, lastErr)
 			}
 		}
 	}
-}
-
-func writeCheckpointWithRetry(
-	ctx context.Context,
-	checkpointer Checkpointer,
-	evmChainID, lowest uint64,
-	cfg Config,
-) error {
-	var err error
-	for attempt := 0; attempt <= cfg.MaxRetries; attempt++ {
-		ctxW, cancel := context.WithTimeout(ctx, cfg.WriteTimeout)
-		err = checkpointer.Write(ctxW, evmChainID, lowest)
-		cancel()
-
-		if err == nil {
-			return nil
-		}
-
-		// Don't sleep after the last attempt
-		if attempt < cfg.MaxRetries {
-			time.Sleep(cfg.RetryBackoff)
-		}
-	}
-	return fmt.Errorf("failed to write checkpoint (lowest: %d): %w", lowest, err)
 }
