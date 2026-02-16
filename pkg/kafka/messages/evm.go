@@ -21,6 +21,8 @@ import (
 // It's 100% compatible with the standard library API.
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
+// bigIntToString converts a *big.Int to its decimal string representation.
+// Returns empty string if the input is nil, ensuring safe JSON marshaling.
 func bigIntToString(v *big.Int) string {
 	if v == nil {
 		return ""
@@ -28,6 +30,8 @@ func bigIntToString(v *big.Int) string {
 	return v.String()
 }
 
+// parseBigIntField parses a string into *big.Int with field name context for error messages.
+// Returns nil for empty strings, supporting optional JSON fields.
 func parseBigIntField(s, fieldName string) (*big.Int, error) {
 	if s == "" {
 		return nil, nil
@@ -39,6 +43,8 @@ func parseBigIntField(s, fieldName string) (*big.Int, error) {
 	return val, nil
 }
 
+// parseBigInt parses a string into *big.Int, supporting both decimal and scientific notation.
+// Handles legacy Kafka messages that may contain scientific notation (e.g., "1e+21").
 func parseBigInt(s string) (*big.Int, error) {
 	val, ok := new(big.Int).SetString(s, 10)
 	if ok {
@@ -138,6 +144,9 @@ type EVMLog struct {
 	Removed     bool           `json:"removed"`
 }
 
+// evmBlockJSON is the JSON wire format for EVMBlock.
+// Uses string representations for *big.Int fields to ensure decimal encoding
+// and prevent scientific notation in marshaled output.
 type evmBlockJSON struct {
 	EVMChainID   string  `json:"evmChainId,omitempty"`
 	BlockchainID *string `json:"blockchainId,omitempty"`
@@ -178,6 +187,9 @@ type evmBlockJSON struct {
 	Transactions []*EVMTransaction `json:"transactions"`
 }
 
+// evmTransactionJSON is the JSON wire format for EVMTransaction.
+// Uses string representations for *big.Int fields (Value, GasPrice, MaxFeePerGas, MaxPriorityFee)
+// to ensure consistent decimal encoding and avoid scientific notation.
 type evmTransactionJSON struct {
 	Hash           string        `json:"hash"`
 	From           string        `json:"from"`
@@ -377,6 +389,8 @@ func EVMLogsFromLibevm(logs []*libevmtypes.Log) []*EVMLog {
 	return logWrappers
 }
 
+// MarshalJSON implements json.Marshaler.
+// Converts *big.Int fields to decimal strings to prevent scientific notation in JSON output.
 func (b *EVMBlock) MarshalJSON() ([]byte, error) {
 	alias := evmBlockJSON{
 		BlockchainID:          b.BlockchainID,
@@ -411,6 +425,9 @@ func (b *EVMBlock) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias)
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
+// Parses *big.Int fields from strings, supporting both decimal and scientific notation
+// for backward compatibility with legacy Kafka messages.
 func (b *EVMBlock) UnmarshalJSON(data []byte) error {
 	var alias evmBlockJSON
 	if err := json.Unmarshal(data, &alias); err != nil {
@@ -458,6 +475,8 @@ func (b *EVMBlock) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON implements json.Marshaler.
+// Converts *big.Int fields to decimal strings to prevent scientific notation in JSON output.
 func (t *EVMTransaction) MarshalJSON() ([]byte, error) {
 	alias := evmTransactionJSON{
 		Hash:           t.Hash,
@@ -477,6 +496,9 @@ func (t *EVMTransaction) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias)
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
+// Parses *big.Int fields from strings, supporting both decimal and scientific notation
+// for backward compatibility with legacy Kafka messages.
 func (t *EVMTransaction) UnmarshalJSON(data []byte) error {
 	var alias evmTransactionJSON
 	if err := json.Unmarshal(data, &alias); err != nil {
