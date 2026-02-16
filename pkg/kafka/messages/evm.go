@@ -3,9 +3,11 @@
 package messages
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/ava-labs/libevm/common"
 	"github.com/ava-labs/libevm/common/hexutil"
@@ -14,6 +16,46 @@ import (
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 )
+
+// json is a drop-in replacement for encoding/json using jsoniter for 2-3x performance improvement.
+// It's 100% compatible with the standard library API.
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
+func bigIntToString(v *big.Int) string {
+	if v == nil {
+		return ""
+	}
+	return v.String()
+}
+
+func parseBigIntField(s, fieldName string) (*big.Int, error) {
+	if s == "" {
+		return nil, nil
+	}
+	val, err := parseBigInt(s)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", fieldName, err)
+	}
+	return val, nil
+}
+
+func parseBigInt(s string) (*big.Int, error) {
+	val, ok := new(big.Int).SetString(s, 10)
+	if ok {
+		return val, nil
+	}
+
+	if strings.Contains(s, "e") || strings.Contains(s, "E") {
+		f, _, err := big.ParseFloat(s, 10, 256, big.ToNearestEven)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse as float: %w", err)
+		}
+		result, _ := f.Int(nil)
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("invalid number format: %s", s)
+}
 
 type EVMBlock struct {
 	EVMChainID   *big.Int `json:"evmChainId,omitempty"`
@@ -94,6 +136,61 @@ type EVMLog struct {
 	BlockHash   common.Hash    `json:"blockHash"`
 	Index       uint           `json:"index"`
 	Removed     bool           `json:"removed"`
+}
+
+type evmBlockJSON struct {
+	EVMChainID   string  `json:"evmChainId,omitempty"`
+	BlockchainID *string `json:"blockchainId,omitempty"`
+	Number       string  `json:"number"`
+	Hash         string  `json:"hash"`
+	ParentHash   string  `json:"parentHash"`
+
+	StateRoot        string `json:"stateRoot"`
+	TransactionsRoot string `json:"transactionsRoot"`
+	ReceiptsRoot     string `json:"receiptsRoot"`
+	UncleHash        string `json:"sha3Uncles"`
+
+	Miner string `json:"miner"`
+
+	GasLimit uint64 `json:"gasLimit"`
+	GasUsed  uint64 `json:"gasUsed"`
+	BaseFee  string `json:"baseFeePerGas,omitempty"`
+
+	Timestamp      uint64 `json:"timestamp"`
+	TimestampMs    uint64 `json:"timestampMs,omitempty"`
+	MinDelayExcess uint64 `json:"minDelayExcess,omitempty"`
+	Size           uint64 `json:"size"`
+
+	Difficulty string `json:"difficulty"`
+	MixHash    string `json:"mixHash"`
+	Nonce      uint64 `json:"nonce"`
+
+	LogsBloom string `json:"logsBloom"`
+
+	ExtraData string `json:"extraData"`
+
+	ExcessBlobGas *uint64 `json:"excessBlobGas,omitempty"`
+	BlobGasUsed   *uint64 `json:"blobGasUsed,omitempty"`
+
+	ParentBeaconBlockRoot string `json:"parentBeaconBlockRoot,omitempty"`
+
+	Withdrawals  []*EVMWithdrawal  `json:"withdrawals"`
+	Transactions []*EVMTransaction `json:"transactions"`
+}
+
+type evmTransactionJSON struct {
+	Hash           string        `json:"hash"`
+	From           string        `json:"from"`
+	To             string        `json:"to"`
+	Nonce          uint64        `json:"nonce"`
+	Value          string        `json:"value,omitempty"`
+	Gas            uint64        `json:"gas"`
+	GasPrice       string        `json:"gasPrice,omitempty"`
+	MaxFeePerGas   string        `json:"maxFeePerGas,omitempty"`
+	MaxPriorityFee string        `json:"maxPriorityFeePerGas,omitempty"`
+	Input          string        `json:"input"`
+	Type           uint8         `json:"type"`
+	Receipt        *EVMTxReceipt `json:"receipt,omitempty"`
 }
 
 // EVMBlockFromLibevmCoreth converts a libevm coreth Block to a EVM Block.
@@ -280,112 +377,134 @@ func EVMLogsFromLibevm(logs []*libevmtypes.Log) []*EVMLog {
 	return logWrappers
 }
 
-func (b *EVMBlock) Marshal() ([]byte, error) {
-	// Convert big.Int fields to strings for JSON
-	type BlockAlias EVMBlock
-	alias := (*BlockAlias)(b)
+func (b *EVMBlock) MarshalJSON() ([]byte, error) {
+	alias := evmBlockJSON{
+		BlockchainID:          b.BlockchainID,
+		EVMChainID:            bigIntToString(b.EVMChainID),
+		Number:                bigIntToString(b.Number),
+		Hash:                  b.Hash,
+		ParentHash:            b.ParentHash,
+		StateRoot:             b.StateRoot,
+		TransactionsRoot:      b.TransactionsRoot,
+		ReceiptsRoot:          b.ReceiptsRoot,
+		UncleHash:             b.UncleHash,
+		Miner:                 b.Miner,
+		GasLimit:              b.GasLimit,
+		GasUsed:               b.GasUsed,
+		BaseFee:               bigIntToString(b.BaseFee),
+		Timestamp:             b.Timestamp,
+		TimestampMs:           b.TimestampMs,
+		MinDelayExcess:        b.MinDelayExcess,
+		Size:                  b.Size,
+		Difficulty:            bigIntToString(b.Difficulty),
+		MixHash:               b.MixHash,
+		Nonce:                 b.Nonce,
+		LogsBloom:             b.LogsBloom,
+		ExtraData:             b.ExtraData,
+		ExcessBlobGas:         b.ExcessBlobGas,
+		BlobGasUsed:           b.BlobGasUsed,
+		ParentBeaconBlockRoot: b.ParentBeaconBlockRoot,
+		Withdrawals:           b.Withdrawals,
+		Transactions:          b.Transactions,
+	}
 
-	// Create a map and manually convert big.Int to strings
-	result := make(map[string]interface{})
-	data, err := json.Marshal(alias)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-
-	// Convert big.Int fields to strings
-	if b.EVMChainID != nil {
-		result["evmChainId"] = b.EVMChainID.String()
-	}
-	if b.Number != nil {
-		result["number"] = b.Number.String()
-	}
-	if b.BaseFee != nil {
-		result["baseFeePerGas"] = b.BaseFee.String()
-	}
-	if b.Difficulty != nil {
-		result["difficulty"] = b.Difficulty.String()
-	}
-
-	return json.Marshal(result)
+	return json.Marshal(alias)
 }
 
-func (b *EVMBlock) Unmarshal(data []byte) error {
-	// Use a map to handle big.Int fields as strings
-	var raw map[string]interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
+func (b *EVMBlock) UnmarshalJSON(data []byte) error {
+	var alias evmBlockJSON
+	if err := json.Unmarshal(data, &alias); err != nil {
 		return err
 	}
 
-	// Remove big.Int fields from raw map temporarily and convert them
-	var evmChainIDStr string
-	if val, ok := raw["evmChainId"]; ok {
-		if str, ok := val.(string); ok {
-			evmChainIDStr = str
-		}
-	}
-	numberStr, _ := raw["number"].(string)
-	baseFeeStr, _ := raw["baseFeePerGas"].(string)
-	difficultyStr, _ := raw["difficulty"].(string)
+	b.BlockchainID = alias.BlockchainID
+	b.Hash = alias.Hash
+	b.ParentHash = alias.ParentHash
+	b.StateRoot = alias.StateRoot
+	b.TransactionsRoot = alias.TransactionsRoot
+	b.ReceiptsRoot = alias.ReceiptsRoot
+	b.UncleHash = alias.UncleHash
+	b.Miner = alias.Miner
+	b.GasLimit = alias.GasLimit
+	b.GasUsed = alias.GasUsed
+	b.Timestamp = alias.Timestamp
+	b.TimestampMs = alias.TimestampMs
+	b.MinDelayExcess = alias.MinDelayExcess
+	b.Size = alias.Size
+	b.MixHash = alias.MixHash
+	b.Nonce = alias.Nonce
+	b.LogsBloom = alias.LogsBloom
+	b.ExtraData = alias.ExtraData
+	b.ExcessBlobGas = alias.ExcessBlobGas
+	b.BlobGasUsed = alias.BlobGasUsed
+	b.ParentBeaconBlockRoot = alias.ParentBeaconBlockRoot
+	b.Withdrawals = alias.Withdrawals
+	b.Transactions = alias.Transactions
 
-	// Remove these fields so they don't cause unmarshal errors
-	delete(raw, "evmChainId")
-	delete(raw, "number")
-	delete(raw, "baseFeePerGas")
-	delete(raw, "difficulty")
-
-	// Unmarshal everything else
-	type BlockAlias EVMBlock
-	var alias BlockAlias
-	aliasData, _ := json.Marshal(raw)
-	if err := json.Unmarshal(aliasData, &alias); err != nil {
+	var err error
+	if b.EVMChainID, err = parseBigIntField(alias.EVMChainID, "evmChainId"); err != nil {
 		return err
 	}
-	*b = EVMBlock(alias)
-
-	// Handle big.Int fields manually
-	if evmChainIDStr != "" {
-		val, ok := new(big.Int).SetString(evmChainIDStr, 10)
-		if ok {
-			b.EVMChainID = val
-		}
+	if b.Number, err = parseBigIntField(alias.Number, "number"); err != nil {
+		return err
 	}
-	if numberStr != "" {
-		val, ok := new(big.Int).SetString(numberStr, 10)
-		if ok {
-			b.Number = val
-		}
+	if b.BaseFee, err = parseBigIntField(alias.BaseFee, "baseFeePerGas"); err != nil {
+		return err
 	}
-	if baseFeeStr != "" {
-		val, ok := new(big.Int).SetString(baseFeeStr, 10)
-		if ok {
-			b.BaseFee = val
-		}
-	}
-	if difficultyStr != "" {
-		val, ok := new(big.Int).SetString(difficultyStr, 10)
-		if ok {
-			b.Difficulty = val
-		}
+	if b.Difficulty, err = parseBigIntField(alias.Difficulty, "difficulty"); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (t *EVMTransaction) Marshal() ([]byte, error) {
-	return json.Marshal(t)
+func (t *EVMTransaction) MarshalJSON() ([]byte, error) {
+	alias := evmTransactionJSON{
+		Hash:           t.Hash,
+		From:           t.From,
+		To:             t.To,
+		Nonce:          t.Nonce,
+		Value:          bigIntToString(t.Value),
+		Gas:            t.Gas,
+		GasPrice:       bigIntToString(t.GasPrice),
+		MaxFeePerGas:   bigIntToString(t.MaxFeePerGas),
+		MaxPriorityFee: bigIntToString(t.MaxPriorityFee),
+		Input:          t.Input,
+		Type:           t.Type,
+		Receipt:        t.Receipt,
+	}
+
+	return json.Marshal(alias)
 }
 
-func (t *EVMTransaction) Unmarshal(data []byte) error {
-	return json.Unmarshal(data, t)
-}
+func (t *EVMTransaction) UnmarshalJSON(data []byte) error {
+	var alias evmTransactionJSON
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
 
-func (w *EVMWithdrawal) Marshal() ([]byte, error) {
-	return json.Marshal(w)
-}
+	t.Hash = alias.Hash
+	t.From = alias.From
+	t.To = alias.To
+	t.Nonce = alias.Nonce
+	t.Gas = alias.Gas
+	t.Input = alias.Input
+	t.Type = alias.Type
+	t.Receipt = alias.Receipt
 
-func (w *EVMWithdrawal) Unmarshal(data []byte) error {
-	return json.Unmarshal(data, w)
+	var err error
+	if t.Value, err = parseBigIntField(alias.Value, "value"); err != nil {
+		return err
+	}
+	if t.GasPrice, err = parseBigIntField(alias.GasPrice, "gasPrice"); err != nil {
+		return err
+	}
+	if t.MaxFeePerGas, err = parseBigIntField(alias.MaxFeePerGas, "maxFeePerGas"); err != nil {
+		return err
+	}
+	if t.MaxPriorityFee, err = parseBigIntField(alias.MaxPriorityFee, "maxPriorityFeePerGas"); err != nil {
+		return err
+	}
+
+	return nil
 }

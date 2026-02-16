@@ -29,7 +29,7 @@ func FuzzEVMBlockUnmarshal(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		block := &EVMBlock{}
 		// Should never panic, only return errors for invalid input
-		_ = block.Unmarshal(data)
+		_ = json.Unmarshal(data, &block)
 	})
 }
 
@@ -48,7 +48,7 @@ func FuzzEVMTransactionUnmarshal(f *testing.F) {
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		tx := &EVMTransaction{}
-		_ = tx.Unmarshal(data)
+		_ = json.Unmarshal(data, &tx)
 	})
 }
 
@@ -65,7 +65,7 @@ func FuzzEVMWithdrawalUnmarshal(f *testing.F) {
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		w := &EVMWithdrawal{}
-		_ = w.Unmarshal(data)
+		_ = json.Unmarshal(data, &w)
 	})
 }
 
@@ -77,9 +77,9 @@ func FuzzEVMBlockMarshalRoundtrip(f *testing.F) {
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		block := &EVMBlock{}
-		if err := block.Unmarshal(data); err == nil {
+		if err := json.Unmarshal(data, block); err == nil {
 			// If unmarshal succeeded, marshal should not panic
-			_, _ = block.Marshal()
+			_, _ = json.Marshal(block)
 		}
 	})
 }

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -58,13 +59,13 @@ func NewCorethWorker(
 func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 	cw.log.Debugw("worker starting block processing", "height", height)
 
-	corethBlock, err := cw.GetBlock(ctx, height)
+	evmBlock, err := cw.GetBlock(ctx, height)
 	if err != nil {
 		return fmt.Errorf("fetch block failed %d: %w", height, err)
 	}
 
-	cw.log.Debugw("block fetched, serializing", "height", height, "txs", len(corethBlock.Transactions))
-	bytes, err := corethBlock.Marshal()
+	cw.log.Debugw("block fetched, serializing", "height", height, "txs", len(evmBlock.Transactions))
+	bytes, err := json.Marshal(evmBlock)
 	if err != nil {
 		return fmt.Errorf("serialize block failed %d: %w", height, err)
 	}
@@ -74,7 +75,7 @@ func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 	err = cw.producer.Produce(ctx, kafka.Msg{
 		Topic: cw.topic,
 		Value: bytes,
-		Key:   []byte(corethBlock.Number.String()),
+		Key:   []byte(evmBlock.Number.String()),
 	})
 	if err != nil {
 		return fmt.Errorf("produce block failed %d: %w", height, err)
@@ -82,9 +83,9 @@ func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 	cw.log.Debugw("kafka produce completed", "height", height, "duration_ms", time.Since(produceStart).Milliseconds())
 
 	cw.log.Debugw("processed block",
-		"height", corethBlock.Number.Uint64(),
-		"hash", corethBlock.Hash,
-		"txs", len(corethBlock.Transactions),
+		"height", evmBlock.Number.Uint64(),
+		"hash", evmBlock.Hash,
+		"txs", len(evmBlock.Transactions),
 	)
 
 	return nil

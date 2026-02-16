@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -210,7 +211,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 				kafkaByNumber[n] = e.Value
 				// decode once to help ClickHouse verification
 				var blk kafkamsg.EVMBlock
-				require.NoError(t, blk.Unmarshal(e.Value), "decode kafka block %d", n)
+				require.NoError(t, json.Unmarshal(e.Value, blk), "decode kafka block %d", n)
 				kafkaBlocks[n] = blk
 			}
 			received++

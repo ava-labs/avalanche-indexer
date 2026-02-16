@@ -1,8 +1,8 @@
 package messages
 
 import (
-	"encoding/json"
 	"math/big"
+	"strings"
 	"sync"
 	"testing"
 
@@ -15,6 +15,8 @@ import (
 
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 )
+
+// Note: json variable is declared in evm.go and shared across the package
 
 var (
 	// testPrivateKey is a deterministic key for testing.
@@ -484,12 +486,12 @@ func TestEVMBlock_MarshalUnmarshal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			data, err := tt.block.Marshal()
+			data, err := json.Marshal(tt.block)
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
 			var got EVMBlock
-			err = got.Unmarshal(data)
+			err = json.Unmarshal(data, &got)
 			require.NoError(t, err)
 
 			// Verify round-trip
@@ -551,12 +553,12 @@ func TestEVMTransaction_MarshalUnmarshal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			data, err := tt.tx.Marshal()
+			data, err := json.Marshal(tt.tx)
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
 			var got EVMTransaction
-			err = got.Unmarshal(data)
+			err = json.Unmarshal(data, &got)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.tx.Hash, got.Hash)
@@ -603,12 +605,12 @@ func TestEVMWithdrawal_MarshalUnmarshal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			data, err := tt.withdrawal.Marshal()
+			data, err := json.Marshal(tt.withdrawal)
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
 			var got EVMWithdrawal
-			err = got.Unmarshal(data)
+			err = json.Unmarshal(data, &got)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.withdrawal.Index, got.Index)
@@ -748,4 +750,258 @@ func TestEVMWithdrawal_JSONTags(t *testing.T) {
 // ptrUint64 returns a pointer to the given uint64 value.
 func ptrUint64(v uint64) *uint64 {
 	return &v
+}
+
+// TestEVMTransaction_UnmarshalScientificNotation tests that EVMTransaction can unmarshal
+// big.Int fields from both decimal strings and scientific notation (e.g., "1e+21").
+func TestEVMTransaction_UnmarshalScientificNotation(t *testing.T) {
+	tests := []struct {
+		name     string
+		json     string
+		expected *big.Int
+	}{
+		{
+			name:     "decimal_string",
+			json:     `{"hash":"0x123","from":"0x456","to":"0x789","nonce":1,"value":"1000000000000000000","gas":21000,"gasPrice":"1000000000","input":"0x","type":0}`,
+			expected: big.NewInt(1000000000000000000),
+		},
+		{
+			name:     "scientific_notation_1e18",
+			json:     `{"hash":"0x123","from":"0x456","to":"0x789","nonce":1,"value":"1e+18","gas":21000,"gasPrice":"1000000000","input":"0x","type":0}`,
+			expected: big.NewInt(1000000000000000000),
+		},
+		{
+			name:     "scientific_notation_1e21",
+			json:     `{"hash":"0x123","from":"0x456","to":"0x789","nonce":1,"value":"1e+21","gas":21000,"gasPrice":"1000000000","input":"0x","type":0}`,
+			expected: new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(1000)),
+		},
+		{
+			name:     "large_decimal",
+			json:     `{"hash":"0x123","from":"0x456","to":"0x789","nonce":1,"value":"999999999999999999999999","gas":21000,"gasPrice":"1000000000","input":"0x","type":0}`,
+			expected: func() *big.Int { v, _ := new(big.Int).SetString("999999999999999999999999", 10); return v }(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var tx EVMTransaction
+			err := json.Unmarshal([]byte(tt.json), &tx)
+			require.NoError(t, err, "Unmarshal should succeed")
+			require.NotNil(t, tx.Value, "Value should not be nil")
+			assert.Equal(t, tt.expected.String(), tx.Value.String(), "Value should match expected")
+		})
+	}
+}
+
+// TestEVMTransaction_MarshalUnmarshal_RoundTrip tests that Marshal and Unmarshal
+// are inverse operations, preserving big.Int values through the round trip.
+func TestEVMTransaction_MarshalUnmarshal_RoundTrip(t *testing.T) {
+	original := &EVMTransaction{
+		Hash:           "0xabcdef1234567890",
+		From:           "0x1111111111111111111111111111111111111111",
+		To:             "0x2222222222222222222222222222222222222222",
+		Nonce:          42,
+		Value:          big.NewInt(1000000000000000000), // 1 ETH
+		Gas:            21000,
+		GasPrice:       big.NewInt(50000000000), // 50 Gwei
+		MaxFeePerGas:   big.NewInt(100000000000),
+		MaxPriorityFee: big.NewInt(2000000000),
+		Input:          "0x123456",
+		Type:           2,
+	}
+
+	// Marshal
+	data, err := json.Marshal(original)
+	require.NoError(t, err, "Marshal should succeed")
+
+	// Verify JSON contains string representations (not scientific notation)
+	jsonStr := string(data)
+	assert.Contains(t, jsonStr, `"value":"1000000000000000000"`)
+	assert.Contains(t, jsonStr, `"gasPrice":"50000000000"`)
+	assert.False(t, strings.Contains(jsonStr, "e+"), "Should not contain scientific notation")
+
+	// Unmarshal
+	var parsed EVMTransaction
+	err = json.Unmarshal(data, &parsed)
+	require.NoError(t, err, "Unmarshal should succeed")
+
+	// Verify all big.Int fields are preserved
+	assert.Equal(t, original.Value.String(), parsed.Value.String(), "Value should be preserved")
+	assert.Equal(t, original.GasPrice.String(), parsed.GasPrice.String(), "GasPrice should be preserved")
+	assert.Equal(t, original.MaxFeePerGas.String(), parsed.MaxFeePerGas.String(), "MaxFeePerGas should be preserved")
+	assert.Equal(t, original.MaxPriorityFee.String(), parsed.MaxPriorityFee.String(), "MaxPriorityFee should be preserved")
+
+	// Verify other fields
+	assert.Equal(t, original.Hash, parsed.Hash)
+	assert.Equal(t, original.From, parsed.From)
+	assert.Equal(t, original.To, parsed.To)
+	assert.Equal(t, original.Nonce, parsed.Nonce)
+	assert.Equal(t, original.Gas, parsed.Gas)
+	assert.Equal(t, original.Input, parsed.Input)
+	assert.Equal(t, original.Type, parsed.Type)
+}
+
+// TestEVMTransaction_MarshalNoScientificNotation verifies that Marshal always
+// outputs decimal strings and never scientific notation, even for very large numbers.
+func TestEVMTransaction_MarshalNoScientificNotation(t *testing.T) {
+	tests := []struct {
+		name          string
+		tx            *EVMTransaction
+		expectedValue string // Expected decimal string in JSON
+	}{
+		{
+			name: "1e18_one_ether",
+			tx: &EVMTransaction{
+				Hash:  "0x1",
+				From:  "0x2",
+				To:    "0x3",
+				Nonce: 1,
+				Value: big.NewInt(1000000000000000000), // 1e18
+				Gas:   21000,
+				Input: "0x",
+				Type:  0,
+			},
+			expectedValue: "1000000000000000000",
+		},
+		{
+			name: "1e21_very_large_value",
+			tx: &EVMTransaction{
+				Hash:  "0x1",
+				From:  "0x2",
+				To:    "0x3",
+				Nonce: 1,
+				Value: new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(1000)), // 1e21
+				Gas:   21000,
+				Input: "0x",
+				Type:  0,
+			},
+			expectedValue: "1000000000000000000000",
+		},
+		{
+			name: "1e30_extremely_large_value",
+			tx: &EVMTransaction{
+				Hash:  "0x1",
+				From:  "0x2",
+				To:    "0x3",
+				Nonce: 1,
+				Value: func() *big.Int {
+					v := new(big.Int)
+					v.SetString("1000000000000000000000000000000", 10) // 1e30
+					return v
+				}(),
+				Gas:   21000,
+				Input: "0x",
+				Type:  0,
+			},
+			expectedValue: "1000000000000000000000000000000",
+		},
+		{
+			name: "all_bigint_fields_large",
+			tx: &EVMTransaction{
+				Hash:  "0x1",
+				From:  "0x2",
+				To:    "0x3",
+				Nonce: 1,
+				Value: func() *big.Int {
+					v := new(big.Int)
+					v.SetString("999999999999999999999999", 10)
+					return v
+				}(),
+				Gas: 21000,
+				GasPrice: func() *big.Int {
+					v := new(big.Int)
+					v.SetString("500000000000000000000", 10) // 5e20
+					return v
+				}(),
+				MaxFeePerGas: func() *big.Int {
+					v := new(big.Int)
+					v.SetString("1000000000000000000000", 10) // 1e21
+					return v
+				}(),
+				MaxPriorityFee: func() *big.Int {
+					v := new(big.Int)
+					v.SetString("100000000000000000000", 10) // 1e20
+					return v
+				}(),
+				Input: "0x",
+				Type:  2,
+			},
+			expectedValue: "999999999999999999999999",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Marshal
+			data, err := json.Marshal(tt.tx)
+			require.NoError(t, err, "Marshal should succeed")
+
+			jsonStr := string(data)
+
+			// Verify no scientific notation anywhere in the JSON
+			assert.False(t, strings.Contains(jsonStr, "e+"), "JSON should not contain 'e+' (scientific notation)")
+			assert.False(t, strings.Contains(jsonStr, "E+"), "JSON should not contain 'E+' (scientific notation)")
+			assert.False(t, strings.Contains(jsonStr, "e-"), "JSON should not contain 'e-' (scientific notation)")
+			assert.False(t, strings.Contains(jsonStr, "E-"), "JSON should not contain 'E-' (scientific notation)")
+
+			// Verify the exact decimal string is present for Value
+			assert.Contains(t, jsonStr, `"value":"`+tt.expectedValue+`"`,
+				"JSON should contain exact decimal value string")
+
+			// Verify all big.Int fields are strings (not numbers)
+			var m map[string]interface{}
+			err = json.Unmarshal(data, &m)
+			require.NoError(t, err, "Should unmarshal to map")
+
+			if tt.tx.Value != nil {
+				valueField, ok := m["value"]
+				require.True(t, ok, "value field should exist")
+				_, isString := valueField.(string)
+				assert.True(t, isString, "value field should be a string, not a number")
+			}
+
+			if tt.tx.GasPrice != nil {
+				gasPriceField, ok := m["gasPrice"]
+				require.True(t, ok, "gasPrice field should exist")
+				_, isString := gasPriceField.(string)
+				assert.True(t, isString, "gasPrice field should be a string, not a number")
+			}
+
+			if tt.tx.MaxFeePerGas != nil {
+				maxFeeField, ok := m["maxFeePerGas"]
+				require.True(t, ok, "maxFeePerGas field should exist")
+				_, isString := maxFeeField.(string)
+				assert.True(t, isString, "maxFeePerGas field should be a string, not a number")
+			}
+
+			if tt.tx.MaxPriorityFee != nil {
+				maxPriorityField, ok := m["maxPriorityFeePerGas"]
+				require.True(t, ok, "maxPriorityFeePerGas field should exist")
+				_, isString := maxPriorityField.(string)
+				assert.True(t, isString, "maxPriorityFeePerGas field should be a string, not a number")
+			}
+
+			// Verify round-trip: unmarshal and compare
+			var parsed EVMTransaction
+			err = json.Unmarshal(data, &parsed)
+			require.NoError(t, err, "Unmarshal should succeed")
+
+			if tt.tx.Value != nil {
+				assert.Equal(t, tt.tx.Value.String(), parsed.Value.String(),
+					"Value should be preserved through round-trip")
+			}
+			if tt.tx.GasPrice != nil {
+				assert.Equal(t, tt.tx.GasPrice.String(), parsed.GasPrice.String(),
+					"GasPrice should be preserved through round-trip")
+			}
+			if tt.tx.MaxFeePerGas != nil {
+				assert.Equal(t, tt.tx.MaxFeePerGas.String(), parsed.MaxFeePerGas.String(),
+					"MaxFeePerGas should be preserved through round-trip")
+			}
+			if tt.tx.MaxPriorityFee != nil {
+				assert.Equal(t, tt.tx.MaxPriorityFee.String(), parsed.MaxPriorityFee.String(),
+					"MaxPriorityFee should be preserved through round-trip")
+			}
+		})
+	}
 }

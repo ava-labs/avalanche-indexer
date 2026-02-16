@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -61,7 +62,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	}
 
 	var block kafkamsg.EVMBlock
-	if err := block.Unmarshal(msg.Value); err != nil {
+	if err := json.Unmarshal(msg.Value, &block); err != nil {
 		p.metrics.IncError("coreth_unmarshal_error")
 		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
 	}

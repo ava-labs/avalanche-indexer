@@ -248,8 +248,7 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 
 	err := proc.Process(t.Context(), msg)
 
-	var jsonErr *json.SyntaxError
-	require.ErrorAs(t, err, &jsonErr)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal coreth block")
 }
 

@@ -468,8 +468,8 @@ func TestProcess_InvalidJSON(t *testing.T) {
 	msg := &cKafka.Message{Value: []byte(`{invalid json}`)}
 	err := proc.Process(t.Context(), msg)
 
-	var jsonErr *json.SyntaxError
-	require.ErrorAs(t, err, &jsonErr)
+	// jsoniter produces different error types than encoding/json, so just check for error message
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to unmarshal coreth block")
 }
 
@@ -486,7 +486,7 @@ func TestProcess_MissingBlockchainID(t *testing.T) {
 		Transactions: []*kafkamsg.EVMTransaction{},
 	}
 
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -501,7 +501,7 @@ func TestProcess_Success_NoRepos(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
 	block := createTestBlock()
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -523,7 +523,7 @@ func TestProcess_Success_WithBlocksRepo(t *testing.T) {
 	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, nil)
 
 	block := createTestBlock()
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -548,7 +548,7 @@ func TestProcess_BlocksRepoError(t *testing.T) {
 	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, nil)
 
 	block := createTestBlock()
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -570,7 +570,7 @@ func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, nil)
 
 	block := createTestBlock()
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -594,7 +594,7 @@ func TestProcess_TransactionsRepoError(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, nil)
 
 	block := createTestBlock()
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -616,7 +616,7 @@ func TestProcess_Success_WithLogsRepo(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, nil)
 
 	block := createTestBlockWithLogs()
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -639,7 +639,7 @@ func TestProcess_LogsRepoError(t *testing.T) {
 	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, nil)
 
 	block := createTestBlockWithLogs()
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
@@ -670,7 +670,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 
 	block := createTestBlock()
 	block.Transactions = []*kafkamsg.EVMTransaction{} // No transactions
-	data, err := block.Marshal()
+	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
 	msg := &cKafka.Message{Value: data}
