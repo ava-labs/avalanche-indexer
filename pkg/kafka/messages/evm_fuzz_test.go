@@ -29,7 +29,7 @@ func FuzzEVMBlockUnmarshal(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		block := &EVMBlock{}
 		// Should never panic, only return errors for invalid input
-		_ = json.Unmarshal(data, &block)
+		_ = jsonIter.Unmarshal(data, &block)
 	})
 }
 
@@ -47,8 +47,8 @@ func FuzzEVMTransactionUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"gas": 999999999999999999}`))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		tx := &EVMTransaction{}
-		_ = json.Unmarshal(data, &tx)
+		var tx EVMTransaction
+		_ = jsonIter.Unmarshal(data, &tx)
 	})
 }
 
@@ -64,8 +64,8 @@ func FuzzEVMWithdrawalUnmarshal(f *testing.F) {
 	f.Add([]byte(`{"amount": 999999999999999999999999}`))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		w := &EVMWithdrawal{}
-		_ = json.Unmarshal(data, &w)
+		var w EVMWithdrawal
+		_ = jsonIter.Unmarshal(data, &w)
 	})
 }
 
@@ -76,10 +76,10 @@ func FuzzEVMBlockMarshalRoundtrip(f *testing.F) {
 	f.Add([]byte(`{"evmChainId": "43114", "number": "1000000"}`))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		block := &EVMBlock{}
-		if err := json.Unmarshal(data, block); err == nil {
+		var block EVMBlock
+		if err := jsonIter.Unmarshal(data, &block); err == nil {
 			// If unmarshal succeeded, marshal should not panic
-			_, _ = json.Marshal(block)
+			_, _ = jsonIter.Marshal(block)
 		}
 	})
 }

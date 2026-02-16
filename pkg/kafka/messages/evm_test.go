@@ -485,12 +485,12 @@ func TestEVMBlock_MarshalUnmarshal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			data, err := json.Marshal(tt.block)
+			data, err := jsonIter.Marshal(tt.block)
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
 			var got EVMBlock
-			err = json.Unmarshal(data, &got)
+			err = jsonIter.Unmarshal(data, &got)
 			require.NoError(t, err)
 
 			// Verify round-trip
@@ -552,12 +552,12 @@ func TestEVMTransaction_MarshalUnmarshal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			data, err := json.Marshal(tt.tx)
+			data, err := jsonIter.Marshal(tt.tx)
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
 			var got EVMTransaction
-			err = json.Unmarshal(data, &got)
+			err = jsonIter.Unmarshal(data, &got)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.tx.Hash, got.Hash)
@@ -604,12 +604,12 @@ func TestEVMWithdrawal_MarshalUnmarshal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			data, err := json.Marshal(tt.withdrawal)
+			data, err := jsonIter.Marshal(tt.withdrawal)
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
 
 			var got EVMWithdrawal
-			err = json.Unmarshal(data, &got)
+			err = jsonIter.Unmarshal(data, &got)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.withdrawal.Index, got.Index)
@@ -655,11 +655,11 @@ func TestEVMBlock_JSONTags(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(block)
+	data, err := jsonIter.Marshal(block)
 	require.NoError(t, err)
 
 	var m map[string]interface{}
-	err = json.Unmarshal(data, &m)
+	err = jsonIter.Unmarshal(data, &m)
 	require.NoError(t, err)
 
 	// Verify JSON field names match expected tags
@@ -705,11 +705,11 @@ func TestEVMTransaction_JSONTags(t *testing.T) {
 		Type:           2,
 	}
 
-	data, err := json.Marshal(tx)
+	data, err := jsonIter.Marshal(tx)
 	require.NoError(t, err)
 
 	var m map[string]interface{}
-	err = json.Unmarshal(data, &m)
+	err = jsonIter.Unmarshal(data, &m)
 	require.NoError(t, err)
 
 	expectedFields := []string{
@@ -732,11 +732,11 @@ func TestEVMWithdrawal_JSONTags(t *testing.T) {
 		Amount:         1000,
 	}
 
-	data, err := json.Marshal(w)
+	data, err := jsonIter.Marshal(w)
 	require.NoError(t, err)
 
 	var m map[string]interface{}
-	err = json.Unmarshal(data, &m)
+	err = jsonIter.Unmarshal(data, &m)
 	require.NoError(t, err)
 
 	expectedFields := []string{"index", "validatorIndex", "address", "amount"}
@@ -784,10 +784,56 @@ func TestEVMTransaction_UnmarshalScientificNotation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var tx EVMTransaction
-			err := json.Unmarshal([]byte(tt.json), &tx)
+			err := jsonIter.Unmarshal([]byte(tt.json), &tx)
 			require.NoError(t, err, "Unmarshal should succeed")
 			require.NotNil(t, tx.Value, "Value should not be nil")
 			assert.Equal(t, tt.expected.String(), tx.Value.String(), "Value should match expected")
+		})
+	}
+}
+
+// TestEVMTransaction_UnmarshalUnquotedNumbers tests that Unmarshal can handle
+// both unquoted JSON numbers (including scientific notation) and quoted strings.
+func TestEVMTransaction_UnmarshalUnquotedNumbers(t *testing.T) {
+	tests := []struct {
+		name     string
+		json     string
+		expected string
+	}{
+		{
+			name:     "unquoted_scientific_notation",
+			json:     `{"value": 1e+21, "gasPrice": 5e+10}`,
+			expected: "1000000000000000000000",
+		},
+		{
+			name:     "unquoted_large_number",
+			json:     `{"value": 1000000000000000000}`,
+			expected: "1000000000000000000",
+		},
+		{
+			name:     "quoted_scientific_notation",
+			json:     `{"value": "1e+21"}`,
+			expected: "1000000000000000000000",
+		},
+		{
+			name:     "quoted_decimal_string",
+			json:     `{"value": "1000000000000000000"}`,
+			expected: "1000000000000000000",
+		},
+		{
+			name:     "mixed_quoted_and_unquoted",
+			json:     `{"value": 1e+21, "gasPrice": "50000000000"}`,
+			expected: "1000000000000000000000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var tx EVMTransaction
+			err := jsonIter.Unmarshal([]byte(tt.json), &tx)
+			require.NoError(t, err, "Unmarshal should succeed for %s", tt.name)
+			require.NotNil(t, tx.Value, "Value should not be nil")
+			assert.Equal(t, tt.expected, tx.Value.String(), "Value should match expected")
 		})
 	}
 }
@@ -810,7 +856,7 @@ func TestEVMTransaction_MarshalUnmarshal_RoundTrip(t *testing.T) {
 	}
 
 	// Marshal
-	data, err := json.Marshal(original)
+	data, err := jsonIter.Marshal(original)
 	require.NoError(t, err, "Marshal should succeed")
 
 	// Verify JSON contains string representations (not scientific notation)
@@ -821,7 +867,7 @@ func TestEVMTransaction_MarshalUnmarshal_RoundTrip(t *testing.T) {
 
 	// Unmarshal
 	var parsed EVMTransaction
-	err = json.Unmarshal(data, &parsed)
+	err = jsonIter.Unmarshal(data, &parsed)
 	require.NoError(t, err, "Unmarshal should succeed")
 
 	// Verify all big.Int fields are preserved
@@ -932,7 +978,7 @@ func TestEVMTransaction_MarshalNoScientificNotation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Marshal
-			data, err := json.Marshal(tt.tx)
+			data, err := jsonIter.Marshal(tt.tx)
 			require.NoError(t, err, "Marshal should succeed")
 
 			jsonStr := string(data)
@@ -949,7 +995,7 @@ func TestEVMTransaction_MarshalNoScientificNotation(t *testing.T) {
 
 			// Verify all big.Int fields are strings (not numbers)
 			var m map[string]interface{}
-			err = json.Unmarshal(data, &m)
+			err = jsonIter.Unmarshal(data, &m)
 			require.NoError(t, err, "Should unmarshal to map")
 
 			if tt.tx.Value != nil {
@@ -982,7 +1028,7 @@ func TestEVMTransaction_MarshalNoScientificNotation(t *testing.T) {
 
 			// Verify round-trip: unmarshal and compare
 			var parsed EVMTransaction
-			err = json.Unmarshal(data, &parsed)
+			err = jsonIter.Unmarshal(data, &parsed)
 			require.NoError(t, err, "Unmarshal should succeed")
 
 			if tt.tx.Value != nil {

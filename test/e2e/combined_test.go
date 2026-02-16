@@ -211,7 +211,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 				kafkaByNumber[n] = e.Value
 				// decode once to help ClickHouse verification
 				var blk kafkamsg.EVMBlock
-				require.NoError(t, json.Unmarshal(e.Value, blk), "decode kafka block %d", n)
+				require.NoError(t, json.Unmarshal(e.Value, &blk), "decode kafka block %d", n)
 				kafkaBlocks[n] = blk
 			}
 			received++

@@ -3,6 +3,7 @@
 package messages
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -13,53 +14,74 @@ import (
 	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
-	jsoniter "github.com/json-iterator/go"
+	jsonIterator "github.com/json-iterator/go"
 )
 
-// json is a drop-in replacement for encoding/json using jsoniter for 2-3x performance improvement.
+// jsonIter is a drop-in replacement for encoding/jsonIter using jsoniter for 2-3x performance improvement.
 // It's 100% compatible with the standard library API.
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var jsonIter = jsonIterator.ConfigCompatibleWithStandardLibrary
 
-// bigIntToString converts a *big.Int to its decimal string representation.
-// Returns empty string if the input is nil, ensuring safe JSON marshaling.
-func bigIntToString(v *big.Int) string {
+// bigIntToRawJSON converts a *big.Int to encodingjson.RawMessage as a quoted decimal string.
+// Returns empty quoted string for nil values.
+func bigIntToRawJSON(v *big.Int) json.RawMessage {
 	if v == nil {
-		return ""
+		return json.RawMessage(`""`)
 	}
-	return v.String()
+	return json.RawMessage(`"` + v.String() + `"`)
 }
 
-// parseBigIntField parses a string into *big.Int with field name context for error messages.
-// Returns nil for empty strings, supporting optional JSON fields.
-func parseBigIntField(s, fieldName string) (*big.Int, error) {
-	if s == "" {
+// parseBigIntFromRaw parses encodingjson.RawMessage into *big.Int, accepting both JSON strings and numbers.
+// Handles unquoted numbers (e.g., 1e+21, 1000000000000000000) and quoted strings (e.g., "1e+21", "1000000000000000000").
+// Returns nil for empty/null RawMessage.
+func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error) {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == `""` {
 		return nil, nil
 	}
-	val, err := parseBigInt(s)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", fieldName, err)
+
+	// Try as string first (e.g., "1000000000000000000" or "1e+21")
+	if raw[0] == '"' {
+		var s string
+		if err := jsonIter.Unmarshal(raw, &s); err != nil {
+			return nil, fmt.Errorf("failed to parse %s as string: %w", fieldName, err)
+		}
+		if s == "" {
+			return nil, nil
+		}
+		return parseBigIntFromString(s, fieldName)
 	}
-	return val, nil
+
+	// Try as JSON number (e.g., 1000000000000000000 or 1e+21)
+	var f float64
+	if err := jsonIter.Unmarshal(raw, &f); err != nil {
+		return nil, fmt.Errorf("failed to parse %s as number: %w", fieldName, err)
+	}
+
+	// Convert float to big.Int using big.Float for precision
+	bf := big.NewFloat(f)
+	bf.SetPrec(256) // High precision
+	result, _ := bf.Int(nil)
+	return result, nil
 }
 
-// parseBigInt parses a string into *big.Int, supporting both decimal and scientific notation.
-// Handles legacy Kafka messages that may contain scientific notation (e.g., "1e+21").
-func parseBigInt(s string) (*big.Int, error) {
+// parseBigIntFromString parses a string into *big.Int, supporting both decimal and scientific notation.
+func parseBigIntFromString(s, fieldName string) (*big.Int, error) {
+	// Try direct parsing first (handles decimal strings)
 	val, ok := new(big.Int).SetString(s, 10)
 	if ok {
 		return val, nil
 	}
 
+	// Handle scientific notation (e.g., "1e+21", "1.5e18")
 	if strings.Contains(s, "e") || strings.Contains(s, "E") {
 		f, _, err := big.ParseFloat(s, 10, 256, big.ToNearestEven)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse as float: %w", err)
+			return nil, fmt.Errorf("failed to parse %s as float: %w", fieldName, err)
 		}
 		result, _ := f.Int(nil)
 		return result, nil
 	}
 
-	return nil, fmt.Errorf("invalid number format: %s", s)
+	return nil, fmt.Errorf("invalid number format for %s: %s", fieldName, s)
 }
 
 type EVMBlock struct {
@@ -144,14 +166,14 @@ type EVMLog struct {
 }
 
 // evmBlockJSON is the JSON wire format for EVMBlock.
-// Uses string representations for *big.Int fields to ensure decimal encoding
-// and prevent scientific notation in marshaled output.
+// Uses encodingjson.RawMessage for *big.Int fields to accept both JSON strings and numbers (including
+// scientific notation like 1e+21) during unmarshaling, while always marshaling to decimal strings.
 type evmBlockJSON struct {
-	EVMChainID   string  `json:"evmChainId,omitempty"`
-	BlockchainID *string `json:"blockchainId,omitempty"`
-	Number       string  `json:"number"`
-	Hash         string  `json:"hash"`
-	ParentHash   string  `json:"parentHash"`
+	EVMChainID   json.RawMessage `json:"evmChainId,omitempty"`
+	BlockchainID *string         `json:"blockchainId,omitempty"`
+	Number       json.RawMessage `json:"number"`
+	Hash         string          `json:"hash"`
+	ParentHash   string          `json:"parentHash"`
 
 	StateRoot        string `json:"stateRoot"`
 	TransactionsRoot string `json:"transactionsRoot"`
@@ -160,18 +182,18 @@ type evmBlockJSON struct {
 
 	Miner string `json:"miner"`
 
-	GasLimit uint64 `json:"gasLimit"`
-	GasUsed  uint64 `json:"gasUsed"`
-	BaseFee  string `json:"baseFeePerGas,omitempty"`
+	GasLimit uint64          `json:"gasLimit"`
+	GasUsed  uint64          `json:"gasUsed"`
+	BaseFee  json.RawMessage `json:"baseFeePerGas,omitempty"`
 
 	Timestamp      uint64 `json:"timestamp"`
 	TimestampMs    uint64 `json:"timestampMs,omitempty"`
 	MinDelayExcess uint64 `json:"minDelayExcess,omitempty"`
 	Size           uint64 `json:"size"`
 
-	Difficulty string `json:"difficulty"`
-	MixHash    string `json:"mixHash"`
-	Nonce      uint64 `json:"nonce"`
+	Difficulty json.RawMessage `json:"difficulty"`
+	MixHash    string          `json:"mixHash"`
+	Nonce      uint64          `json:"nonce"`
 
 	LogsBloom string `json:"logsBloom"`
 
@@ -187,21 +209,22 @@ type evmBlockJSON struct {
 }
 
 // evmTransactionJSON is the JSON wire format for EVMTransaction.
-// Uses string representations for *big.Int fields (Value, GasPrice, MaxFeePerGas, MaxPriorityFee)
-// to ensure consistent decimal encoding and avoid scientific notation.
+// Uses encodingjson.RawMessage for *big.Int fields (Value, GasPrice, MaxFeePerGas, MaxPriorityFee) to accept
+// both JSON strings and numbers (including scientific notation) during unmarshaling, while always
+// marshaling to decimal strings.
 type evmTransactionJSON struct {
-	Hash           string        `json:"hash"`
-	From           string        `json:"from"`
-	To             string        `json:"to"`
-	Nonce          uint64        `json:"nonce"`
-	Value          string        `json:"value,omitempty"`
-	Gas            uint64        `json:"gas"`
-	GasPrice       string        `json:"gasPrice,omitempty"`
-	MaxFeePerGas   string        `json:"maxFeePerGas,omitempty"`
-	MaxPriorityFee string        `json:"maxPriorityFeePerGas,omitempty"`
-	Input          string        `json:"input"`
-	Type           uint8         `json:"type"`
-	Receipt        *EVMTxReceipt `json:"receipt,omitempty"`
+	Hash           string          `json:"hash"`
+	From           string          `json:"from"`
+	To             string          `json:"to"`
+	Nonce          uint64          `json:"nonce"`
+	Value          json.RawMessage `json:"value,omitempty"`
+	Gas            uint64          `json:"gas"`
+	GasPrice       json.RawMessage `json:"gasPrice,omitempty"`
+	MaxFeePerGas   json.RawMessage `json:"maxFeePerGas,omitempty"`
+	MaxPriorityFee json.RawMessage `json:"maxPriorityFeePerGas,omitempty"`
+	Input          string          `json:"input"`
+	Type           uint8           `json:"type"`
+	Receipt        *EVMTxReceipt   `json:"receipt,omitempty"`
 }
 
 // EVMBlockFromLibevmCoreth converts a libevm coreth Block to a EVM Block.
@@ -393,8 +416,8 @@ func EVMLogsFromLibevm(logs []*libevmtypes.Log) []*EVMLog {
 func (b *EVMBlock) MarshalJSON() ([]byte, error) {
 	alias := evmBlockJSON{
 		BlockchainID:          b.BlockchainID,
-		EVMChainID:            bigIntToString(b.EVMChainID),
-		Number:                bigIntToString(b.Number),
+		EVMChainID:            bigIntToRawJSON(b.EVMChainID),
+		Number:                bigIntToRawJSON(b.Number),
 		Hash:                  b.Hash,
 		ParentHash:            b.ParentHash,
 		StateRoot:             b.StateRoot,
@@ -404,12 +427,12 @@ func (b *EVMBlock) MarshalJSON() ([]byte, error) {
 		Miner:                 b.Miner,
 		GasLimit:              b.GasLimit,
 		GasUsed:               b.GasUsed,
-		BaseFee:               bigIntToString(b.BaseFee),
+		BaseFee:               bigIntToRawJSON(b.BaseFee),
 		Timestamp:             b.Timestamp,
 		TimestampMs:           b.TimestampMs,
 		MinDelayExcess:        b.MinDelayExcess,
 		Size:                  b.Size,
-		Difficulty:            bigIntToString(b.Difficulty),
+		Difficulty:            bigIntToRawJSON(b.Difficulty),
 		MixHash:               b.MixHash,
 		Nonce:                 b.Nonce,
 		LogsBloom:             b.LogsBloom,
@@ -421,7 +444,7 @@ func (b *EVMBlock) MarshalJSON() ([]byte, error) {
 		Transactions:          b.Transactions,
 	}
 
-	return json.Marshal(alias)
+	return jsonIter.Marshal(alias)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -429,7 +452,7 @@ func (b *EVMBlock) MarshalJSON() ([]byte, error) {
 // for backward compatibility with legacy Kafka messages.
 func (b *EVMBlock) UnmarshalJSON(data []byte) error {
 	var alias evmBlockJSON
-	if err := json.Unmarshal(data, &alias); err != nil {
+	if err := jsonIter.Unmarshal(data, &alias); err != nil {
 		return err
 	}
 
@@ -458,16 +481,16 @@ func (b *EVMBlock) UnmarshalJSON(data []byte) error {
 	b.Transactions = alias.Transactions
 
 	var err error
-	if b.EVMChainID, err = parseBigIntField(alias.EVMChainID, "evmChainId"); err != nil {
+	if b.EVMChainID, err = parseBigIntFromRaw(alias.EVMChainID, "evmChainId"); err != nil {
 		return err
 	}
-	if b.Number, err = parseBigIntField(alias.Number, "number"); err != nil {
+	if b.Number, err = parseBigIntFromRaw(alias.Number, "number"); err != nil {
 		return err
 	}
-	if b.BaseFee, err = parseBigIntField(alias.BaseFee, "baseFeePerGas"); err != nil {
+	if b.BaseFee, err = parseBigIntFromRaw(alias.BaseFee, "baseFeePerGas"); err != nil {
 		return err
 	}
-	if b.Difficulty, err = parseBigIntField(alias.Difficulty, "difficulty"); err != nil {
+	if b.Difficulty, err = parseBigIntFromRaw(alias.Difficulty, "difficulty"); err != nil {
 		return err
 	}
 
@@ -482,17 +505,17 @@ func (t *EVMTransaction) MarshalJSON() ([]byte, error) {
 		From:           t.From,
 		To:             t.To,
 		Nonce:          t.Nonce,
-		Value:          bigIntToString(t.Value),
+		Value:          bigIntToRawJSON(t.Value),
 		Gas:            t.Gas,
-		GasPrice:       bigIntToString(t.GasPrice),
-		MaxFeePerGas:   bigIntToString(t.MaxFeePerGas),
-		MaxPriorityFee: bigIntToString(t.MaxPriorityFee),
+		GasPrice:       bigIntToRawJSON(t.GasPrice),
+		MaxFeePerGas:   bigIntToRawJSON(t.MaxFeePerGas),
+		MaxPriorityFee: bigIntToRawJSON(t.MaxPriorityFee),
 		Input:          t.Input,
 		Type:           t.Type,
 		Receipt:        t.Receipt,
 	}
 
-	return json.Marshal(alias)
+	return jsonIter.Marshal(alias)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -500,7 +523,7 @@ func (t *EVMTransaction) MarshalJSON() ([]byte, error) {
 // for backward compatibility with legacy Kafka messages.
 func (t *EVMTransaction) UnmarshalJSON(data []byte) error {
 	var alias evmTransactionJSON
-	if err := json.Unmarshal(data, &alias); err != nil {
+	if err := jsonIter.Unmarshal(data, &alias); err != nil {
 		return err
 	}
 
@@ -514,16 +537,16 @@ func (t *EVMTransaction) UnmarshalJSON(data []byte) error {
 	t.Receipt = alias.Receipt
 
 	var err error
-	if t.Value, err = parseBigIntField(alias.Value, "value"); err != nil {
+	if t.Value, err = parseBigIntFromRaw(alias.Value, "value"); err != nil {
 		return err
 	}
-	if t.GasPrice, err = parseBigIntField(alias.GasPrice, "gasPrice"); err != nil {
+	if t.GasPrice, err = parseBigIntFromRaw(alias.GasPrice, "gasPrice"); err != nil {
 		return err
 	}
-	if t.MaxFeePerGas, err = parseBigIntField(alias.MaxFeePerGas, "maxFeePerGas"); err != nil {
+	if t.MaxFeePerGas, err = parseBigIntFromRaw(alias.MaxFeePerGas, "maxFeePerGas"); err != nil {
 		return err
 	}
-	if t.MaxPriorityFee, err = parseBigIntField(alias.MaxPriorityFee, "maxPriorityFeePerGas"); err != nil {
+	if t.MaxPriorityFee, err = parseBigIntFromRaw(alias.MaxPriorityFee, "maxPriorityFeePerGas"); err != nil {
 		return err
 	}
 
