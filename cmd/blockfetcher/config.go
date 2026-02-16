@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,29 @@ const (
 	maxBlockBufferSize = 255
 	messageMaxBytes    = 20971521 // 20MB
 )
+
+// validateRetentionValue validates a Kafka retention configuration value.
+// It ensures the value is either "-1" (infinite) or a positive integer.
+func validateRetentionValue(value, fieldName string) error {
+	if value == "" {
+		return nil // Empty is valid (uses Kafka broker default)
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return fmt.Errorf("%s must be a valid integer or -1 for infinite retention, got: %s", fieldName, value)
+	}
+
+	if parsed == -1 {
+		return nil // -1 is valid (infinite retention)
+	}
+
+	if parsed <= 0 {
+		return fmt.Errorf("%s must be positive or -1 for infinite retention, got: %d", fieldName, parsed)
+	}
+
+	return nil
+}
 
 // Config holds all configuration for the blockfetcher application
 type Config struct {
@@ -106,6 +130,17 @@ func buildConfig(c *cli.Context) (*Config, error) {
 	chCfg, err := buildClickHouseConfig(c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build ClickHouse config: %w", err)
+	}
+
+	// Validate retention configuration values
+	retentionMs := c.String("kafka-topic-retention-ms")
+	if err := validateRetentionValue(retentionMs, "kafka-topic-retention-ms"); err != nil {
+		return nil, err
+	}
+
+	retentionBytes := c.String("kafka-topic-retention-bytes")
+	if err := validateRetentionValue(retentionBytes, "kafka-topic-retention-bytes"); err != nil {
+		return nil, err
 	}
 
 	return &Config{
