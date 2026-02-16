@@ -164,10 +164,10 @@ func runFlags() []cli.Flag {
 			Value:   1,
 		},
 		&cli.Int64Flag{
-			Name:    "kafka-topic-retention-hours",
-			Usage:   "Retention time in hours for the Kafka topic (e.g., 168 for 7 days, -1 for infinite)",
-			EnvVars: []string{"KAFKA_TOPIC_RETENTION_HOURS"},
-			Value:   168, // 7 days
+			Name:    "kafka-topic-retention-ms",
+			Usage:   "Retention time in milliseconds for the Kafka topic (e.g., 604800000 for 7 days, -1 for infinite)",
+			EnvVars: []string{"KAFKA_TOPIC_RETENTION_MS"},
+			Value:   604800000, // 7 days
 		},
 		&cli.StringFlag{
 			Name:    "kafka-topic-retention-bytes",

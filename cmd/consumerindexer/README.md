@@ -100,11 +100,11 @@ All flags have environment variable equivalents:
 - `--poll-interval` → `KAFKA_POLL_INTERVAL` (default: 100ms, consumer poll interval)
 - `--kafka-topic-num-partitions` → `KAFKA_TOPIC_NUM_PARTITIONS` (default: 1, automatically ensures topic has this partition count)
 - `--kafka-topic-replication-factor` → `KAFKA_TOPIC_REPLICATION_FACTOR` (default: 1, automatically ensures topic has this replication factor)
-- `--kafka-topic-retention-hours` → `KAFKA_TOPIC_RETENTION_HOURS` (default: 168 / 7 days, main topic retention time in hours)
+- `--kafka-topic-retention-ms` → `KAFKA_TOPIC_RETENTION_MS` (default: 604800000 / 7 days, main topic retention time in milliseconds)
 - `--kafka-topic-retention-bytes` → `KAFKA_TOPIC_RETENTION_BYTES` (default: 161061273600 / 150GB, main topic retention size in bytes)
 - `--kafka-dlq-topic-num-partitions` → `KAFKA_DLQ_TOPIC_NUM_PARTITIONS` (default: 1, DLQ topic partition count)
 - `--kafka-dlq-topic-replication-factor` → `KAFKA_DLQ_TOPIC_REPLICATION_FACTOR` (default: 1, DLQ topic replication factor)
-- `--kafka-dlq-topic-retention-hours` → `KAFKA_DLQ_TOPIC_RETENTION_HOURS` (default: 168 / 7 days, DLQ topic retention time in hours)
+- `--kafka-dlq-topic-retention-ms` → `KAFKA_DLQ_TOPIC_RETENTION_MS` (default: 604800000 / 7 days, DLQ topic retention time in milliseconds)
 - `--kafka-dlq-topic-retention-bytes` → `KAFKA_DLQ_TOPIC_RETENTION_BYTES` (default: 161061273600 / 150GB, DLQ topic retention size in bytes)
 - `--kafka-sasl-username` → `KAFKA_SASL_USERNAME` (optional, SASL username for authenticated Kafka)
 - `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
@@ -184,8 +184,8 @@ docker run --rm \
 - Note: Topics are created automatically if they don't exist, or partitions are increased if needed. Partitions cannot be decreased and replication factor cannot be changed after creation.
 
 **Retention Settings:**
-- Configure `--kafka-topic-retention-hours` and `--kafka-topic-retention-bytes` for the main topic (defaults: 168 hours / 7 days, 161061273600 bytes / 150GB)
-- Configure `--kafka-dlq-topic-retention-hours` and `--kafka-dlq-topic-retention-bytes` for the DLQ topic separately (same defaults)
+- Configure `--kafka-topic-retention-ms` and `--kafka-topic-retention-bytes` for the main topic (defaults: 604800000 ms / 7 days, 161061273600 bytes / 150GB)
+- Configure `--kafka-dlq-topic-retention-ms` and `--kafka-dlq-topic-retention-bytes` for the DLQ topic separately (same defaults)
 - The consumerindexer automatically applies these settings when creating or updating topics
 - Use `-1` for infinite retention on either setting
 

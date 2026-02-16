@@ -52,11 +52,11 @@ type Config struct {
 	PublishToDLQ                   bool
 	KafkaTopicNumPartitions        int
 	KafkaTopicReplicationFactor    int
-	KafkaTopicRetentionHours       string
+	KafkaTopicRetentionMs          string
 	KafkaTopicRetentionBytes       string
 	KafkaDLQTopicNumPartitions     int
 	KafkaDLQTopicReplicationFactor int
-	KafkaDLQTopicRetentionHours    string
+	KafkaDLQTopicRetentionMs       string
 	KafkaDLQTopicRetentionBytes    string
 	KafkaSASL                      kafka.SASLConfig
 
@@ -107,11 +107,11 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		PublishToDLQ:                   c.Bool("publish-to-dlq"),
 		KafkaTopicNumPartitions:        c.Int("kafka-topic-num-partitions"),
 		KafkaTopicReplicationFactor:    c.Int("kafka-topic-replication-factor"),
-		KafkaTopicRetentionHours:       c.String("kafka-topic-retention-hours"),
+		KafkaTopicRetentionMs:          c.String("kafka-topic-retention-ms"),
 		KafkaTopicRetentionBytes:       c.String("kafka-topic-retention-bytes"),
 		KafkaDLQTopicNumPartitions:     c.Int("kafka-dlq-topic-num-partitions"),
 		KafkaDLQTopicReplicationFactor: c.Int("kafka-dlq-topic-replication-factor"),
-		KafkaDLQTopicRetentionHours:    c.String("kafka-dlq-topic-retention-hours"),
+		KafkaDLQTopicRetentionMs:       c.String("kafka-dlq-topic-retention-ms"),
 		KafkaDLQTopicRetentionBytes:    c.String("kafka-dlq-topic-retention-bytes"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),

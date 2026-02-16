@@ -555,7 +555,7 @@ func TestTopicConfigManagement(t *testing.T) {
 			NumPartitions:     1,
 			ReplicationFactor: 1,
 			Config: map[string]string{
-				"retention.hours":   "24", // 1 day
+				"retention.ms":      "86400000", // 1 day in milliseconds
 				"compression.type":  "snappy",
 				"max.message.bytes": "2097152", // 2MB
 			},
@@ -582,7 +582,7 @@ func TestTopicConfigManagement(t *testing.T) {
 			configMap[entry.Name] = entry.Value
 		}
 
-		assert.Equal(t, "24", configMap["retention.hours"])
+		assert.Equal(t, "86400000", configMap["retention.ms"])
 		assert.Equal(t, "snappy", configMap["compression.type"])
 		assert.Equal(t, "2097152", configMap["max.message.bytes"])
 	})
@@ -594,7 +594,7 @@ func TestTopicConfigManagement(t *testing.T) {
 			NumPartitions:     1,
 			ReplicationFactor: 1,
 			Config: map[string]string{
-				"retention.hours": "24", // 1 day
+				"retention.ms": "86400000", // 1 day in milliseconds
 			},
 		}
 
@@ -605,7 +605,7 @@ func TestTopicConfigManagement(t *testing.T) {
 		time.Sleep(1 * time.Second)
 
 		// Update config with different retention
-		config.Config["retention.hours"] = "48" // 2 days
+		config.Config["retention.ms"] = "172800000" // 2 days in milliseconds
 		config.Config["compression.type"] = "lz4"
 
 		err = EnsureTopic(ctx, admin, config, log)
@@ -629,7 +629,7 @@ func TestTopicConfigManagement(t *testing.T) {
 			configMap[entry.Name] = entry.Value
 		}
 
-		assert.Equal(t, "48", configMap["retention.hours"], "retention.hours should be updated")
+		assert.Equal(t, "172800000", configMap["retention.ms"], "retention.ms should be updated")
 		assert.Equal(t, "lz4", configMap["compression.type"], "compression.type should be set")
 	})
 
@@ -639,7 +639,7 @@ func TestTopicConfigManagement(t *testing.T) {
 			NumPartitions:     1,
 			ReplicationFactor: 1,
 			Config: map[string]string{
-				"retention.hours": "24",
+				"retention.ms": "86400000", // 1 day in milliseconds
 			},
 		}
 

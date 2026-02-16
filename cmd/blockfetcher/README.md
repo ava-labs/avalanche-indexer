@@ -187,7 +187,7 @@ All flags have environment variable equivalents:
 - `--kafka-client-id` → `KAFKA_CLIENT_ID` (default: blockfetcher)
 - `--kafka-topic-num-partitions` → `KAFKA_TOPIC_NUM_PARTITIONS` (default: 1, automatically creates/validates topic with this partition count)
 - `--kafka-topic-replication-factor` → `KAFKA_TOPIC_REPLICATION_FACTOR` (default: 1, automatically creates/validates topic with this replication factor)
-- `--kafka-topic-retention-hours` → `KAFKA_TOPIC_RETENTION_HOURS` (default: 168 / 7 days, topic retention time in hours)
+- `--kafka-topic-retention-ms` → `KAFKA_TOPIC_RETENTION_MS` (default: 604800000 / 7 days, topic retention time in milliseconds)
 - `--kafka-topic-retention-bytes` → `KAFKA_TOPIC_RETENTION_BYTES` (default: 161061273600 / 150GB, topic retention size in bytes)
 - `--kafka-sasl-username` → `KAFKA_SASL_USERNAME` (optional, SASL username for authenticated Kafka)
 - `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
@@ -219,7 +219,7 @@ All flags have environment variable equivalents:
 - `KAFKA_BROKERS` can be a comma-separated list (e.g., `broker1:9092,broker2:9092`).
 - Enable `KAFKA_ENABLE_LOGS=true` for debugging Kafka connectivity issues.
 - **Topic management**: The blockfetcher automatically ensures the Kafka topic exists with the specified `--kafka-topic-num-partitions` and `--kafka-topic-replication-factor`. It will create the topic if it doesn't exist, or increase partitions if needed. Note: partitions cannot be decreased and replication factor cannot be changed after creation.
-- **Retention settings**: Configure `--kafka-topic-retention-hours` (default: 168 / 7 days) and `--kafka-topic-retention-bytes` (default: 161061273600 / 150GB) to control how long data is retained in the topic. The blockfetcher automatically applies these settings when creating or updating the topic. Use `-1` for infinite retention.
+- **Retention settings**: Configure `--kafka-topic-retention-ms` (default: 604800000 / 7 days) and `--kafka-topic-retention-bytes` (default: 161061273600 / 150GB) to control how long data is retained in the topic. The blockfetcher automatically applies these settings when creating or updating the topic. Use `-1` for infinite retention.
 - **SASL Authentication**: For authenticated Kafka clusters (e.g., OCI Kafka), provide `--kafka-sasl-username` and `--kafka-sasl-password`. SASL is automatically applied to producer, consumer, and admin clients. Local Kafka (docker-compose) typically doesn't require SASL unless explicitly configured.
 
 ### Exit behavior

@@ -141,8 +141,8 @@ func run(c *cli.Context) error {
 		Config:            make(map[string]string),
 	}
 
-	if cfg.KafkaTopicRetentionHours != "" {
-		mainTopicConfig.Config["retention.hours"] = cfg.KafkaTopicRetentionHours
+	if cfg.KafkaTopicRetentionMs != "" {
+		mainTopicConfig.Config["retention.ms"] = cfg.KafkaTopicRetentionMs
 	}
 	if cfg.KafkaTopicRetentionBytes != "" {
 		mainTopicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
@@ -162,8 +162,8 @@ func run(c *cli.Context) error {
 			Config:            make(map[string]string),
 		}
 
-		if cfg.KafkaDLQTopicRetentionHours != "" {
-			dlqTopicConfig.Config["retention.hours"] = cfg.KafkaDLQTopicRetentionHours
+		if cfg.KafkaDLQTopicRetentionMs != "" {
+			dlqTopicConfig.Config["retention.ms"] = cfg.KafkaDLQTopicRetentionMs
 		}
 		if cfg.KafkaDLQTopicRetentionBytes != "" {
 			dlqTopicConfig.Config["retention.bytes"] = cfg.KafkaDLQTopicRetentionBytes

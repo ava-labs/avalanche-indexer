@@ -126,8 +126,8 @@ func run(c *cli.Context) error {
 		Config:            make(map[string]string),
 	}
 
-	if cfg.KafkaTopicRetentionHours != "" {
-		topicConfig.Config["retention.hours"] = cfg.KafkaTopicRetentionHours
+	if cfg.KafkaTopicRetentionMs != "" {
+		topicConfig.Config["retention.ms"] = cfg.KafkaTopicRetentionMs
 	}
 	if cfg.KafkaTopicRetentionBytes != "" {
 		topicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
