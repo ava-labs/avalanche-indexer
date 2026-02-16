@@ -7,14 +7,13 @@ import (
 	"math/big"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/ava-labs/libevm/common"
 	"github.com/ava-labs/libevm/common/hexutil"
 
 	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
 	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
+	jsoniter "github.com/json-iterator/go"
 )
 
 // json is a drop-in replacement for encoding/json using jsoniter for 2-3x performance improvement.

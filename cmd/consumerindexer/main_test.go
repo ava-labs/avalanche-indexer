@@ -248,8 +248,7 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 
 	err := proc.Process(t.Context(), msg)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to unmarshal coreth block")
+	require.ErrorIs(t, err, processor.ErrUnmarshalBlock)
 }
 
 func TestProcessBlockMessage_MissingChainID(t *testing.T) {

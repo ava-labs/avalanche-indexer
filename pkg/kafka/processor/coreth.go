@@ -19,7 +19,10 @@ import (
 )
 
 // ErrNilMessage is returned when a nil message or empty value is received.
-var ErrNilMessage = errors.New("received nil message or empty value")
+var (
+	ErrNilMessage     = errors.New("received nil message or empty value")
+	ErrUnmarshalBlock = errors.New("failed to unmarshal coreth block")
+)
 
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
 // If repositories are provided, persists blocks and transactions to ClickHouse.
@@ -64,7 +67,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	var block kafkamsg.EVMBlock
 	if err := json.Unmarshal(msg.Value, &block); err != nil {
 		p.metrics.IncError("coreth_unmarshal_error")
-		return fmt.Errorf("failed to unmarshal coreth block: %w", err)
+		return fmt.Errorf("%w: %w", ErrUnmarshalBlock, err)
 	}
 
 	// Validate block (BlockchainID is required) - do this even if not persisting

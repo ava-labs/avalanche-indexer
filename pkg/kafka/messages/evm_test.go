@@ -2,7 +2,6 @@ package messages
 
 import (
 	"math/big"
-	"strings"
 	"sync"
 	"testing"
 
@@ -818,7 +817,7 @@ func TestEVMTransaction_MarshalUnmarshal_RoundTrip(t *testing.T) {
 	jsonStr := string(data)
 	assert.Contains(t, jsonStr, `"value":"1000000000000000000"`)
 	assert.Contains(t, jsonStr, `"gasPrice":"50000000000"`)
-	assert.False(t, strings.Contains(jsonStr, "e+"), "Should not contain scientific notation")
+	assert.NotContains(t, jsonStr, "e+", "Should not contain scientific notation")
 
 	// Unmarshal
 	var parsed EVMTransaction
@@ -939,10 +938,10 @@ func TestEVMTransaction_MarshalNoScientificNotation(t *testing.T) {
 			jsonStr := string(data)
 
 			// Verify no scientific notation anywhere in the JSON
-			assert.False(t, strings.Contains(jsonStr, "e+"), "JSON should not contain 'e+' (scientific notation)")
-			assert.False(t, strings.Contains(jsonStr, "E+"), "JSON should not contain 'E+' (scientific notation)")
-			assert.False(t, strings.Contains(jsonStr, "e-"), "JSON should not contain 'e-' (scientific notation)")
-			assert.False(t, strings.Contains(jsonStr, "E-"), "JSON should not contain 'E-' (scientific notation)")
+			assert.NotContains(t, jsonStr, "e+", "JSON should not contain 'e+' (scientific notation)")
+			assert.NotContains(t, jsonStr, "E+", "JSON should not contain 'E+' (scientific notation)")
+			assert.NotContains(t, jsonStr, "e-", "JSON should not contain 'e-' (scientific notation)")
+			assert.NotContains(t, jsonStr, "E-", "JSON should not contain 'E-' (scientific notation)")
 
 			// Verify the exact decimal string is present for Value
 			assert.Contains(t, jsonStr, `"value":"`+tt.expectedValue+`"`,

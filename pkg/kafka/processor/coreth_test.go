@@ -468,9 +468,7 @@ func TestProcess_InvalidJSON(t *testing.T) {
 	msg := &cKafka.Message{Value: []byte(`{invalid json}`)}
 	err := proc.Process(t.Context(), msg)
 
-	// jsoniter produces different error types than encoding/json, so just check for error message
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to unmarshal coreth block")
+	require.ErrorIs(t, err, ErrUnmarshalBlock)
 }
 
 func TestProcess_MissingBlockchainID(t *testing.T) {
