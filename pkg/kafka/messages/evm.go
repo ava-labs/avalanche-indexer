@@ -17,7 +17,7 @@ import (
 	jsonIterator "github.com/json-iterator/go"
 )
 
-// jsonIter is a drop-in replacement for encoding/jsonIter using jsoniter for 2-3x performance improvement.
+// jsonIter is a drop-in replacement for encoding/json using jsoniter for 2-3x performance improvement.
 // It's 100% compatible with the standard library API.
 var jsonIter = jsonIterator.ConfigCompatibleWithStandardLibrary
 
