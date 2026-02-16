@@ -539,3 +539,116 @@ func TestReplicationFactorMismatch(t *testing.T) {
 		assert.Equal(t, 1, rf, "replication factor should remain unchanged")
 	})
 }
+
+func TestTopicConfigManagement(t *testing.T) {
+	kc := setupAdminKafka(t)
+	defer kc.teardown(t)
+
+	ctx := context.Background()
+	log := zaptest.NewLogger(t).Sugar()
+	admin := createAdminClient(t, kc.brokers)
+	defer admin.Close()
+
+	t.Run("creates topic with custom config", func(t *testing.T) {
+		config := TopicConfig{
+			Name:              "test-config-create",
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+			Config: map[string]string{
+				"retention.hours":   "24", // 1 day
+				"compression.type":  "snappy",
+				"max.message.bytes": "2097152", // 2MB
+			},
+		}
+
+		err := CreateTopic(ctx, admin, config, log)
+		require.NoError(t, err)
+
+		// Give Kafka time to apply configs
+		time.Sleep(1 * time.Second)
+
+		// Verify topic configs
+		resource := cKafka.ConfigResource{
+			Type: cKafka.ResourceTopic,
+			Name: "test-config-create",
+		}
+
+		results, err := admin.DescribeConfigs(ctx, []cKafka.ConfigResource{resource})
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		configMap := make(map[string]string)
+		for _, entry := range results[0].Config {
+			configMap[entry.Name] = entry.Value
+		}
+
+		assert.Equal(t, "24", configMap["retention.hours"])
+		assert.Equal(t, "snappy", configMap["compression.type"])
+		assert.Equal(t, "2097152", configMap["max.message.bytes"])
+	})
+
+	t.Run("updates config on existing topic", func(t *testing.T) {
+		// Create topic with initial config
+		config := TopicConfig{
+			Name:              "test-config-update",
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+			Config: map[string]string{
+				"retention.hours": "24", // 1 day
+			},
+		}
+
+		err := EnsureTopic(ctx, admin, config, log)
+		require.NoError(t, err)
+
+		// Give Kafka time to apply configs
+		time.Sleep(1 * time.Second)
+
+		// Update config with different retention
+		config.Config["retention.hours"] = "48" // 2 days
+		config.Config["compression.type"] = "lz4"
+
+		err = EnsureTopic(ctx, admin, config, log)
+		require.NoError(t, err)
+
+		// Give Kafka time to apply config changes
+		time.Sleep(1 * time.Second)
+
+		// Verify updated configs
+		resource := cKafka.ConfigResource{
+			Type: cKafka.ResourceTopic,
+			Name: "test-config-update",
+		}
+
+		results, err := admin.DescribeConfigs(ctx, []cKafka.ConfigResource{resource})
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		configMap := make(map[string]string)
+		for _, entry := range results[0].Config {
+			configMap[entry.Name] = entry.Value
+		}
+
+		assert.Equal(t, "48", configMap["retention.hours"], "retention.hours should be updated")
+		assert.Equal(t, "lz4", configMap["compression.type"], "compression.type should be set")
+	})
+
+	t.Run("is idempotent when config matches", func(t *testing.T) {
+		config := TopicConfig{
+			Name:              "test-config-idempotent",
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+			Config: map[string]string{
+				"retention.hours": "24",
+			},
+		}
+
+		// Create first time
+		err := EnsureTopic(ctx, admin, config, log)
+		require.NoError(t, err)
+
+		// Call again with same config - should be no-op
+		err = EnsureTopic(ctx, admin, config, log)
+		assert.NoError(t, err)
+	})
+}

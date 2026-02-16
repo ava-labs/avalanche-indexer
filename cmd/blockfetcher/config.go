@@ -48,6 +48,8 @@ type Config struct {
 	KafkaClientID               string
 	KafkaTopicNumPartitions     int
 	KafkaTopicReplicationFactor int
+	KafkaTopicRetentionHours    string
+	KafkaTopicRetentionBytes    string
 	KafkaSASL                   kafka.SASLConfig
 
 	// ClickHouse settings
@@ -125,6 +127,8 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		KafkaClientID:               c.String("kafka-client-id"),
 		KafkaTopicNumPartitions:     c.Int("kafka-topic-num-partitions"),
 		KafkaTopicReplicationFactor: c.Int("kafka-topic-replication-factor"),
+		KafkaTopicRetentionHours:    c.String("kafka-topic-retention-hours"),
+		KafkaTopicRetentionBytes:    c.String("kafka-topic-retention-bytes"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),
 			Password:         c.String("kafka-sasl-password"),

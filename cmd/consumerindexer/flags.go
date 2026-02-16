@@ -123,6 +123,30 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"KAFKA_DLQ_TOPIC_REPLICATION_FACTOR"},
 			Value:   1,
 		},
+		&cli.Int64Flag{
+			Name:    "kafka-topic-retention-hours",
+			Usage:   "Retention time in hours for the Kafka topic (e.g., 168 for 7 days, -1 for infinite)",
+			EnvVars: []string{"KAFKA_TOPIC_RETENTION_HOURS"},
+			Value:   168, // 7 days
+		},
+		&cli.StringFlag{
+			Name:    "kafka-topic-retention-bytes",
+			Usage:   "Retention size in bytes for the Kafka topic (e.g., 161061273600 for 150GB, -1 for infinite)",
+			EnvVars: []string{"KAFKA_TOPIC_RETENTION_BYTES"},
+			Value:   "161061273600", // 150GB
+		},
+		&cli.Int64Flag{
+			Name:    "kafka-dlq-topic-retention-hours",
+			Usage:   "Retention time in hours for the Kafka DLQ topic (e.g., 168 for 7 days, -1 for infinite)",
+			EnvVars: []string{"KAFKA_DLQ_TOPIC_RETENTION_HOURS"},
+			Value:   168, // 7 days
+		},
+		&cli.StringFlag{
+			Name:    "kafka-dlq-topic-retention-bytes",
+			Usage:   "Retention size in bytes for the Kafka DLQ topic (e.g., 161061273600 for 150GB, -1 for infinite)",
+			EnvVars: []string{"KAFKA_DLQ_TOPIC_RETENTION_BYTES"},
+			Value:   "161061273600", // 150GB
+		},
 		&cli.StringFlag{
 			Name:    "kafka-sasl-username",
 			Usage:   "SASL username for Kafka authentication",
