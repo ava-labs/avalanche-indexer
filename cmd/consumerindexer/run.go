@@ -174,7 +174,7 @@ func run(c *cli.Context) error {
 	}
 
 	// Create consumer
-	consumer, err := kafka.NewConsumer(ctx, sugar, consumerCfg, proc)
+	consumer, err := kafka.NewConsumer(ctx, sugar, consumerCfg, proc, m)
 	if err != nil {
 		return fmt.Errorf("failed to create consumer: %w", err)
 	}

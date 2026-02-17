@@ -239,7 +239,7 @@ func TestConsumer_NewConsumer(t *testing.T) {
 		cfg := newTestConsumerConfig(kc.brokers, "test-group-new")
 		cfg.PublishToDLQ = true
 
-		consumer, err := NewConsumer(ctx, log, cfg, processor)
+		consumer, err := NewConsumer(ctx, log, cfg, processor, nil)
 		require.NoError(t, err)
 		require.NotNil(t, consumer)
 		require.NotNil(t, consumer.consumer)
@@ -264,7 +264,7 @@ func TestConsumer_NewConsumer(t *testing.T) {
 			OffsetManagerCommitInterval: 5 * time.Second,
 		}
 
-		consumer, err := NewConsumer(ctx, log, cfg, processor)
+		consumer, err := NewConsumer(ctx, log, cfg, processor, nil)
 		assert.Error(t, err)
 		assert.Nil(t, consumer)
 		assert.Contains(t, err.Error(), "DLQ topic not configured")
@@ -283,7 +283,7 @@ func TestConsumer_BasicProcessing(t *testing.T) {
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-basic-%d", time.Now().UnixNano()))
 		cfg.EnableLogs = true
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		messageCount := 10
@@ -329,7 +329,7 @@ func TestConsumer_ErrorHandling(t *testing.T) {
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-no-dlq-%d", time.Now().UnixNano()))
 		cfg.PublishToDLQ = false
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		messageCount := 3
@@ -366,7 +366,7 @@ func TestConsumer_DLQProduction(t *testing.T) {
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-dlq-%d", time.Now().UnixNano()))
 		cfg.PublishToDLQ = true
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		messageCount := 5
@@ -405,7 +405,7 @@ func TestConsumer_DLQProduction(t *testing.T) {
 		dlqCfg.Topic = consumerDLQTopic
 		dlqCfg.PublishToDLQ = false
 
-		dlqConsumer, err := NewConsumer(context.Background(), log, dlqCfg, dlqProcessor)
+		dlqConsumer, err := NewConsumer(context.Background(), log, dlqCfg, dlqProcessor, nil)
 		require.NoError(t, err)
 
 		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -476,7 +476,7 @@ func TestConsumer_Concurrency(t *testing.T) {
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-concurrent-%d", time.Now().UnixNano()))
 		cfg.Concurrency = concurrencyLimit
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		messageCount := 20
@@ -515,7 +515,7 @@ func TestConsumer_ContextCancellation(t *testing.T) {
 
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-cancel-%d", time.Now().UnixNano()))
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		messageCount := 5
@@ -546,7 +546,7 @@ func TestConsumer_ContextCancellation(t *testing.T) {
 
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-ctx-cancel-err-%d", time.Now().UnixNano()))
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		messageCount := 3
@@ -596,7 +596,7 @@ func TestConsumer_Rebalancing(t *testing.T) {
 		cfg1.EnableLogs = false
 		cfg1.Concurrency = 3
 
-		consumer1, err := NewConsumer(context.Background(), log, cfg1, processor1)
+		consumer1, err := NewConsumer(context.Background(), log, cfg1, processor1, nil)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -617,7 +617,7 @@ func TestConsumer_Rebalancing(t *testing.T) {
 		cfg2.EnableLogs = false
 		cfg2.Concurrency = 3
 
-		consumer2, err := NewConsumer(context.Background(), log, cfg2, processor2)
+		consumer2, err := NewConsumer(context.Background(), log, cfg2, processor2, nil)
 		require.NoError(t, err)
 
 		consumer2ErrCh := make(chan error, 1)
@@ -635,7 +635,7 @@ func TestConsumer_Rebalancing(t *testing.T) {
 		cfg3.EnableLogs = false
 		cfg3.Concurrency = 3
 
-		consumer3, err := NewConsumer(context.Background(), log, cfg3, processor3)
+		consumer3, err := NewConsumer(context.Background(), log, cfg3, processor3, nil)
 		require.NoError(t, err)
 
 		consumer3Ctx, consumer3Cancel := context.WithCancel(ctx)
@@ -728,7 +728,7 @@ func TestConsumer_LogPrinting(t *testing.T) {
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-logs-disabled-%d", time.Now().UnixNano()))
 		cfg.EnableLogs = false
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -764,7 +764,7 @@ func TestConsumer_LogPrinting(t *testing.T) {
 		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-logs-enabled-%d", time.Now().UnixNano()))
 		cfg.EnableLogs = true
 
-		consumer, err := NewConsumer(context.Background(), log, cfg, processor)
+		consumer, err := NewConsumer(context.Background(), log, cfg, processor, nil)
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

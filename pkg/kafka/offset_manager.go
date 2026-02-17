@@ -12,6 +12,8 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
 
 const (
@@ -55,6 +57,7 @@ type OffsetManager struct {
 	mutex           sync.Mutex
 	dryRun          bool // skip interactions with Brokers for testing
 	log             *zap.SugaredLogger
+	metrics         *metrics.Metrics // Prometheus metrics for offset tracking
 }
 
 // Creates new OffsetManager. To begin the OffsetManager, Start() must be called.
@@ -65,6 +68,7 @@ func NewOffsetManager(
 	autoOffsetReset string,
 	dryRun bool,
 	log *zap.SugaredLogger,
+	metrics *metrics.Metrics,
 ) *OffsetManager {
 	om := &OffsetManager{
 		consumer:        consumer,
@@ -72,6 +76,7 @@ func NewOffsetManager(
 		partitionStates: make(map[int32]*offsetState),
 		dryRun:          dryRun,
 		log:             log,
+		metrics:         metrics,
 	}
 	go om.run(ctx, interval, dryRun)
 	return om
@@ -106,6 +111,17 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 	for partition, state := range om.partitionStates {
 		window := state.window
 		lastCommitted := state.lastCommitted
+
+		windowSize := len(window)
+		var latestProcessed kafka.Offset
+		if windowSize > 0 {
+			latestProcessed = window[windowSize-1].Offset
+		} else {
+			latestProcessed = lastCommitted
+		}
+
+		om.metrics.UpdateOffsetMetrics(partition, int64(lastCommitted), int64(latestProcessed), windowSize)
+
 		if len(window) == 0 {
 			om.log.Debug("no offsets to commit")
 			continue
@@ -130,9 +146,14 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 				end = i
 			}
 
+			commitStart := time.Now()
 			if !dryRun {
 				_, err = om.consumer.CommitOffsets([]kafka.TopicPartition{window[end]})
 			}
+			commitDuration := time.Since(commitStart).Seconds()
+
+			om.metrics.RecordOffsetCommit(partition, err, commitDuration)
+
 			if err != nil {
 				om.log.Errorf("failed to commit offsets: %v", err)
 				return
@@ -147,6 +168,15 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 			} else {
 				om.partitionStates[partition] = &offsetState{window[end+1:], window[end].Offset}
 			}
+
+			newWindowSize := len(om.partitionStates[partition].window)
+			var newLatestProcessed kafka.Offset
+			if newWindowSize > 0 {
+				newLatestProcessed = om.partitionStates[partition].window[newWindowSize-1].Offset
+			} else {
+				newLatestProcessed = window[end].Offset
+			}
+			om.metrics.UpdateOffsetMetrics(partition, int64(window[end].Offset), int64(newLatestProcessed), newWindowSize)
 		}
 
 		if len(om.partitionStates[partition].window) > WindowLengthWarningThreshold {
@@ -201,6 +231,9 @@ func (om *OffsetManager) InsertOffset(ctx context.Context, offset kafka.TopicPar
 		return nil // already inserted
 	}
 	om.partitionStates[offset.Partition].window = slices.Insert(window, i, offset)
+
+	om.metrics.RecordOffsetInsert(offset.Partition)
+
 	return nil
 }
 
@@ -213,6 +246,17 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 	defer om.mutex.Unlock()
 	switch ev := event.(type) {
 	case kafka.AssignedPartitions:
+		// Extract partition numbers for metrics (before processing)
+		partitionNums := make([]int32, len(ev.Partitions))
+		for i, p := range ev.Partitions {
+			partitionNums[i] = p.Partition
+		}
+
+		// Record metrics for assignment event
+		if om.metrics != nil {
+			om.metrics.RecordPartitionAssignment(partitionNums)
+		}
+
 		// Rebalance events may provide offsets, but offsets seem to be
 		// kafka.InvalidOffset (-1001) when a consumer is joining an idle, but
 		// already existing, group. So we explicitly get the committed offsets
@@ -262,6 +306,11 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 					// range
 					om.partitionStates[co.Partition].lastCommitted = kafka.OffsetInvalid
 				}
+
+				// Initialize offset metrics for this partition
+				if om.metrics != nil {
+					om.metrics.UpdateOffsetMetrics(co.Partition, int64(co.Offset), int64(co.Offset), 0)
+				}
 			}
 
 			logStr[i] = fmt.Sprintf("(partition: %d, lastCommitted: %d)", co.Partition, om.partitionStates[co.Partition].lastCommitted)
@@ -269,6 +318,17 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 
 		om.log.Infof("rebalance event, adding partition states: %s\n", strings.Join(logStr, ","))
 	case kafka.RevokedPartitions:
+		// Extract partition numbers for metrics (before processing)
+		partitionNums := make([]int32, len(ev.Partitions))
+		for i, p := range ev.Partitions {
+			partitionNums[i] = p.Partition
+		}
+
+		// Record metrics for revocation event
+		if om.metrics != nil {
+			om.metrics.RecordPartitionRevocation(partitionNums)
+		}
+
 		logStr := make([]string, len(ev.Partitions))
 		for i, partition := range ev.Partitions {
 			logStr[i] = strconv.Itoa(int(partition.Partition))

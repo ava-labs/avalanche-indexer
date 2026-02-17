@@ -24,7 +24,7 @@ func TestUnorderedOffsetsWithNonZeroInit(t *testing.T) {
 	initOffset := kafka.Offset(0)
 	assignment := []kafka.TopicPartition{{Partition: partition, Offset: initOffset}}
 
-	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t))
+	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t), nil)
 	err := om.RebalanceCb(nil, kafka.AssignedPartitions{Partitions: assignment})
 	require.NoError(t, err)
 
@@ -50,7 +50,7 @@ func TestOrderedOffsets(t *testing.T) {
 	initOffset := kafka.Offset(3)
 	assignment := []kafka.TopicPartition{{Partition: partition, Offset: initOffset}}
 
-	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t))
+	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t), nil)
 	err := om.RebalanceCb(nil, kafka.AssignedPartitions{Partitions: assignment})
 	require.NoError(t, err)
 
@@ -87,7 +87,7 @@ func TestGapBetweenLastCommittedAndWindow(t *testing.T) {
 	initOffset := kafka.Offset(0)
 	assignment := []kafka.TopicPartition{{Partition: partition, Offset: initOffset}}
 
-	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t))
+	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t), nil)
 	err := om.RebalanceCb(nil, kafka.AssignedPartitions{Partitions: assignment})
 	require.NoError(t, err)
 
@@ -125,7 +125,7 @@ func TestMultiplePartitions(t *testing.T) {
 		{Partition: p2, Offset: initOffset2},
 	}
 
-	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t))
+	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t), nil)
 	err := om.RebalanceCb(nil, kafka.AssignedPartitions{Partitions: assignment})
 	require.NoError(t, err)
 
@@ -161,7 +161,7 @@ func TestRebalanceEvent(t *testing.T) {
 	initOffset1 := kafka.Offset(0)
 	assignment := []kafka.TopicPartition{{Partition: p1, Offset: initOffset1}}
 
-	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t))
+	om := NewOffsetManager(ctx, nil, 10*time.Millisecond, "latest", true, createLogger(t), nil)
 	err := om.RebalanceCb(nil, kafka.AssignedPartitions{Partitions: assignment})
 	require.NoError(t, err)
 

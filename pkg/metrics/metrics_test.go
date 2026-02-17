@@ -293,3 +293,402 @@ func TestErrorTypeConstants(t *testing.T) {
 	require.Equal(t, "out_of_window", ErrTypeOutOfWindow)
 	require.Equal(t, "invalid_watermark", ErrTypeInvalidWatermark)
 }
+
+func TestMetrics_UpdateOffsetMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("normal_update", func(t *testing.T) {
+		m.UpdateOffsetMetrics(0, 100, 150, 20)
+
+		require.Equal(t, float64(100), testutil.ToFloat64(m.lastCommittedOffset.WithLabelValues("0")))
+		require.Equal(t, float64(150), testutil.ToFloat64(m.latestProcessedOffset.WithLabelValues("0")))
+		require.Equal(t, float64(20), testutil.ToFloat64(m.offsetWindowSize.WithLabelValues("0")))
+		require.Equal(t, float64(50), testutil.ToFloat64(m.offsetLag.WithLabelValues("0")))
+	})
+
+	t.Run("zero_lag", func(t *testing.T) {
+		m.UpdateOffsetMetrics(1, 200, 200, 5)
+
+		require.Equal(t, float64(200), testutil.ToFloat64(m.lastCommittedOffset.WithLabelValues("1")))
+		require.Equal(t, float64(200), testutil.ToFloat64(m.latestProcessedOffset.WithLabelValues("1")))
+		require.Equal(t, float64(5), testutil.ToFloat64(m.offsetWindowSize.WithLabelValues("1")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.offsetLag.WithLabelValues("1")))
+	})
+
+	t.Run("negative_lag_clamped_to_zero", func(t *testing.T) {
+		// Edge case: latestProcessed < lastCommitted shouldn't happen normally,
+		// but the function should handle it gracefully by clamping to 0
+		m.UpdateOffsetMetrics(2, 300, 250, 10)
+
+		require.Equal(t, float64(300), testutil.ToFloat64(m.lastCommittedOffset.WithLabelValues("2")))
+		require.Equal(t, float64(250), testutil.ToFloat64(m.latestProcessedOffset.WithLabelValues("2")))
+		require.Equal(t, float64(10), testutil.ToFloat64(m.offsetWindowSize.WithLabelValues("2")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.offsetLag.WithLabelValues("2")), "negative lag should be clamped to 0")
+	})
+
+	t.Run("large_lag", func(t *testing.T) {
+		m.UpdateOffsetMetrics(3, 1000, 5000, 100)
+
+		require.Equal(t, float64(1000), testutil.ToFloat64(m.lastCommittedOffset.WithLabelValues("3")))
+		require.Equal(t, float64(5000), testutil.ToFloat64(m.latestProcessedOffset.WithLabelValues("3")))
+		require.Equal(t, float64(100), testutil.ToFloat64(m.offsetWindowSize.WithLabelValues("3")))
+		require.Equal(t, float64(4000), testutil.ToFloat64(m.offsetLag.WithLabelValues("3")))
+	})
+
+	t.Run("multiple_partitions", func(t *testing.T) {
+		// Update different partitions and verify they don't interfere
+		m.UpdateOffsetMetrics(10, 100, 150, 10)
+		m.UpdateOffsetMetrics(11, 200, 250, 20)
+		m.UpdateOffsetMetrics(12, 300, 350, 30)
+
+		require.Equal(t, float64(100), testutil.ToFloat64(m.lastCommittedOffset.WithLabelValues("10")))
+		require.Equal(t, float64(50), testutil.ToFloat64(m.offsetLag.WithLabelValues("10")))
+
+		require.Equal(t, float64(200), testutil.ToFloat64(m.lastCommittedOffset.WithLabelValues("11")))
+		require.Equal(t, float64(50), testutil.ToFloat64(m.offsetLag.WithLabelValues("11")))
+
+		require.Equal(t, float64(300), testutil.ToFloat64(m.lastCommittedOffset.WithLabelValues("12")))
+		require.Equal(t, float64(50), testutil.ToFloat64(m.offsetLag.WithLabelValues("12")))
+	})
+}
+
+func TestMetrics_RecordOffsetCommit(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("successful_commit", func(t *testing.T) {
+		m.RecordOffsetCommit(0, nil, 0.05)
+
+		successCount := testutil.ToFloat64(m.offsetCommits.WithLabelValues("0", "success"))
+		require.Equal(t, float64(1), successCount)
+
+		errorCount := testutil.ToFloat64(m.offsetCommits.WithLabelValues("0", "error"))
+		require.Equal(t, float64(0), errorCount)
+
+		// Verify histogram recorded the duration
+		metricFamilies, err := reg.Gather()
+		require.NoError(t, err)
+
+		var found bool
+		for _, mf := range metricFamilies {
+			if mf.GetName() == "indexer_kafka_offset_commit_duration_seconds" {
+				found = true
+				for _, metric := range mf.GetMetric() {
+					// Find the metric for partition 0
+					labelMap := make(map[string]string)
+					for _, label := range metric.GetLabel() {
+						labelMap[label.GetName()] = label.GetValue()
+					}
+					if labelMap["partition"] == "0" {
+						histogram := metric.GetHistogram()
+						require.Equal(t, uint64(1), histogram.GetSampleCount())
+					}
+				}
+			}
+		}
+		require.True(t, found, "commit duration histogram not found")
+	})
+
+	t.Run("failed_commit", func(t *testing.T) {
+		m.RecordOffsetCommit(1, errors.New("kafka unavailable"), 1.5)
+
+		successCount := testutil.ToFloat64(m.offsetCommits.WithLabelValues("1", "success"))
+		require.Equal(t, float64(0), successCount)
+
+		errorCount := testutil.ToFloat64(m.offsetCommits.WithLabelValues("1", "error"))
+		require.Equal(t, float64(1), errorCount)
+	})
+
+	t.Run("multiple_commits_same_partition", func(t *testing.T) {
+		m.RecordOffsetCommit(2, nil, 0.01)
+		m.RecordOffsetCommit(2, nil, 0.02)
+		m.RecordOffsetCommit(2, errors.New("timeout"), 2.0)
+		m.RecordOffsetCommit(2, nil, 0.03)
+
+		successCount := testutil.ToFloat64(m.offsetCommits.WithLabelValues("2", "success"))
+		require.Equal(t, float64(3), successCount)
+
+		errorCount := testutil.ToFloat64(m.offsetCommits.WithLabelValues("2", "error"))
+		require.Equal(t, float64(1), errorCount)
+	})
+
+	t.Run("multiple_partitions", func(t *testing.T) {
+		m.RecordOffsetCommit(10, nil, 0.1)
+		m.RecordOffsetCommit(11, errors.New("error"), 0.2)
+		m.RecordOffsetCommit(12, nil, 0.3)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.offsetCommits.WithLabelValues("10", "success")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.offsetCommits.WithLabelValues("10", "error")))
+
+		require.Equal(t, float64(0), testutil.ToFloat64(m.offsetCommits.WithLabelValues("11", "success")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.offsetCommits.WithLabelValues("11", "error")))
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.offsetCommits.WithLabelValues("12", "success")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.offsetCommits.WithLabelValues("12", "error")))
+	})
+
+	t.Run("various_durations", func(t *testing.T) {
+		// Record commits with various durations to test histogram buckets
+		m.RecordOffsetCommit(20, nil, 0.001) // 1ms
+		m.RecordOffsetCommit(20, nil, 0.01)  // 10ms
+		m.RecordOffsetCommit(20, nil, 0.1)   // 100ms
+		m.RecordOffsetCommit(20, nil, 1.0)   // 1s
+		m.RecordOffsetCommit(20, nil, 5.0)   // 5s
+
+		// Verify all were recorded
+		successCount := testutil.ToFloat64(m.offsetCommits.WithLabelValues("20", "success"))
+		require.Equal(t, float64(5), successCount)
+	})
+}
+
+func TestMetrics_RecordOffsetInsert(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("single_insert", func(t *testing.T) {
+		m.RecordOffsetInsert(0)
+
+		count := testutil.ToFloat64(m.offsetInserts.WithLabelValues("0"))
+		require.Equal(t, float64(1), count)
+	})
+
+	t.Run("multiple_inserts_same_partition", func(t *testing.T) {
+		m.RecordOffsetInsert(1)
+		m.RecordOffsetInsert(1)
+		m.RecordOffsetInsert(1)
+		m.RecordOffsetInsert(1)
+		m.RecordOffsetInsert(1)
+
+		count := testutil.ToFloat64(m.offsetInserts.WithLabelValues("1"))
+		require.Equal(t, float64(5), count)
+	})
+
+	t.Run("multiple_partitions", func(t *testing.T) {
+		m.RecordOffsetInsert(10)
+		m.RecordOffsetInsert(10)
+		m.RecordOffsetInsert(11)
+		m.RecordOffsetInsert(11)
+		m.RecordOffsetInsert(11)
+		m.RecordOffsetInsert(12)
+
+		require.Equal(t, float64(2), testutil.ToFloat64(m.offsetInserts.WithLabelValues("10")))
+		require.Equal(t, float64(3), testutil.ToFloat64(m.offsetInserts.WithLabelValues("11")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.offsetInserts.WithLabelValues("12")))
+	})
+
+	t.Run("high_throughput_simulation", func(t *testing.T) {
+		// Simulate high-throughput scenario with many inserts
+		for i := 0; i < 1000; i++ {
+			m.RecordOffsetInsert(100)
+		}
+
+		count := testutil.ToFloat64(m.offsetInserts.WithLabelValues("100"))
+		require.Equal(t, float64(1000), count)
+	})
+}
+
+func TestMetrics_OffsetMethods_NilReceiver(t *testing.T) {
+	// All offset methods should handle nil receiver gracefully (no panic)
+	var m *Metrics
+
+	require.NotPanics(t, func() {
+		m.UpdateOffsetMetrics(0, 100, 200, 50)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordOffsetCommit(0, nil, 0.5)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordOffsetCommit(0, errors.New("error"), 1.0)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordOffsetInsert(0)
+	})
+}
+
+func TestMetrics_RecordPartitionAssignment(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("single_partition_assignment", func(t *testing.T) {
+		m.RecordPartitionAssignment([]int32{0})
+
+		// Verify rebalance event recorded
+		require.Equal(t, float64(1), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("assigned")))
+
+		// Verify partition assignment recorded
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("0")))
+
+		// Verify assigned partitions gauge
+		require.Equal(t, float64(1), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("multiple_partitions_assignment", func(t *testing.T) {
+		m.RecordPartitionAssignment([]int32{0, 1, 2})
+
+		// Verify rebalance event counter incremented
+		require.Equal(t, float64(2), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("assigned")))
+
+		// Verify each partition assignment recorded
+		require.Equal(t, float64(2), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("0")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("1")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("2")))
+
+		// Verify assigned partitions gauge updated to latest count
+		require.Equal(t, float64(3), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("repeated_assignments_same_partition", func(t *testing.T) {
+		// Simulate a partition being assigned multiple times (e.g., across rebalances)
+		m.RecordPartitionAssignment([]int32{5})
+		m.RecordPartitionAssignment([]int32{5})
+		m.RecordPartitionAssignment([]int32{5})
+
+		// Verify rebalance events incremented
+		require.Equal(t, float64(5), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("assigned")))
+
+		// Verify partition assignment counter incremented
+		require.Equal(t, float64(3), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("5")))
+
+		// Verify assigned partitions gauge shows latest
+		require.Equal(t, float64(1), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("empty_assignment", func(t *testing.T) {
+		m.RecordPartitionAssignment([]int32{})
+
+		// Rebalance event should still be recorded
+		require.Equal(t, float64(6), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("assigned")))
+
+		// Gauge should be 0
+		require.Equal(t, float64(0), testutil.ToFloat64(m.assignedPartitions))
+	})
+}
+
+func TestMetrics_RecordPartitionRevocation(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("single_partition_revocation", func(t *testing.T) {
+		m.RecordPartitionRevocation([]int32{0})
+
+		// Verify rebalance event recorded
+		require.Equal(t, float64(1), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("revoked")))
+
+		// Verify partition revocation recorded
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("0")))
+
+		// Verify assigned partitions gauge cleared
+		require.Equal(t, float64(0), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("multiple_partitions_revocation", func(t *testing.T) {
+		m.RecordPartitionRevocation([]int32{0, 1, 2})
+
+		// Verify rebalance event counter incremented
+		require.Equal(t, float64(2), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("revoked")))
+
+		// Verify each partition revocation recorded
+		require.Equal(t, float64(2), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("0")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("1")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("2")))
+
+		// Gauge should be cleared
+		require.Equal(t, float64(0), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("repeated_revocations_same_partition", func(t *testing.T) {
+		// Simulate a partition being revoked multiple times (e.g., across rebalances)
+		m.RecordPartitionRevocation([]int32{5})
+		m.RecordPartitionRevocation([]int32{5})
+		m.RecordPartitionRevocation([]int32{5})
+
+		// Verify rebalance events incremented
+		require.Equal(t, float64(5), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("revoked")))
+
+		// Verify partition revocation counter incremented
+		require.Equal(t, float64(3), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("5")))
+
+		// Gauge should still be 0
+		require.Equal(t, float64(0), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("empty_revocation", func(t *testing.T) {
+		m.RecordPartitionRevocation([]int32{})
+
+		// Rebalance event should still be recorded
+		require.Equal(t, float64(6), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("revoked")))
+
+		// Gauge should remain 0
+		require.Equal(t, float64(0), testutil.ToFloat64(m.assignedPartitions))
+	})
+}
+
+func TestMetrics_RebalanceScenario(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	// Simulate a typical rebalance scenario
+	t.Run("initial_assignment", func(t *testing.T) {
+		m.RecordPartitionAssignment([]int32{0, 1, 2})
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("assigned")))
+		require.Equal(t, float64(3), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("rebalance_revoke_then_assign", func(t *testing.T) {
+		// First revoke all
+		m.RecordPartitionRevocation([]int32{0, 1, 2})
+		require.Equal(t, float64(1), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("revoked")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.assignedPartitions))
+
+		// Then assign different partitions
+		m.RecordPartitionAssignment([]int32{1, 2, 3, 4})
+		require.Equal(t, float64(2), testutil.ToFloat64(m.rebalanceEvents.WithLabelValues("assigned")))
+		require.Equal(t, float64(4), testutil.ToFloat64(m.assignedPartitions))
+	})
+
+	t.Run("verify_partition_counts", func(t *testing.T) {
+		// Partition 0: assigned once, revoked once
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("0")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("0")))
+
+		// Partition 1: assigned twice, revoked once
+		require.Equal(t, float64(2), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("1")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("1")))
+
+		// Partition 3: assigned once, never revoked
+		require.Equal(t, float64(1), testutil.ToFloat64(m.partitionAssignments.WithLabelValues("3")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.partitionRevocations.WithLabelValues("3")))
+	})
+}
+
+func TestMetrics_RebalanceMethods_NilReceiver(t *testing.T) {
+	// All rebalance methods should handle nil receiver gracefully (no panic)
+	var m *Metrics
+
+	require.NotPanics(t, func() {
+		m.RecordPartitionAssignment([]int32{0, 1, 2})
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordPartitionRevocation([]int32{0, 1, 2})
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordPartitionAssignment([]int32{})
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordPartitionRevocation(nil)
+	})
+}

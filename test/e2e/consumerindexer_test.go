@@ -131,7 +131,7 @@ func TestE2EConsumerIndexer(t *testing.T) {
 		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
-	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
+	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
 	require.NoError(t, err, "failed to create consumer")
 
 	// Start consumer in background
@@ -237,7 +237,7 @@ func TestE2EConsumerIndexerWithDLQ(t *testing.T) {
 		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
-	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
+	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
 	require.NoError(t, err)
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -577,7 +577,7 @@ func TestE2EConsumerIndexerConcurrency(t *testing.T) {
 		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
-	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
+	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
 	require.NoError(t, err)
 
 	// Track start time
@@ -711,7 +711,7 @@ func TestE2EConsumerIndexerOffsetManagement(t *testing.T) {
 		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
-	consumer1, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
+	consumer1, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
 	require.NoError(t, err)
 
 	g1, gctx1 := errgroup.WithContext(ctx)
@@ -786,7 +786,7 @@ func TestE2EConsumerIndexerOffsetManagement(t *testing.T) {
 	defer cancel2()
 
 	// Start second consumer with same group ID (should resume from committed offset)
-	consumer2, err := kafka.NewConsumer(ctx2, log, consumerCfg, proc)
+	consumer2, err := kafka.NewConsumer(ctx2, log, consumerCfg, proc, nil)
 	require.NoError(t, err)
 
 	g2, gctx2 := errgroup.WithContext(ctx2)
@@ -916,7 +916,7 @@ func TestE2EConsumerIndexerLargePayload(t *testing.T) {
 		MaxPollInterval:             durationPtr(30 * time.Second),
 	}
 
-	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc)
+	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
 	require.NoError(t, err)
 
 	g, gctx := errgroup.WithContext(ctx)
