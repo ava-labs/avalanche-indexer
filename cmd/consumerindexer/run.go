@@ -134,21 +134,42 @@ func run(c *cli.Context) error {
 	}
 	defer adminClient.Close()
 
-	err = kafka.EnsureTopic(ctx, adminClient, kafka.TopicConfig{
+	mainTopicConfig := kafka.TopicConfig{
 		Name:              cfg.Topic,
 		NumPartitions:     cfg.KafkaTopicNumPartitions,
 		ReplicationFactor: cfg.KafkaTopicReplicationFactor,
-	}, sugar)
+		Config:            make(map[string]string),
+	}
+
+	if cfg.KafkaTopicRetentionMs != "" {
+		mainTopicConfig.Config["retention.ms"] = cfg.KafkaTopicRetentionMs
+	}
+	if cfg.KafkaTopicRetentionBytes != "" {
+		mainTopicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
+	}
+
+	err = kafka.EnsureTopic(ctx, adminClient, mainTopicConfig, sugar)
 	if err != nil {
 		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
 	}
 
+	// Ensure DLQ topic exists with configs (if enabled)
 	if cfg.PublishToDLQ {
-		err = kafka.EnsureTopic(ctx, adminClient, kafka.TopicConfig{
+		dlqTopicConfig := kafka.TopicConfig{
 			Name:              cfg.DLQTopic,
 			NumPartitions:     cfg.KafkaDLQTopicNumPartitions,
 			ReplicationFactor: cfg.KafkaDLQTopicReplicationFactor,
-		}, sugar)
+			Config:            make(map[string]string),
+		}
+
+		if cfg.KafkaDLQTopicRetentionMs != "" {
+			dlqTopicConfig.Config["retention.ms"] = cfg.KafkaDLQTopicRetentionMs
+		}
+		if cfg.KafkaDLQTopicRetentionBytes != "" {
+			dlqTopicConfig.Config["retention.bytes"] = cfg.KafkaDLQTopicRetentionBytes
+		}
+
+		err = kafka.EnsureTopic(ctx, adminClient, dlqTopicConfig, sugar)
 		if err != nil {
 			return fmt.Errorf("failed to ensure kafka DLQ topic exists: %w", err)
 		}

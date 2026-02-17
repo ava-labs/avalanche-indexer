@@ -119,11 +119,21 @@ func run(c *cli.Context) error {
 	}
 	defer kafkaAdminClient.Close()
 
-	err = kafka.EnsureTopic(ctx, kafkaAdminClient, kafka.TopicConfig{
+	topicConfig := kafka.TopicConfig{
 		Name:              cfg.KafkaTopic,
 		NumPartitions:     cfg.KafkaTopicNumPartitions,
 		ReplicationFactor: cfg.KafkaTopicReplicationFactor,
-	}, sugar)
+		Config:            make(map[string]string),
+	}
+
+	if cfg.KafkaTopicRetentionMs != "" {
+		topicConfig.Config["retention.ms"] = cfg.KafkaTopicRetentionMs
+	}
+	if cfg.KafkaTopicRetentionBytes != "" {
+		topicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
+	}
+
+	err = kafka.EnsureTopic(ctx, kafkaAdminClient, topicConfig, sugar)
 	if err != nil {
 		return fmt.Errorf("failed to ensure kafka topic exists: %w", err)
 	}
