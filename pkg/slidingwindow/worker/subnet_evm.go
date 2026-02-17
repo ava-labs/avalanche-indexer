@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"time"
@@ -63,7 +64,7 @@ func (cw *SubnetEVMWorker) Process(ctx context.Context, height uint64) error {
 	}
 
 	cw.log.Debugw("block fetched, serializing", "height", height, "txs", len(evmBlock.Transactions))
-	bytes, err := evmBlock.Marshal()
+	bytes, err := json.Marshal(evmBlock)
 	if err != nil {
 		return fmt.Errorf("serialize block failed %d: %w", height, err)
 	}

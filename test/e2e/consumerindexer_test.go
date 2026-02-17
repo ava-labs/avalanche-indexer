@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"testing"
@@ -333,7 +334,7 @@ func produceBlocksToKafka(t *testing.T, brokers, topic string, blocks []messages
 	deliveryChan := make(chan ckafka.Event, len(blocks))
 
 	for _, block := range blocks {
-		data, err := block.Marshal()
+		data, err := json.Marshal(block)
 		require.NoError(t, err, "failed to marshal block")
 
 		msg := &ckafka.Message{
