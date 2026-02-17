@@ -11,7 +11,7 @@ type Config struct {
 	Cluster              string
 	Database             string
 	Username             string
-	Password             string
+	Password             string //nolint:gosec // G117: Password field is required for ClickHouse authentication configuration
 	Debug                bool
 	InsecureSkipVerify   bool
 	MaxExecutionTime     int // seconds
