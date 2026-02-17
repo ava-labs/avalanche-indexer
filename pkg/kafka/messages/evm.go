@@ -21,6 +21,15 @@ import (
 // ErrParseBigInt is returned when parsing a big.Int from JSON fails.
 var ErrParseBigInt = errors.New("failed to parse big.Int")
 
+// ErrUnmarshalTransaction is returned when unmarshaling an EVMTransaction fails.
+var ErrUnmarshalTransaction = errors.New("failed to unmarshal transaction")
+
+// ErrRecoverSender is returned when recovering the sender address from a transaction fails.
+var ErrRecoverSender = errors.New("failed to recover sender")
+
+// ErrConvertTransactions is returned when converting libevm transactions to EVM transactions fails.
+var ErrConvertTransactions = errors.New("failed to convert transactions")
+
 // jsonIter is a drop-in replacement for encoding/json using jsoniter for 2-3x performance improvement.
 // It's 100% compatible with the standard library API.
 var jsonIter = jsonIterator.ConfigCompatibleWithStandardLibrary
@@ -47,9 +56,6 @@ func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error)
 		var s string
 		if err := jsonIter.Unmarshal(raw, &s); err != nil {
 			return nil, fmt.Errorf("%w: failed to parse %s as string: %w", ErrParseBigInt, fieldName, err)
-		}
-		if s == "" {
-			return nil, nil
 		}
 		return parseBigIntFromString(s, fieldName)
 	}
@@ -236,7 +242,7 @@ type evmTransactionJSON struct {
 func EVMBlockFromLibevmCoreth(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*EVMBlock, error) {
 	transactions, err := EVMTransactionFromLibevm(block.Transactions())
 	if err != nil {
-		return nil, fmt.Errorf("convert transactions: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrConvertTransactions, err)
 	}
 
 	var beaconRoot string
@@ -290,7 +296,7 @@ func EVMBlockFromLibevmCoreth(block *libevmtypes.Block, evmChainID *big.Int, blo
 func EVMBlockFromLibevmSubnetEVM(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*EVMBlock, error) {
 	transactions, err := EVMTransactionFromLibevm(block.Transactions())
 	if err != nil {
-		return nil, fmt.Errorf("convert transactions: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrConvertTransactions, err)
 	}
 
 	var beaconRoot string
@@ -347,7 +353,7 @@ func EVMTransactionFromLibevm(transactions []*libevmtypes.Transaction) ([]*EVMTr
 		signer := libevmtypes.LatestSignerForChainID(tx.ChainId())
 		from, err := libevmtypes.Sender(signer, tx)
 		if err != nil {
-			return nil, fmt.Errorf("recover sender for tx %s: %w", tx.Hash().Hex(), err)
+			return nil, fmt.Errorf("%w for tx %s: %w", ErrRecoverSender, tx.Hash().Hex(), err)
 		}
 
 		var to string

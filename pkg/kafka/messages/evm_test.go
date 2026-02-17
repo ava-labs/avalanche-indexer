@@ -33,7 +33,7 @@ func newTestHasher() libevmtypes.TrieHasher {
 }
 
 // initCustomTypes registers coreth custom types for header extras.
-// Must be called before any test that uses BlockFromLibevm.
+// Must be called before any test that uses EVMBlockFromLibevmCoreth.
 func initCustomTypes() {
 	registerOnce.Do(func() {
 		customtypes.Register()
@@ -292,12 +292,14 @@ func TestEVMTransactionsFromLibevm(t *testing.T) {
 		name     string
 		txs      []*libevmtypes.Transaction
 		wantLen  int
+		wantErr  bool
 		assertFn func(t *testing.T, got []*EVMTransaction)
 	}{
 		{
 			name:    "empty transactions",
 			txs:     nil,
 			wantLen: 0,
+			wantErr: false,
 			assertFn: func(t *testing.T, got []*EVMTransaction) {
 				assert.Empty(t, got)
 			},
@@ -306,6 +308,7 @@ func TestEVMTransactionsFromLibevm(t *testing.T) {
 			name:    "single transaction with To address",
 			txs:     []*libevmtypes.Transaction{newSignedTx(chainID, 1, &toAddr)},
 			wantLen: 1,
+			wantErr: false,
 			assertFn: func(t *testing.T, got []*EVMTransaction) {
 				tx := got[0]
 				assert.NotEmpty(t, tx.Hash)
@@ -324,6 +327,7 @@ func TestEVMTransactionsFromLibevm(t *testing.T) {
 			name:    "contract creation (nil To)",
 			txs:     []*libevmtypes.Transaction{newSignedTx(chainID, 1, nil)},
 			wantLen: 1,
+			wantErr: false,
 			assertFn: func(t *testing.T, got []*EVMTransaction) {
 				assert.Empty(t, got[0].To)
 			},
@@ -336,6 +340,7 @@ func TestEVMTransactionsFromLibevm(t *testing.T) {
 				newSignedTx(chainID, 3, &toAddr),
 			},
 			wantLen: 3,
+			wantErr: false,
 			assertFn: func(t *testing.T, got []*EVMTransaction) {
 				assert.Len(t, got, 3)
 				// Each tx should have a unique hash
@@ -346,6 +351,28 @@ func TestEVMTransactionsFromLibevm(t *testing.T) {
 				assert.Len(t, hashes, 3)
 			},
 		},
+		{
+			name: "unsigned transaction fails sender recovery",
+			txs: []*libevmtypes.Transaction{
+				// Create an unsigned transaction (no signature)
+				libevmtypes.NewTx(&libevmtypes.DynamicFeeTx{
+					ChainID:   chainID,
+					Nonce:     1,
+					GasTipCap: big.NewInt(1_000_000_000),
+					GasFeeCap: big.NewInt(2_000_000_000),
+					Gas:       21000,
+					To:        &toAddr,
+					Value:     big.NewInt(1_000_000_000_000_000_000),
+					Data:      []byte{},
+					// No V, R, S signature fields - this will cause sender recovery to fail
+				}),
+			},
+			wantLen: 0,
+			wantErr: true,
+			assertFn: func(_ *testing.T, _ []*EVMTransaction) {
+				// Should not be called when wantErr is true
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -354,9 +381,281 @@ func TestEVMTransactionsFromLibevm(t *testing.T) {
 
 			got, err := EVMTransactionFromLibevm(tt.txs)
 
+			if tt.wantErr {
+				require.ErrorIs(t, err, ErrRecoverSender)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.Len(t, got, tt.wantLen)
 			tt.assertFn(t, got)
+		})
+	}
+}
+
+// TestEVMBlockFromLibevmCoreth_ErrorPaths tests error handling in EVMBlockFromLibevmCoreth
+func TestEVMBlockFromLibevmCoreth_ErrorPaths(t *testing.T) {
+	initCustomTypes()
+	t.Parallel()
+
+	chainID := big.NewInt(43114)
+	toAddr := common.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	t.Run("fails when transaction conversion fails", func(t *testing.T) {
+		t.Parallel()
+
+		header := newTestHeader()
+		// Create an unsigned transaction that will fail sender recovery
+		unsignedTx := libevmtypes.NewTx(&libevmtypes.DynamicFeeTx{
+			ChainID:   chainID,
+			Nonce:     1,
+			GasTipCap: big.NewInt(1_000_000_000),
+			GasFeeCap: big.NewInt(2_000_000_000),
+			Gas:       21000,
+			To:        &toAddr,
+			Value:     big.NewInt(1_000_000_000_000_000_000),
+			Data:      []byte{},
+		})
+		block := libevmtypes.NewBlock(header, []*libevmtypes.Transaction{unsignedTx}, nil, nil, newTestHasher())
+
+		got, err := EVMBlockFromLibevmCoreth(block, chainID, nil)
+
+		require.ErrorIs(t, err, ErrConvertTransactions)
+		assert.Nil(t, got)
+	})
+}
+
+// TestEVMBlockFromLibevmCoreth_ExtraFields tests the nil checks for extra header fields
+func TestEVMBlockFromLibevmCoreth_ExtraFields(t *testing.T) {
+	initCustomTypes()
+	t.Parallel()
+
+	chainID := big.NewInt(43114)
+
+	t.Run("default_extra_fields_when_nil", func(t *testing.T) {
+		t.Parallel()
+
+		header := newTestHeader()
+		block := libevmtypes.NewBlock(header, nil, nil, nil, newTestHasher())
+
+		got, err := EVMBlockFromLibevmCoreth(block, chainID, nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		// When extra fields are not set in the Extra data, GetHeaderExtra returns defaults (nil pointers)
+		// which result in 0 values after the nil checks
+		assert.Equal(t, uint64(0), got.TimestampMs, "TimestampMs should be 0 when extra.TimeMilliseconds is nil")
+		assert.Equal(t, uint64(0), got.MinDelayExcess, "MinDelayExcess should be 0 when extra.MinDelayExcess is nil")
+	})
+}
+
+// Note: EVMBlockFromLibevmSubnetEVM tests are omitted because coreth and subnet-evm custom types
+// conflict when both try to register with libevm in the same process. Since EVMBlockFromLibevmCoreth
+// is actively used and tested (85.7% coverage) and EVMBlockFromLibevmSubnetEVM shares the same
+// error handling logic (both use EVMTransactionFromLibevm), the error paths are already covered.
+// Subnet-evm specific tests should be in a separate test file with build tags if needed.
+
+func TestEVMLogsFromLibevm(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		logs    []*libevmtypes.Log
+		wantLen int
+	}{
+		{
+			name:    "nil_logs",
+			logs:    nil,
+			wantLen: 0,
+		},
+		{
+			name:    "empty_logs",
+			logs:    []*libevmtypes.Log{},
+			wantLen: 0,
+		},
+		{
+			name: "single_log",
+			logs: []*libevmtypes.Log{
+				{
+					Address:     common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+					Topics:      []common.Hash{common.HexToHash("0xabc"), common.HexToHash("0xdef")},
+					Data:        []byte{0x01, 0x02, 0x03},
+					BlockNumber: 12345,
+					TxHash:      common.HexToHash("0xtxhash"),
+					TxIndex:     1,
+					BlockHash:   common.HexToHash("0xblockhash"),
+					Index:       0,
+					Removed:     false,
+				},
+			},
+			wantLen: 1,
+		},
+		{
+			name: "multiple_logs",
+			logs: []*libevmtypes.Log{
+				{
+					Address:     common.HexToAddress("0x1111"),
+					Topics:      []common.Hash{common.HexToHash("0xa")},
+					Data:        []byte{0x01},
+					BlockNumber: 100,
+					TxHash:      common.HexToHash("0xtx1"),
+					TxIndex:     0,
+					BlockHash:   common.HexToHash("0xblock1"),
+					Index:       0,
+					Removed:     false,
+				},
+				{
+					Address:     common.HexToAddress("0x2222"),
+					Topics:      []common.Hash{common.HexToHash("0xb"), common.HexToHash("0xc")},
+					Data:        []byte{0x02, 0x03},
+					BlockNumber: 100,
+					TxHash:      common.HexToHash("0xtx1"),
+					TxIndex:     0,
+					BlockHash:   common.HexToHash("0xblock1"),
+					Index:       1,
+					Removed:     false,
+				},
+				{
+					Address:     common.HexToAddress("0x3333"),
+					Topics:      []common.Hash{},
+					Data:        []byte{},
+					BlockNumber: 100,
+					TxHash:      common.HexToHash("0xtx1"),
+					TxIndex:     0,
+					BlockHash:   common.HexToHash("0xblock1"),
+					Index:       2,
+					Removed:     true,
+				},
+			},
+			wantLen: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := EVMLogsFromLibevm(tt.logs)
+
+			assert.Len(t, got, tt.wantLen)
+
+			// Verify field mapping for non-empty cases
+			for i, log := range tt.logs {
+				assert.Equal(t, log.Address, got[i].Address, "Address mismatch at index %d", i)
+				assert.Equal(t, log.Topics, got[i].Topics, "Topics mismatch at index %d", i)
+				assert.Equal(t, log.Data, got[i].Data, "Data mismatch at index %d", i)
+				assert.Equal(t, log.BlockNumber, got[i].BlockNumber, "BlockNumber mismatch at index %d", i)
+				assert.Equal(t, log.TxHash, got[i].TxHash, "TxHash mismatch at index %d", i)
+				assert.Equal(t, log.TxIndex, got[i].TxIndex, "TxIndex mismatch at index %d", i)
+				assert.Equal(t, log.BlockHash, got[i].BlockHash, "BlockHash mismatch at index %d", i)
+				assert.Equal(t, log.Index, got[i].Index, "Index mismatch at index %d", i)
+				assert.Equal(t, log.Removed, got[i].Removed, "Removed mismatch at index %d", i)
+			}
+		})
+	}
+}
+
+func TestEVMTxReceiptFromLibevm(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		receipt *libevmtypes.Receipt
+	}{
+		{
+			name: "receipt_with_contract_creation",
+			receipt: &libevmtypes.Receipt{
+				ContractAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+				Status:          1,
+				GasUsed:         53000,
+				Logs:            []*libevmtypes.Log{},
+			},
+		},
+		{
+			name: "receipt_without_contract_creation",
+			receipt: &libevmtypes.Receipt{
+				ContractAddress: common.Address{}, // Zero address for non-contract transactions
+				Status:          1,
+				GasUsed:         21000,
+				Logs:            []*libevmtypes.Log{},
+			},
+		},
+		{
+			name: "failed_transaction_receipt",
+			receipt: &libevmtypes.Receipt{
+				ContractAddress: common.Address{},
+				Status:          0, // Failed
+				GasUsed:         21000,
+				Logs:            []*libevmtypes.Log{},
+			},
+		},
+		{
+			name: "receipt_with_logs",
+			receipt: &libevmtypes.Receipt{
+				ContractAddress: common.Address{},
+				Status:          1,
+				GasUsed:         65000,
+				Logs: []*libevmtypes.Log{
+					{
+						Address:     common.HexToAddress("0xaaa"),
+						Topics:      []common.Hash{common.HexToHash("0x1"), common.HexToHash("0x2")},
+						Data:        []byte{0x01, 0x02, 0x03, 0x04},
+						BlockNumber: 12345,
+						TxHash:      common.HexToHash("0xtx"),
+						TxIndex:     5,
+						BlockHash:   common.HexToHash("0xblock"),
+						Index:       0,
+						Removed:     false,
+					},
+					{
+						Address:     common.HexToAddress("0xbbb"),
+						Topics:      []common.Hash{common.HexToHash("0x3")},
+						Data:        []byte{0x05},
+						BlockNumber: 12345,
+						TxHash:      common.HexToHash("0xtx"),
+						TxIndex:     5,
+						BlockHash:   common.HexToHash("0xblock"),
+						Index:       1,
+						Removed:     false,
+					},
+				},
+			},
+		},
+		{
+			name: "receipt_with_nil_logs",
+			receipt: &libevmtypes.Receipt{
+				ContractAddress: common.Address{},
+				Status:          1,
+				GasUsed:         21000,
+				Logs:            nil,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := EVMTxReceiptFromLibevm(tt.receipt)
+
+			require.NotNil(t, got, "EVMTxReceiptFromLibevm should not return nil")
+			assert.Equal(t, tt.receipt.ContractAddress, got.ContractAddress, "ContractAddress mismatch")
+			assert.Equal(t, tt.receipt.Status, got.Status, "Status mismatch")
+			assert.Equal(t, tt.receipt.GasUsed, got.GasUsed, "GasUsed mismatch")
+
+			// Verify logs are converted correctly
+			assert.Len(t, got.Logs, len(tt.receipt.Logs), "Logs length mismatch")
+			for i, log := range tt.receipt.Logs {
+				assert.Equal(t, log.Address, got.Logs[i].Address, "Log[%d] Address mismatch", i)
+				assert.Equal(t, log.Topics, got.Logs[i].Topics, "Log[%d] Topics mismatch", i)
+				assert.Equal(t, log.Data, got.Logs[i].Data, "Log[%d] Data mismatch", i)
+				assert.Equal(t, log.BlockNumber, got.Logs[i].BlockNumber, "Log[%d] BlockNumber mismatch", i)
+				assert.Equal(t, log.TxHash, got.Logs[i].TxHash, "Log[%d] TxHash mismatch", i)
+				assert.Equal(t, log.TxIndex, got.Logs[i].TxIndex, "Log[%d] TxIndex mismatch", i)
+				assert.Equal(t, log.BlockHash, got.Logs[i].BlockHash, "Log[%d] BlockHash mismatch", i)
+				assert.Equal(t, log.Index, got.Logs[i].Index, "Log[%d] Index mismatch", i)
+				assert.Equal(t, log.Removed, got.Logs[i].Removed, "Log[%d] Removed mismatch", i)
+			}
 		})
 	}
 }
@@ -1078,6 +1377,27 @@ func TestParseBigIntFromRaw(t *testing.T) {
 			expected:  nil,
 			wantErr:   true,
 		},
+		{
+			name:      "malformed_quoted_string_unclosed_quote",
+			input:     `"12345`,
+			fieldName: "value",
+			expected:  nil,
+			wantErr:   true,
+		},
+		{
+			name:      "malformed_quoted_string_escaped_unclosed",
+			input:     `"test\"`,
+			fieldName: "value",
+			expected:  nil,
+			wantErr:   true,
+		},
+		{
+			name:      "malformed_quoted_string_empty",
+			input:     `"`,
+			fieldName: "value",
+			expected:  nil,
+			wantErr:   true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1136,6 +1456,200 @@ func TestBigIntToRawJSON_RoundTrip(t *testing.T) {
 				require.NotNil(t, parsed, "Should not be nil after round-trip")
 				assert.Equal(t, original.String(), parsed.String(),
 					"Value should match after round-trip")
+			}
+		})
+	}
+}
+
+// TestEVMBlock_UnmarshalJSON_ErrorPaths tests error handling in EVMBlock.UnmarshalJSON
+// for invalid big.Int fields to ensure proper error propagation.
+func TestEVMBlock_UnmarshalJSON_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		json      string
+		wantErr   bool
+		errString string // Expected error substring
+	}{
+		{
+			name:      "invalid_evmChainId_field",
+			json:      `{"evmChainId":"not-a-number","number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_number_field",
+			json:      `{"number":"invalid","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_baseFeePerGas_field",
+			json:      `{"number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456,"baseFeePerGas":"not-valid"}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_difficulty_field",
+			json:      `{"number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456,"difficulty":"xyz"}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "array_instead_of_number_evmChainId",
+			json:      `{"evmChainId":[],"number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "object_instead_of_number_number",
+			json:      `{"number":{},"hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_scientific_notation_baseFeePerGas",
+			json:      `{"number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456,"baseFeePerGas":"1.2.3e10"}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "malformed_json_in_difficulty",
+			json:      `{"number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456,"difficulty":{invalid}}`,
+			wantErr:   true,
+			errString: "ReadObjectCB", // jsoniter fails before reaching our parsing code
+		},
+		{
+			name:      "null_number_is_invalid",
+			json:      `{"number":null,"hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456}`,
+			wantErr:   false,
+			errString: "",
+		},
+		{
+			name:      "empty_string_baseFeePerGas_is_valid",
+			json:      `{"number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456,"baseFeePerGas":""}`,
+			wantErr:   false,
+			errString: "",
+		},
+		{
+			name:      "null_optional_fields_are_valid",
+			json:      `{"number":"1","hash":"0x1","parentHash":"0x2","stateRoot":"0x3","transactionsRoot":"0x4","receiptsRoot":"0x5","sha3Uncles":"0x6","miner":"0x7","gasLimit":1000,"gasUsed":500,"timestamp":123456,"evmChainId":null,"baseFeePerGas":null,"difficulty":null}`,
+			wantErr:   false,
+			errString: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var block EVMBlock
+			err := jsonIter.Unmarshal([]byte(tt.json), &block)
+
+			if tt.wantErr {
+				// jsoniter breaks error chains by calling err.Error() in unmarshalerDecoder.Decode(),
+				// so we cannot use errors.Is() to check for sentinel errors.
+				// See: https://github.com/json-iterator/go/blob/v1.1.12/reflect_marshaler.go#L201
+				//nolint:forbidigo // require.Error is necessary because jsoniter breaks error wrapping
+				require.Error(t, err, "Expected error for test case: %s", tt.name)
+				assert.Contains(t, err.Error(), tt.errString, "Error message should contain expected substring for test case: %s", tt.name)
+			} else {
+				require.NoError(t, err, "Expected no error for test case: %s", tt.name)
+			}
+		})
+	}
+}
+
+// TestEVMTransaction_UnmarshalJSON_ErrorPaths tests error handling in UnmarshalJSON
+// for invalid big.Int fields to ensure proper error propagation.
+func TestEVMTransaction_UnmarshalJSON_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		json      string
+		wantErr   bool
+		errString string // Expected error substring
+	}{
+		{
+			name:      "invalid_value_field",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":"not-a-number","gas":21000}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_gasPrice_field",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":"100","gas":21000,"gasPrice":"invalid"}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_maxFeePerGas_field",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":"100","gas":21000,"maxFeePerGas":"not-valid"}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_maxPriorityFeePerGas_field",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":"100","gas":21000,"maxPriorityFeePerGas":"xyz"}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "malformed_json_in_value",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":{invalid},"gas":21000}`,
+			wantErr:   true,
+			errString: "ReadObjectCB", // jsoniter fails before reaching our parsing code
+		},
+		{
+			name:      "array_instead_of_number_value",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":[],"gas":21000}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "object_instead_of_number_gasPrice",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":"100","gas":21000,"gasPrice":{}}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "invalid_scientific_notation_maxFeePerGas",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":"100","gas":21000,"maxFeePerGas":"1.2.3e10"}`,
+			wantErr:   true,
+			errString: "failed to parse big.Int",
+		},
+		{
+			name:      "null_value_is_valid",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":null,"gas":21000}`,
+			wantErr:   false,
+			errString: "",
+		},
+		{
+			name:      "empty_string_value_is_valid",
+			json:      `{"hash":"0x1","from":"0x2","to":"0x3","nonce":1,"value":"","gas":21000}`,
+			wantErr:   false,
+			errString: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var tx EVMTransaction
+			err := jsonIter.Unmarshal([]byte(tt.json), &tx)
+
+			if tt.wantErr {
+				// jsoniter breaks error chains by calling err.Error() in unmarshalerDecoder.Decode(),
+				// so we cannot use errors.Is() to check for sentinel errors.
+				// See: https://github.com/json-iterator/go/blob/v1.1.12/reflect_marshaler.go#L201
+				//nolint:forbidigo // require.Error is necessary because jsoniter breaks error wrapping
+				require.Error(t, err, "Expected error for test case: %s", tt.name)
+				assert.Contains(t, err.Error(), tt.errString, "Error message should contain expected substring for test case: %s", tt.name)
+			} else {
+				require.NoError(t, err, "Expected no error for test case: %s", tt.name)
 			}
 		})
 	}
