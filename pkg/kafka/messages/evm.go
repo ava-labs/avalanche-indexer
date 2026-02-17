@@ -4,6 +4,7 @@ package messages
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -16,6 +17,9 @@ import (
 	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 	jsonIterator "github.com/json-iterator/go"
 )
+
+// ErrParseBigInt is returned when parsing a big.Int from JSON fails.
+var ErrParseBigInt = errors.New("failed to parse big.Int")
 
 // jsonIter is a drop-in replacement for encoding/json using jsoniter for 2-3x performance improvement.
 // It's 100% compatible with the standard library API.
@@ -42,7 +46,7 @@ func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error)
 	if raw[0] == '"' {
 		var s string
 		if err := jsonIter.Unmarshal(raw, &s); err != nil {
-			return nil, fmt.Errorf("failed to parse %s as string: %w", fieldName, err)
+			return nil, fmt.Errorf("%w: failed to parse %s as string: %w", ErrParseBigInt, fieldName, err)
 		}
 		if s == "" {
 			return nil, nil
@@ -53,7 +57,7 @@ func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error)
 	// Try as JSON number (e.g., 1000000000000000000 or 1e+21)
 	var f float64
 	if err := jsonIter.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("failed to parse %s as number: %w", fieldName, err)
+		return nil, fmt.Errorf("%w: failed to parse %s as number: %w", ErrParseBigInt, fieldName, err)
 	}
 
 	// Convert float to big.Int using big.Float for precision
@@ -75,13 +79,13 @@ func parseBigIntFromString(s, fieldName string) (*big.Int, error) {
 	if strings.Contains(s, "e") || strings.Contains(s, "E") {
 		f, _, err := big.ParseFloat(s, 10, 256, big.ToNearestEven)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse %s as float: %w", fieldName, err)
+			return nil, fmt.Errorf("%w: failed to parse %s as float: %w", ErrParseBigInt, fieldName, err)
 		}
 		result, _ := f.Int(nil)
 		return result, nil
 	}
 
-	return nil, fmt.Errorf("invalid number format for %s: %s", fieldName, s)
+	return nil, fmt.Errorf("%w: invalid number format for %s: %s", ErrParseBigInt, fieldName, s)
 }
 
 type EVMBlock struct {

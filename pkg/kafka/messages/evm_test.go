@@ -1,6 +1,8 @@
 package messages
 
 import (
+	"encoding/json"
+	"fmt"
 	"math/big"
 	"sync"
 	"testing"
@@ -884,6 +886,259 @@ func TestEVMTransaction_MarshalUnmarshal_RoundTrip(t *testing.T) {
 	assert.Equal(t, original.Gas, parsed.Gas)
 	assert.Equal(t, original.Input, parsed.Input)
 	assert.Equal(t, original.Type, parsed.Type)
+}
+
+// TestBigIntToRawJSON tests the bigIntToRawJSON helper function.
+func TestBigIntToRawJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    *big.Int
+		expected string // Expected JSON RawMessage as string
+	}{
+		{
+			name:     "nil_value",
+			input:    nil,
+			expected: `""`,
+		},
+		{
+			name:     "zero",
+			input:    big.NewInt(0),
+			expected: `"0"`,
+		},
+		{
+			name:     "positive_small",
+			input:    big.NewInt(123),
+			expected: `"123"`,
+		},
+		{
+			name:     "one_ether_1e18",
+			input:    big.NewInt(1000000000000000000),
+			expected: `"1000000000000000000"`,
+		},
+		{
+			name:     "large_1e21",
+			input:    new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(1000)),
+			expected: `"1000000000000000000000"`,
+		},
+		{
+			name: "extremely_large_1e30",
+			input: func() *big.Int {
+				v := new(big.Int)
+				v.SetString("1000000000000000000000000000000", 10)
+				return v
+			}(),
+			expected: `"1000000000000000000000000000000"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := bigIntToRawJSON(tt.input)
+			assert.Equal(t, tt.expected, string(result), "bigIntToRawJSON output mismatch")
+
+			// Verify output is valid JSON
+			var dummy interface{}
+			err := jsonIter.Unmarshal(result, &dummy)
+			require.NoError(t, err, "Result should be valid JSON")
+
+			// Verify no scientific notation
+			resultStr := string(result)
+			assert.NotContains(t, resultStr, "e+", "Should not contain scientific notation (e+)")
+			assert.NotContains(t, resultStr, "E+", "Should not contain scientific notation (E+)")
+			assert.NotContains(t, resultStr, "e-", "Should not contain scientific notation (e-)")
+			assert.NotContains(t, resultStr, "E-", "Should not contain scientific notation (E-)")
+		})
+	}
+}
+
+// TestParseBigIntFromRaw tests the parseBigIntFromRaw helper function.
+func TestParseBigIntFromRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		input     string // JSON RawMessage as string
+		fieldName string
+		expected  *big.Int
+		wantErr   bool
+	}{
+		{
+			name:      "empty_raw_message",
+			input:     "",
+			fieldName: "testField",
+			expected:  nil,
+			wantErr:   false,
+		},
+		{
+			name:      "null_value",
+			input:     "null",
+			fieldName: "testField",
+			expected:  nil,
+			wantErr:   false,
+		},
+		{
+			name:      "empty_quoted_string",
+			input:     `""`,
+			fieldName: "testField",
+			expected:  nil,
+			wantErr:   false,
+		},
+		{
+			name:      "quoted_decimal_string",
+			input:     `"1000000000000000000"`,
+			fieldName: "value",
+			expected:  big.NewInt(1000000000000000000),
+			wantErr:   false,
+		},
+		{
+			name:      "quoted_scientific_notation_1e18",
+			input:     `"1e+18"`,
+			fieldName: "value",
+			expected:  big.NewInt(1000000000000000000),
+			wantErr:   false,
+		},
+		{
+			name:      "quoted_scientific_notation_1e21",
+			input:     `"1e+21"`,
+			fieldName: "value",
+			expected:  new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(1000)),
+			wantErr:   false,
+		},
+		{
+			name:      "quoted_scientific_notation_lowercase",
+			input:     `"5e20"`,
+			fieldName: "gasPrice",
+			expected:  func() *big.Int { v, _ := new(big.Int).SetString("500000000000000000000", 10); return v }(),
+			wantErr:   false,
+		},
+		{
+			name:      "quoted_zero",
+			input:     `"0"`,
+			fieldName: "value",
+			expected:  big.NewInt(0),
+			wantErr:   false,
+		},
+		{
+			name:      "unquoted_number",
+			input:     `1000000000000000000`,
+			fieldName: "value",
+			expected:  big.NewInt(1000000000000000000),
+			wantErr:   false,
+		},
+		{
+			name:      "unquoted_scientific_notation_1e21",
+			input:     `1e+21`,
+			fieldName: "value",
+			expected:  new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(1000)),
+			wantErr:   false,
+		},
+		{
+			name:      "unquoted_scientific_notation_5e10",
+			input:     `5e+10`,
+			fieldName: "gasPrice",
+			expected:  big.NewInt(50000000000),
+			wantErr:   false,
+		},
+		{
+			name:      "unquoted_zero",
+			input:     `0`,
+			fieldName: "value",
+			expected:  big.NewInt(0),
+			wantErr:   false,
+		},
+		{
+			name:      "very_large_decimal_string",
+			input:     `"999999999999999999999999999999"`,
+			fieldName: "value",
+			expected:  func() *big.Int { v, _ := new(big.Int).SetString("999999999999999999999999999999", 10); return v }(),
+			wantErr:   false,
+		},
+		{
+			name:      "decimal_point_scientific_1dot5e18",
+			input:     `"1.5e18"`,
+			fieldName: "value",
+			expected:  big.NewInt(1500000000000000000),
+			wantErr:   false,
+		},
+		{
+			name:      "invalid_quoted_string",
+			input:     `"not-a-number"`,
+			fieldName: "value",
+			expected:  nil,
+			wantErr:   true,
+		},
+		{
+			name:      "invalid_json",
+			input:     `{invalid}`,
+			fieldName: "value",
+			expected:  nil,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := parseBigIntFromRaw(json.RawMessage(tt.input), tt.fieldName)
+
+			if tt.wantErr {
+				require.ErrorIs(t, err, ErrParseBigInt, "Expected ErrParseBigInt for input: %s", tt.input)
+				return
+			}
+
+			require.NoError(t, err, "Unexpected error for input: %s", tt.input)
+
+			if tt.expected == nil {
+				assert.Nil(t, result, "Expected nil result for input: %s", tt.input)
+			} else {
+				require.NotNil(t, result, "Expected non-nil result for input: %s", tt.input)
+				assert.Equal(t, tt.expected.String(), result.String(),
+					"Value mismatch for input: %s", tt.input)
+			}
+		})
+	}
+}
+
+// TestBigIntToRawJSON_RoundTrip tests that bigIntToRawJSON and parseBigIntFromRaw are inverse operations.
+func TestBigIntToRawJSON_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	testValues := []*big.Int{
+		nil,
+		big.NewInt(0),
+		big.NewInt(1),
+		big.NewInt(123456789),
+		big.NewInt(1000000000000000000), // 1e18
+		new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(1000)), // 1e21
+		func() *big.Int { v, _ := new(big.Int).SetString("999999999999999999999999999999", 10); return v }(),
+	}
+
+	for i, original := range testValues {
+		t.Run(fmt.Sprintf("value_%d", i), func(t *testing.T) {
+			t.Parallel()
+
+			// Convert to RawMessage
+			raw := bigIntToRawJSON(original)
+
+			// Parse back
+			parsed, err := parseBigIntFromRaw(raw, "testField")
+			require.NoError(t, err, "Should parse without error")
+
+			// Compare
+			if original == nil {
+				assert.Nil(t, parsed, "Should be nil after round-trip")
+			} else {
+				require.NotNil(t, parsed, "Should not be nil after round-trip")
+				assert.Equal(t, original.String(), parsed.String(),
+					"Value should match after round-trip")
+			}
+		})
+	}
 }
 
 // TestEVMTransaction_MarshalNoScientificNotation verifies that Marshal always
