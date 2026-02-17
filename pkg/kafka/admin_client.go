@@ -265,6 +265,7 @@ func increasePartitions(
 }
 
 // updateTopicConfig ensures topic configuration matches desired config.
+// Configs like retention.ms, compression.type, etc. are updated.
 // Updates any configs that differ from the desired state.
 func updateTopicConfig(
 	ctx context.Context,
