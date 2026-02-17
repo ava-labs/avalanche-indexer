@@ -168,10 +168,10 @@ func EnsureTopic(
 		return CreateTopic(ctx, admin, config, log)
 	}
 
-	return ensureTopicConfiguration(ctx, admin, topicMetadata, log, config)
+	return ensureTopicStructure(ctx, admin, topicMetadata, log, config)
 }
 
-// ensureTopicConfiguration validates and adjusts topic configuration.
+// ensureTopicStructure validates and adjusts topic configuration.
 //
 // Behavior:
 //   - If topic has fewer partitions: Increases partition count automatically
@@ -180,7 +180,7 @@ func EnsureTopic(
 //   - If topic configs differ: Updates configs automatically
 //
 // This is an internal helper function used by EnsureTopic.
-func ensureTopicConfiguration(ctx context.Context, admin *kafka.AdminClient, topicMetadata *kafka.TopicMetadata, log *zap.SugaredLogger, config TopicConfig) error {
+func ensureTopicStructure(ctx context.Context, admin *kafka.AdminClient, topicMetadata *kafka.TopicMetadata, log *zap.SugaredLogger, config TopicConfig) error {
 	currentPartitions := len(topicMetadata.Partitions)
 	currentRF := getReplicationFactor(topicMetadata)
 
@@ -223,7 +223,7 @@ func ensureTopicConfiguration(ctx context.Context, admin *kafka.AdminClient, top
 
 	// Handle topic config changes (if any configs are specified)
 	if len(config.Config) > 0 {
-		if err := ensureTopicConfig(ctx, admin, config.Name, config.Config, log); err != nil {
+		if err := updateTopicConfig(ctx, admin, config.Name, config.Config, log); err != nil {
 			return fmt.Errorf("failed to ensure topic config: %w", err)
 		}
 	}
@@ -264,9 +264,9 @@ func increasePartitions(
 	return nil
 }
 
-// ensureTopicConfig ensures topic configuration matches desired config.
+// updateTopicConfig ensures topic configuration matches desired config.
 // Updates any configs that differ from the desired state.
-func ensureTopicConfig(
+func updateTopicConfig(
 	ctx context.Context,
 	admin *kafka.AdminClient,
 	topicName string,
