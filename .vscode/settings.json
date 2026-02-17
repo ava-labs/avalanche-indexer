@@ -6,6 +6,7 @@
     "Debugw",
     "Errorw",
     "evmclient",
+    "evmrepo",
     "hexutil",
     "Infof",
     "Infow",

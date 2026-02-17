@@ -248,9 +248,7 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 
 	err := proc.Process(t.Context(), msg)
 
-	var jsonErr *json.SyntaxError
-	require.ErrorAs(t, err, &jsonErr)
-	assert.Contains(t, err.Error(), "failed to unmarshal coreth block")
+	require.ErrorIs(t, err, processor.ErrUnmarshalBlock)
 }
 
 func TestProcessBlockMessage_MissingChainID(t *testing.T) {
