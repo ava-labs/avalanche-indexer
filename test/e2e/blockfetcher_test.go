@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"testing"
@@ -372,7 +373,7 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 		}
 		// Decode Kafka payload
 		var got kafkamsg.EVMBlock
-		require.NoError(t, got.Unmarshal(val), "decode kafka block %d", n)
+		require.NoError(t, json.Unmarshal(val, &got), "decode kafka block %d", n)
 
 		// Fetch from RPC and convert to our Block type
 		bn := new(big.Int).SetUint64(n)

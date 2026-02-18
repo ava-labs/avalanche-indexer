@@ -138,7 +138,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 				return
 			}
 
-			om.log.Infof("committed offset %d for partition %d", window[end].Offset, partition)
+			om.log.Debugf("committed offset %d for partition %d", window[end].Offset, partition)
 			if end == len(window)-1 {
 				om.partitionStates[partition] = &offsetState{
 					[]kafka.TopicPartition{},

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,29 @@ const (
 	// maxBlockBufferSize is the maximum valid value for BlockBufferSize (uint8: 255)
 	maxBlockBufferSize = 255
 )
+
+// validateRetentionValue validates a Kafka retention configuration value.
+// It ensures the value is either "-1" (infinite) or a positive integer.
+func validateRetentionValue(value, fieldName string) error {
+	if value == "" {
+		return nil // Empty is valid (uses Kafka broker default)
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return fmt.Errorf("%s must be a valid integer or -1 for infinite retention, got: %s", fieldName, value)
+	}
+
+	if parsed == -1 {
+		return nil // -1 is valid (infinite retention)
+	}
+
+	if parsed <= 0 {
+		return fmt.Errorf("%s must be positive or -1 for infinite retention, got: %d", fieldName, parsed)
+	}
+
+	return nil
+}
 
 // validateBlockBufferSize validates that the block buffer size is within uint8 range (0-255)
 // and returns the validated uint8 value or an error
@@ -52,8 +76,12 @@ type Config struct {
 	PublishToDLQ                   bool
 	KafkaTopicNumPartitions        int
 	KafkaTopicReplicationFactor    int
+	KafkaTopicRetentionMs          string
+	KafkaTopicRetentionBytes       string
 	KafkaDLQTopicNumPartitions     int
 	KafkaDLQTopicReplicationFactor int
+	KafkaDLQTopicRetentionMs       string
+	KafkaDLQTopicRetentionBytes    string
 	KafkaSASL                      kafka.SASLConfig
 
 	// ClickHouse settings
@@ -85,6 +113,28 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		return nil, fmt.Errorf("failed to build ClickHouse config: %w", err)
 	}
 
+	// Validate retention configuration values for main topic
+	topicRetentionMs := c.String("kafka-topic-retention-ms")
+	if err := validateRetentionValue(topicRetentionMs, "kafka-topic-retention-ms"); err != nil {
+		return nil, err
+	}
+
+	topicRetentionBytes := c.String("kafka-topic-retention-bytes")
+	if err := validateRetentionValue(topicRetentionBytes, "kafka-topic-retention-bytes"); err != nil {
+		return nil, err
+	}
+
+	// Validate retention configuration values for DLQ topic
+	dlqRetentionMs := c.String("kafka-dlq-topic-retention-ms")
+	if err := validateRetentionValue(dlqRetentionMs, "kafka-dlq-topic-retention-ms"); err != nil {
+		return nil, err
+	}
+
+	dlqRetentionBytes := c.String("kafka-dlq-topic-retention-bytes")
+	if err := validateRetentionValue(dlqRetentionBytes, "kafka-dlq-topic-retention-bytes"); err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Verbose:                        c.Bool("verbose"),
 		BootstrapServers:               c.String("bootstrap-servers"),
@@ -103,8 +153,12 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		PublishToDLQ:                   c.Bool("publish-to-dlq"),
 		KafkaTopicNumPartitions:        c.Int("kafka-topic-num-partitions"),
 		KafkaTopicReplicationFactor:    c.Int("kafka-topic-replication-factor"),
+		KafkaTopicRetentionMs:          c.String("kafka-topic-retention-ms"),
+		KafkaTopicRetentionBytes:       c.String("kafka-topic-retention-bytes"),
 		KafkaDLQTopicNumPartitions:     c.Int("kafka-dlq-topic-num-partitions"),
 		KafkaDLQTopicReplicationFactor: c.Int("kafka-dlq-topic-replication-factor"),
+		KafkaDLQTopicRetentionMs:       c.String("kafka-dlq-topic-retention-ms"),
+		KafkaDLQTopicRetentionBytes:    c.String("kafka-dlq-topic-retention-bytes"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),
 			Password:         c.String("kafka-sasl-password"),
