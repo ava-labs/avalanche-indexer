@@ -232,8 +232,8 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 		start := time.Now()
 		err := c.processor.Process(ctx, msg)
 		if err == nil {
-			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, nil, time.Since(start).Seconds())
 			c.offsetManager.InsertOffsetWithRetry(ctx, msg)
+			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, nil, time.Since(start).Seconds())
 			return
 		}
 
@@ -244,12 +244,12 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 				"partition", msg.TopicPartition.Partition,
 				"offset", msg.TopicPartition.Offset,
 			)
+			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
 			return
 		}
 
-		c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
-
 		if !c.cfg.PublishToDLQ {
+			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
 			select {
 			case c.errCh <- err:
 			default:
@@ -263,9 +263,11 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 		c.metrics.RecordDLQProduction(publishErr, time.Since(dlqPublishStart).Seconds())
 		if publishErr != nil {
 			if errors.Is(publishErr, context.Canceled) {
+				c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, publishErr, time.Since(start).Seconds())
 				return
 			}
 			c.log.Errorw("failed to publish to DLQ", "error", publishErr)
+			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, publishErr, time.Since(start).Seconds())
 			select {
 			case c.errCh <- publishErr:
 			default:
@@ -274,6 +276,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			return
 		}
 		c.offsetManager.InsertOffsetWithRetry(ctx, msg)
+		c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
 	}()
 }
 

@@ -302,7 +302,7 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Namespace: Namespace,
 			Subsystem: Consumer,
 			Name:      "message_processing_duration_seconds",
-			Help:      "End-to-end message processing duration in seconds by partition",
+			Help:      "End-to-end message dispatch duration including processing, offset insertion, and DLQ publish by partition",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30},
 		}, []string{"partition"}),
 		messagesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
