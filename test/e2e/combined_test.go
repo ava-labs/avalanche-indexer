@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
@@ -21,7 +22,6 @@ import (
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
-	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -71,8 +71,8 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	defer chClient.Close()
 
 	// ---- Seed checkpoint near latest finalized height ----
-	repo, err := checkpoint.NewRepository(chClient, "default", "default", checkpointTable)
-	require.NoError(t, err)
+	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, checkpointTable)
+	require.NoError(t, err, "failed to create checkpoint repository")
 
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
@@ -84,12 +84,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	if latest > safetyMargin {
 		startHeight = latest - safetyMargin
 	}
-	seed := &checkpoint.Checkpoint{
-		ChainID:   evmChainID,
-		Lowest:    startHeight,
-		Timestamp: time.Now().Unix(),
-	}
-	err = repo.WriteCheckpoint(ctx, seed)
+	err = chkpt.Write(ctx, evmChainID, startHeight)
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Ensure Kafka topic exists ----
@@ -153,7 +148,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 
 	w, err := worker.NewCorethWorker(client, producer, kafkaTopic, evmChainID, bcID, log, m, 10*time.Second)
 	require.NoError(t, err)
-	state, err := slidingwindow.NewState(seed.Lowest, latest)
+	state, err := slidingwindow.NewState(startHeight, latest)
 	require.NoError(t, err)
 	mgr, err := slidingwindow.NewManager(log, state, w, concurrency, backfill, blocksCap, maxFailures, nil)
 	require.NoError(t, err)
@@ -181,7 +176,11 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
+	g.Go(func() error {
+		cfg := checkpointer.DefaultConfig()
+		cfg.Interval = checkpointInterval
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+	})
 	g.Go(func() error { return indexerConsumer.Start(gctx) })
 
 	// ---- Collect realtime Kafka messages ----
@@ -235,7 +234,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	verifyCtx, vcancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer vcancel()
 	verifyBlocksPersistedInClickHouse(t, verifyCtx, chClient, rawBlocksTable, rawTxTable, rawLogsTable, kafkaBlocks, receivedOrder)
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, chkpt, evmChainID, kafkaByNumber)
 
 	// Now cancel and wait goroutines to exit
 	cancel()

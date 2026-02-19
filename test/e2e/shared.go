@@ -57,14 +57,14 @@ func verifyCheckpointLowestCorrect(t *testing.T, ctx context.Context, repo check
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		s, err := repo.ReadCheckpoint(ctx, chainID)
-		if err == nil && s != nil && s.Lowest >= expected {
+		lowest, exists, err := repo.Read(ctx, chainID)
+		if err == nil && exists && lowest >= expected {
 			return
 		}
 		if time.Now().After(deadline) {
 			require.NoError(t, err, "read checkpoint failed")
-			require.NotNil(t, s, "checkpoint nil")
-			require.GreaterOrEqual(t, expected, s.Lowest, "checkpoint lowest mismatch")
+			require.True(t, exists, "checkpoint doesn't exist")
+			require.GreaterOrEqual(t, lowest, expected, "checkpoint lowest mismatch")
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
