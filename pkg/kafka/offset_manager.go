@@ -304,10 +304,12 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 					// range
 					om.partitionStates[co.Partition].lastCommitted = kafka.OffsetInvalid
 				}
-
-				// Initialize offset metrics for this partition
-				om.metrics.UpdateOffsetMetrics(co.Partition, int64(co.Offset), int64(co.Offset), 0)
 			}
+
+			// Initialize offset metrics for this partition using the actual
+			// state value, which may have been reset to OffsetInvalid above.
+			actualCommitted := int64(om.partitionStates[co.Partition].lastCommitted)
+			om.metrics.UpdateOffsetMetrics(co.Partition, actualCommitted, actualCommitted, 0)
 
 			logStr[i] = fmt.Sprintf("(partition: %d, lastCommitted: %d)", co.Partition, om.partitionStates[co.Partition].lastCommitted)
 		}
