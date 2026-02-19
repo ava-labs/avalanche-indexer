@@ -325,9 +325,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 		}
 
 		// Record metrics for revocation event
-		if om.metrics != nil {
-			om.metrics.RecordPartitionRevocation(partitionNums)
-		}
+		om.metrics.RecordPartitionRevocation(partitionNums)
 
 		logStr := make([]string, len(ev.Partitions))
 		for i, partition := range ev.Partitions {
