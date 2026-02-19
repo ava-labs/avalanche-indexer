@@ -127,7 +127,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 		OffsetManagerCommitInterval: 2 * time.Second,
 		PublishToDLQ:                false,
 	}
-	indexerConsumer, err := stream.NewConsumer(ctx, log, consumerCfg, proc)
+	indexerConsumer, err := stream.NewConsumer(ctx, log, consumerCfg, proc, m)
 	require.NoError(t, err)
 
 	// ---- Start blockfetcher components (producer, worker, manager, subscriber, scheduler) ----
