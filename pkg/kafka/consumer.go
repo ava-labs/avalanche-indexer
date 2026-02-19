@@ -258,8 +258,9 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			return
 		}
 
+		dlqPublishStart := time.Now()
 		publishErr := c.publishToDLQ(ctx, msg)
-		c.metrics.RecordDLQProduction(publishErr, time.Since(start).Seconds())
+		c.metrics.RecordDLQProduction(publishErr, time.Since(dlqPublishStart).Seconds())
 		if publishErr != nil {
 			if errors.Is(publishErr, context.Canceled) {
 				return

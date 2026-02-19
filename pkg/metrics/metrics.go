@@ -104,7 +104,7 @@ type Metrics struct {
 
 	// Consumer error metrics
 	kafkaErrors   *prometheus.CounterVec // by severity (fatal/non_fatal)
-	unknownEvents prometheus.Counter     // by event type
+	unknownEvents prometheus.Counter     // total count of unknown events
 }
 
 // New creates a new Metrics instance and registers all metrics with the provided registerer.
