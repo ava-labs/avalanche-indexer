@@ -7,7 +7,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const Namespace = "indexer"
+const (
+	Namespace = "indexer"
+
+	// Status label values for success/error metrics
+	StatusSuccess = "success"
+	StatusError   = "error"
+)
 
 // Labels holds constant labels applied to all metrics.
 // These are useful for distinguishing metrics from multiple indexer instances.
@@ -350,9 +356,9 @@ func (m *Metrics) RecordRPCCall(method string, err error, durationSeconds float6
 	if m == nil {
 		return
 	}
-	status := "success"
+	status := StatusSuccess
 	if err != nil {
-		status = "error"
+		status = StatusError
 	}
 	m.rpcCalls.WithLabelValues(method, status).Inc()
 	m.rpcDuration.WithLabelValues(method).Observe(durationSeconds)
@@ -387,9 +393,9 @@ func (m *Metrics) RecordReceiptFetch(err error, durationSeconds float64, logCoun
 	if m == nil {
 		return
 	}
-	status := "success"
+	status := StatusSuccess
 	if err != nil {
-		status = "error"
+		status = StatusError
 	}
 	m.receiptsFetched.WithLabelValues(status).Inc()
 	m.receiptFetchDuration.Observe(durationSeconds)
@@ -429,9 +435,9 @@ func (m *Metrics) RecordOffsetCommit(partition int32, err error, durationSeconds
 	}
 	partitionLabel := strconv.Itoa(int(partition))
 
-	status := "success"
+	status := StatusSuccess
 	if err != nil {
-		status = "error"
+		status = StatusError
 	}
 
 	m.offsetCommits.WithLabelValues(partitionLabel, status).Inc()

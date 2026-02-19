@@ -11,7 +11,8 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
-	metrics "github.com/ava-labs/avalanche-indexer/pkg/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
