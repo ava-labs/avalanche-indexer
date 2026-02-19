@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -56,6 +57,7 @@ func NewConsumer(
 	log *zap.SugaredLogger,
 	cfg ConsumerConfig,
 	proc processor.Processor,
+	m *metrics.Metrics,
 ) (*Consumer, error) {
 	// Apply defaults to config
 	cfg = cfg.WithDefaults()
@@ -100,6 +102,7 @@ func NewConsumer(
 		cfg.AutoOffsetReset,
 		false,
 		log,
+		m,
 	)
 
 	if cfg.PublishToDLQ && cfg.DLQTopic == "" {

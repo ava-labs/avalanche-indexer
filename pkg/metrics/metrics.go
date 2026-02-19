@@ -7,7 +7,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const Namespace = "indexer"
+const (
+	Namespace = "indexer"
+
+	// Status label values for success/error metrics
+	StatusSuccess = "success"
+	StatusError   = "error"
+
+	KafkaOffset   = "kafka_offset"
+	KafkaConsumer = "kafka_consumer"
+	Logs          = "logs"
+	Receipts      = "receipts"
+)
 
 // Labels holds constant labels applied to all metrics.
 // These are useful for distinguishing metrics from multiple indexer instances.
@@ -64,6 +75,21 @@ type Metrics struct {
 	// Log metrics
 	logsFetched   prometheus.Counter
 	logsProcessed prometheus.Counter
+
+	// Kafka offset manager metrics
+	lastCommittedOffset   *prometheus.GaugeVec
+	latestProcessedOffset *prometheus.GaugeVec
+	offsetLag             *prometheus.GaugeVec
+	offsetWindowSize      *prometheus.GaugeVec
+	offsetCommits         *prometheus.CounterVec
+	commitDuration        *prometheus.HistogramVec
+	offsetInserts         *prometheus.CounterVec
+
+	// Kafka consumer rebalance metrics
+	rebalanceEvents      *prometheus.CounterVec
+	partitionAssignments *prometheus.CounterVec
+	partitionRevocations *prometheus.CounterVec
+	assignedPartitions   prometheus.Gauge
 }
 
 // New creates a new Metrics instance and registers all metrics with the provided registerer.
@@ -147,34 +173,101 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		}),
 		receiptsFetched: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "receipts",
+			Subsystem: Receipts,
 			Name:      "fetched_total",
 			Help:      "Total transaction receipts fetched by status",
 		}, []string{"status"}),
 		receiptFetchDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Namespace: Namespace,
-			Subsystem: "receipts",
+			Subsystem: Receipts,
 			Name:      "fetch_duration_seconds",
 			Help:      "Time to fetch all receipts for a block",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
 		receiptFetchesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Subsystem: "receipts",
+			Subsystem: Receipts,
 			Name:      "fetches_in_flight",
 			Help:      "Number of receipt fetches currently in progress",
 		}),
 		logsFetched: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "logs",
+			Subsystem: Logs,
 			Name:      "fetched_total",
 			Help:      "Total transaction logs fetched from receipts",
 		}),
 		logsProcessed: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "logs",
+			Subsystem: Logs,
 			Name:      "processed_total",
 			Help:      "Total transaction logs processed and persisted",
+		}),
+		lastCommittedOffset: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaOffset,
+			Name:      "last_committed",
+			Help:      "Last offset successfully committed to Kafka for each partition",
+		}, []string{"partition"}),
+		latestProcessedOffset: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaOffset,
+			Name:      "latest_processed",
+			Help:      "Latest offset processed and inserted into commit window for each partition",
+		}, []string{"partition"}),
+		offsetLag: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaOffset,
+			Name:      "lag",
+			Help:      "Number of uncommitted offsets (latestProcessed - lastCommitted) for each partition",
+		}, []string{"partition"}),
+		offsetWindowSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaOffset,
+			Name:      "window_size",
+			Help:      "Number of offsets currently in the sliding window awaiting commit for each partition",
+		}, []string{"partition"}),
+		offsetCommits: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaOffset,
+			Name:      "commits_total",
+			Help:      "Total number of offset commit attempts by partition and status",
+		}, []string{"partition", "status"}),
+		commitDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaOffset,
+			Name:      "commit_duration_seconds",
+			Help:      "Time taken to commit offsets to Kafka by partition",
+			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+		}, []string{"partition"}),
+		offsetInserts: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaOffset,
+			Name:      "inserts_total",
+			Help:      "Total number of offsets inserted into the commit window by partition",
+		}, []string{"partition"}),
+		rebalanceEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaConsumer,
+			Name:      "rebalance_events_total",
+			Help:      "Total number of consumer group rebalance events by type",
+		}, []string{"type"}),
+		partitionAssignments: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaConsumer,
+			Name:      "partition_assignments_total",
+			Help:      "Total number of times a partition has been assigned to this consumer",
+		}, []string{"partition"}),
+		partitionRevocations: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaConsumer,
+			Name:      "partition_revocations_total",
+			Help:      "Total number of times a partition has been revoked from this consumer",
+		}, []string{"partition"}),
+		assignedPartitions: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: KafkaConsumer,
+			Name:      "assigned_partitions",
+			Help:      "Current number of partitions assigned to this consumer",
 		}),
 	}
 
@@ -194,6 +287,17 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		reg.Register(m.receiptFetchesInFlight),
 		reg.Register(m.logsFetched),
 		reg.Register(m.logsProcessed),
+		reg.Register(m.lastCommittedOffset),
+		reg.Register(m.latestProcessedOffset),
+		reg.Register(m.offsetLag),
+		reg.Register(m.offsetWindowSize),
+		reg.Register(m.offsetCommits),
+		reg.Register(m.commitDuration),
+		reg.Register(m.offsetInserts),
+		reg.Register(m.rebalanceEvents),
+		reg.Register(m.partitionAssignments),
+		reg.Register(m.partitionRevocations),
+		reg.Register(m.assignedPartitions),
 	)
 	if err != nil {
 		return nil, err
@@ -257,9 +361,9 @@ func (m *Metrics) RecordRPCCall(method string, err error, durationSeconds float6
 	if m == nil {
 		return
 	}
-	status := "success"
+	status := StatusSuccess
 	if err != nil {
-		status = "error"
+		status = StatusError
 	}
 	m.rpcCalls.WithLabelValues(method, status).Inc()
 	m.rpcDuration.WithLabelValues(method).Observe(durationSeconds)
@@ -294,9 +398,9 @@ func (m *Metrics) RecordReceiptFetch(err error, durationSeconds float64, logCoun
 	if m == nil {
 		return
 	}
-	status := "success"
+	status := StatusSuccess
 	if err != nil {
-		status = "error"
+		status = StatusError
 	}
 	m.receiptsFetched.WithLabelValues(status).Inc()
 	m.receiptFetchDuration.Observe(durationSeconds)
@@ -311,4 +415,80 @@ func (m *Metrics) AddLogsProcessed(count int) {
 		return
 	}
 	m.logsProcessed.Add(float64(count))
+}
+
+// UpdateOffsetMetrics updates all offset manager metrics for a partition.
+func (m *Metrics) UpdateOffsetMetrics(partition int32, lastCommitted, latestProcessed int64, windowSize int) {
+	if m == nil {
+		return
+	}
+	partitionLabel := strconv.Itoa(int(partition))
+
+	m.lastCommittedOffset.WithLabelValues(partitionLabel).Set(float64(lastCommitted))
+	m.latestProcessedOffset.WithLabelValues(partitionLabel).Set(float64(latestProcessed))
+	m.offsetWindowSize.WithLabelValues(partitionLabel).Set(float64(windowSize))
+
+	lag := max(latestProcessed-lastCommitted, 0)
+	m.offsetLag.WithLabelValues(partitionLabel).Set(float64(lag))
+}
+
+// RecordOffsetCommit records an offset commit attempt for a partition.
+// Pass nil error for successful commits, non-nil for failures.
+func (m *Metrics) RecordOffsetCommit(partition int32, err error, durationSeconds float64) {
+	if m == nil {
+		return
+	}
+	partitionLabel := strconv.Itoa(int(partition))
+
+	status := StatusSuccess
+	if err != nil {
+		status = StatusError
+	}
+
+	m.offsetCommits.WithLabelValues(partitionLabel, status).Inc()
+	m.commitDuration.WithLabelValues(partitionLabel).Observe(durationSeconds)
+}
+
+// RecordOffsetInsert records an offset being inserted into the commit window.
+func (m *Metrics) RecordOffsetInsert(partition int32) {
+	if m == nil {
+		return
+	}
+	partitionLabel := strconv.Itoa(int(partition))
+	m.offsetInserts.WithLabelValues(partitionLabel).Inc()
+}
+
+// RecordPartitionAssignment records when partitions are assigned during a consumer group rebalance.
+// This tracks both the rebalance event and per-partition assignment counts.
+func (m *Metrics) RecordPartitionAssignment(partitions []int32) {
+	if m == nil {
+		return
+	}
+
+	m.rebalanceEvents.WithLabelValues("assigned").Inc()
+
+	for _, partition := range partitions {
+		partitionLabel := strconv.Itoa(int(partition))
+		m.partitionAssignments.WithLabelValues(partitionLabel).Inc()
+	}
+
+	m.assignedPartitions.Set(float64(len(partitions)))
+}
+
+// RecordPartitionRevocation records when partitions are revoked during a consumer group rebalance.
+// This tracks both the rebalance event and per-partition revocation counts.
+func (m *Metrics) RecordPartitionRevocation(partitions []int32) {
+	if m == nil {
+		return
+	}
+
+	m.rebalanceEvents.WithLabelValues("revoked").Inc()
+
+	for _, partition := range partitions {
+		partitionLabel := strconv.Itoa(int(partition))
+		m.partitionRevocations.WithLabelValues(partitionLabel).Inc()
+	}
+
+	// Clear the assigned partitions gauge (will be updated on next assignment)
+	m.assignedPartitions.Set(0)
 }
