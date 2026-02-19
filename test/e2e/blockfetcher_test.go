@@ -13,11 +13,11 @@ import (
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	stream "github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-	"github.com/ava-labs/avalanche-indexer/pkg/scheduler"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
@@ -38,7 +38,6 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_realtime")
 	kafkaClientID := getEnvStr("KAFKA_CLIENT_ID", "blockfetcher-e2e")
-	clickhouseTable := getEnvStr("CHECKPOINT_TABLE_NAME", "checkpoints_realtime")
 	concurrency := int64(3)
 	backfill := int64(1)
 	blocksCap := 100
@@ -59,8 +58,8 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	repo, err := checkpoint.NewRepository(chClient, "default", "default", clickhouseTable)
-	require.NoError(t, err)
+	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, "checkpoints")
+	require.NoError(t, err, "failed to create checkpoint repository")
 
 	// Get latest block height from RPC to seed checkpoint.
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
@@ -77,12 +76,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 		startHeight = latest - safetyMargin
 	}
 
-	seed := &checkpoint.Checkpoint{
-		ChainID:   evmChainID,
-		Lowest:    startHeight,
-		Timestamp: time.Now().Unix(),
-	}
-	err = repo.WriteCheckpoint(ctx, seed)
+	err = chkpt.Write(ctx, evmChainID, startHeight)
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Kafka consumer to observe realtime blocks ----
@@ -119,7 +113,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	w, err := worker.NewCorethWorker(client, producer, kafkaTopic, evmChainID, bcID, log, nil, 10*time.Second)
 	require.NoError(t, err)
 
-	state, err := slidingwindow.NewState(seed.Lowest, latest)
+	state, err := slidingwindow.NewState(startHeight, latest)
 	require.NoError(t, err)
 	mgr, err := slidingwindow.NewManager(log, state, w, concurrency, backfill, blocksCap, maxFailures, nil)
 	require.NoError(t, err)
@@ -137,7 +131,11 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
+	g.Go(func() error {
+		cfg := checkpointer.DefaultConfig()
+		cfg.Interval = checkpointInterval
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+	})
 
 	minMsgs := 5
 	received := 0
@@ -195,7 +193,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, receivedOrder)
 
 	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, chkpt, evmChainID, kafkaByNumber)
 }
 
 // TestE2EBlockfetcherBackfill runs backfill over a small recent range and verifies
@@ -208,7 +206,6 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
 	kafkaTopic := getEnvStr("KAFKA_TOPIC", "blocks_backfill")
 	kafkaClientID := "blockfetcher-e2e-backfill"
-	clickhouseTable := getEnvStr("CHECKPOINT_TABLE_NAME", "checkpoints_backfill")
 	concurrency := int64(4)
 	backfill := int64(2)
 	blocksCap := 50
@@ -243,8 +240,8 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
 	defer chClient.Close()
 
-	repo, err := checkpoint.NewRepository(chClient, "default", "default", clickhouseTable)
-	require.NoError(t, err)
+	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, "checkpoints")
+	require.NoError(t, err, "failed to create checkpoint repository")
 
 	// ---- Kafka consumer to observe backfilled blocks ----
 	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
@@ -295,7 +292,11 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 			return err
 		}
 	})
-	g.Go(func() error { return scheduler.Start(gctx, state, repo, checkpointInterval, evmChainID) })
+	g.Go(func() error {
+		cfg := checkpointer.DefaultConfig()
+		cfg.Interval = checkpointInterval
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+	})
 
 	// Collect exactly the expected backfill range
 	expectedCount := int(end - start + 1)
@@ -351,7 +352,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	verifyBlocksFromRPC(t, verifyCtx, rpcURL, kafkaByNumber, numbers)
 
 	// Verify checkpoint reflects max processed block (+1 for lowest_unprocessed_block).
-	verifyCheckpointFromMaxProcessed(t, verifyCtx, repo, evmChainID, kafkaByNumber)
+	verifyCheckpointFromMaxProcessed(t, verifyCtx, chkpt, evmChainID, kafkaByNumber)
 }
 
 // verifyBlocksFromRPC fetches blocks by number from RPC and compares to Kafka payloads.
@@ -381,9 +382,8 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 
 		evmChainID := got.EVMChainID
 		blockchainIDStr := got.BlockchainID
-		expPtr, err := kafkamsg.EVMBlockFromLibevmCoreth(lb, evmChainID, blockchainIDStr)
+		exp, err := kafkamsg.EVMBlockFromLibevmCoreth(lb, evmChainID, blockchainIDStr)
 		require.NoError(t, err, "convert rpc block %d", n)
-		exp := *expPtr
 
 		// Compare a set of critical fields for robustness
 		require.Equal(t, exp.EVMChainID, got.EVMChainID, "evmChainID %d", n)
