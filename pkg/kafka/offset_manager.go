@@ -253,9 +253,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 		}
 
 		// Record metrics for assignment event
-		if om.metrics != nil {
-			om.metrics.RecordPartitionAssignment(partitionNums)
-		}
+		om.metrics.RecordPartitionAssignment(partitionNums)
 
 		// Rebalance events may provide offsets, but offsets seem to be
 		// kafka.InvalidOffset (-1001) when a consumer is joining an idle, but
@@ -308,9 +306,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 				}
 
 				// Initialize offset metrics for this partition
-				if om.metrics != nil {
-					om.metrics.UpdateOffsetMetrics(co.Partition, int64(co.Offset), int64(co.Offset), 0)
-				}
+				om.metrics.UpdateOffsetMetrics(co.Partition, int64(co.Offset), int64(co.Offset), 0)
 			}
 
 			logStr[i] = fmt.Sprintf("(partition: %d, lastCommitted: %d)", co.Partition, om.partitionStates[co.Partition].lastCommitted)
