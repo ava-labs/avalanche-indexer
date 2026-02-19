@@ -13,6 +13,11 @@ const (
 	// Status label values for success/error metrics
 	StatusSuccess = "success"
 	StatusError   = "error"
+
+	KafkaOffset   = "kafka_offset"
+	KafkaConsumer = "kafka_consumer"
+	Logs          = "logs"
+	Receipts      = "receipts"
 )
 
 // Labels holds constant labels applied to all metrics.
@@ -168,99 +173,99 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		}),
 		receiptsFetched: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "receipts",
+			Subsystem: Receipts,
 			Name:      "fetched_total",
 			Help:      "Total transaction receipts fetched by status",
 		}, []string{"status"}),
 		receiptFetchDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Namespace: Namespace,
-			Subsystem: "receipts",
+			Subsystem: Receipts,
 			Name:      "fetch_duration_seconds",
 			Help:      "Time to fetch all receipts for a block",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
 		receiptFetchesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Subsystem: "receipts",
+			Subsystem: Receipts,
 			Name:      "fetches_in_flight",
 			Help:      "Number of receipt fetches currently in progress",
 		}),
 		logsFetched: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "logs",
+			Subsystem: Logs,
 			Name:      "fetched_total",
 			Help:      "Total transaction logs fetched from receipts",
 		}),
 		logsProcessed: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "logs",
+			Subsystem: Logs,
 			Name:      "processed_total",
 			Help:      "Total transaction logs processed and persisted",
 		}),
 		lastCommittedOffset: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_offset",
+			Subsystem: KafkaOffset,
 			Name:      "last_committed",
 			Help:      "Last offset successfully committed to Kafka for each partition",
 		}, []string{"partition"}),
 		latestProcessedOffset: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_offset",
+			Subsystem: KafkaOffset,
 			Name:      "latest_processed",
 			Help:      "Latest offset processed and inserted into commit window for each partition",
 		}, []string{"partition"}),
 		offsetLag: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_offset",
+			Subsystem: KafkaOffset,
 			Name:      "lag",
 			Help:      "Number of uncommitted offsets (latestProcessed - lastCommitted) for each partition",
 		}, []string{"partition"}),
 		offsetWindowSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_offset",
+			Subsystem: KafkaOffset,
 			Name:      "window_size",
 			Help:      "Number of offsets currently in the sliding window awaiting commit for each partition",
 		}, []string{"partition"}),
 		offsetCommits: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_offset",
+			Subsystem: KafkaOffset,
 			Name:      "commits_total",
 			Help:      "Total number of offset commit attempts by partition and status",
 		}, []string{"partition", "status"}),
 		commitDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_offset",
+			Subsystem: KafkaOffset,
 			Name:      "commit_duration_seconds",
 			Help:      "Time taken to commit offsets to Kafka by partition",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
 		}, []string{"partition"}),
 		offsetInserts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_offset",
+			Subsystem: KafkaOffset,
 			Name:      "inserts_total",
 			Help:      "Total number of offsets inserted into the commit window by partition",
 		}, []string{"partition"}),
 		rebalanceEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_consumer",
+			Subsystem: KafkaConsumer,
 			Name:      "rebalance_events_total",
 			Help:      "Total number of consumer group rebalance events by type",
 		}, []string{"type"}),
 		partitionAssignments: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_consumer",
+			Subsystem: KafkaConsumer,
 			Name:      "partition_assignments_total",
 			Help:      "Total number of times a partition has been assigned to this consumer",
 		}, []string{"partition"}),
 		partitionRevocations: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_consumer",
+			Subsystem: KafkaConsumer,
 			Name:      "partition_revocations_total",
 			Help:      "Total number of times a partition has been revoked from this consumer",
 		}, []string{"partition"}),
 		assignedPartitions: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
-			Subsystem: "kafka_consumer",
+			Subsystem: KafkaConsumer,
 			Name:      "assigned_partitions",
 			Help:      "Current number of partitions assigned to this consumer",
 		}),
