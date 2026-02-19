@@ -692,3 +692,325 @@ func TestMetrics_RebalanceMethods_NilReceiver(t *testing.T) {
 		m.RecordPartitionRevocation(nil)
 	})
 }
+
+func TestMetrics_ReceiptFetchInFlight(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	require.Equal(t, float64(0), testutil.ToFloat64(m.receiptFetchesInFlight))
+
+	m.IncReceiptFetchInFlight()
+	m.IncReceiptFetchInFlight()
+	require.Equal(t, float64(2), testutil.ToFloat64(m.receiptFetchesInFlight))
+
+	m.DecReceiptFetchInFlight()
+	require.Equal(t, float64(1), testutil.ToFloat64(m.receiptFetchesInFlight))
+
+	m.DecReceiptFetchInFlight()
+	require.Equal(t, float64(0), testutil.ToFloat64(m.receiptFetchesInFlight))
+}
+
+func TestMetrics_RecordReceiptFetch(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("successful_fetch_with_logs", func(t *testing.T) {
+		m.RecordReceiptFetch(nil, 0.05, 3)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.receiptsFetched.WithLabelValues("success")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.receiptsFetched.WithLabelValues("error")))
+		require.Equal(t, float64(3), testutil.ToFloat64(m.logsFetched))
+	})
+
+	t.Run("failed_fetch", func(t *testing.T) {
+		m.RecordReceiptFetch(errors.New("rpc failure"), 1.0, 0)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.receiptsFetched.WithLabelValues("error")))
+	})
+
+	t.Run("successful_fetch_zero_logs", func(t *testing.T) {
+		m.RecordReceiptFetch(nil, 0.02, 0)
+
+		require.Equal(t, float64(2), testutil.ToFloat64(m.receiptsFetched.WithLabelValues("success")))
+		// logsFetched should remain unchanged (still 3 from first call)
+		require.Equal(t, float64(3), testutil.ToFloat64(m.logsFetched))
+	})
+
+	t.Run("fetch_with_many_logs", func(t *testing.T) {
+		m.RecordReceiptFetch(nil, 0.1, 50)
+
+		require.Equal(t, float64(3), testutil.ToFloat64(m.receiptsFetched.WithLabelValues("success")))
+		require.Equal(t, float64(53), testutil.ToFloat64(m.logsFetched)) // 3 + 50
+	})
+}
+
+func TestMetrics_AddLogsProcessed(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("add_positive_count", func(t *testing.T) {
+		m.AddLogsProcessed(10)
+		require.Equal(t, float64(10), testutil.ToFloat64(m.logsProcessed))
+	})
+
+	t.Run("add_more", func(t *testing.T) {
+		m.AddLogsProcessed(5)
+		require.Equal(t, float64(15), testutil.ToFloat64(m.logsProcessed))
+	})
+
+	t.Run("zero_count_ignored", func(t *testing.T) {
+		m.AddLogsProcessed(0)
+		require.Equal(t, float64(15), testutil.ToFloat64(m.logsProcessed))
+	})
+
+	t.Run("negative_count_ignored", func(t *testing.T) {
+		m.AddLogsProcessed(-5)
+		require.Equal(t, float64(15), testutil.ToFloat64(m.logsProcessed))
+	})
+}
+
+func TestMetrics_RecordMessageReceived(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("single_message", func(t *testing.T) {
+		m.RecordMessageReceived(0)
+		require.Equal(t, float64(1), testutil.ToFloat64(m.messagesReceived.WithLabelValues("0")))
+	})
+
+	t.Run("multiple_messages_same_partition", func(t *testing.T) {
+		m.RecordMessageReceived(0)
+		m.RecordMessageReceived(0)
+		require.Equal(t, float64(3), testutil.ToFloat64(m.messagesReceived.WithLabelValues("0")))
+	})
+
+	t.Run("multiple_partitions", func(t *testing.T) {
+		m.RecordMessageReceived(1)
+		m.RecordMessageReceived(2)
+		m.RecordMessageReceived(2)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.messagesReceived.WithLabelValues("1")))
+		require.Equal(t, float64(2), testutil.ToFloat64(m.messagesReceived.WithLabelValues("2")))
+		// Partition 0 untouched since last subtest
+		require.Equal(t, float64(3), testutil.ToFloat64(m.messagesReceived.WithLabelValues("0")))
+	})
+}
+
+func TestMetrics_RecordMessageProcessed(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("successful_processing", func(t *testing.T) {
+		m.RecordMessageProcessed(0, nil, 0.05)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("0", "success")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("0", "error")))
+	})
+
+	t.Run("failed_processing", func(t *testing.T) {
+		m.RecordMessageProcessed(0, errors.New("unmarshal error"), 0.1)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("0", "success")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("0", "error")))
+	})
+
+	t.Run("multiple_partitions", func(t *testing.T) {
+		m.RecordMessageProcessed(1, nil, 0.02)
+		m.RecordMessageProcessed(1, nil, 0.03)
+		m.RecordMessageProcessed(2, errors.New("db error"), 1.5)
+
+		require.Equal(t, float64(2), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("1", "success")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("1", "error")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("2", "success")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.messagesProcessed.WithLabelValues("2", "error")))
+	})
+
+	t.Run("histogram_records_duration", func(t *testing.T) {
+		metricFamilies, err := reg.Gather()
+		require.NoError(t, err)
+
+		var found bool
+		for _, mf := range metricFamilies {
+			if mf.GetName() == "indexer_consumer_message_processing_duration_seconds" {
+				found = true
+				// Should have observations across multiple partitions
+				require.NotEmpty(t, mf.GetMetric())
+			}
+		}
+		require.True(t, found, "message processing duration histogram not found")
+	})
+}
+
+func TestMetrics_MessagesInFlight(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	require.Equal(t, float64(0), testutil.ToFloat64(m.messagesInFlight))
+
+	m.IncMessagesInFlight()
+	m.IncMessagesInFlight()
+	m.IncMessagesInFlight()
+	require.Equal(t, float64(3), testutil.ToFloat64(m.messagesInFlight))
+
+	m.DecMessagesInFlight()
+	require.Equal(t, float64(2), testutil.ToFloat64(m.messagesInFlight))
+
+	m.DecMessagesInFlight()
+	m.DecMessagesInFlight()
+	require.Equal(t, float64(0), testutil.ToFloat64(m.messagesInFlight))
+}
+
+func TestMetrics_RecordDLQProduction(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("successful_publish", func(t *testing.T) {
+		m.RecordDLQProduction(nil, 0.02)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqProduced.WithLabelValues("success")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.dlqProduced.WithLabelValues("error")))
+	})
+
+	t.Run("failed_publish", func(t *testing.T) {
+		m.RecordDLQProduction(errors.New("kafka unavailable"), 2.0)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqProduced.WithLabelValues("success")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqProduced.WithLabelValues("error")))
+	})
+
+	t.Run("multiple_publishes", func(t *testing.T) {
+		m.RecordDLQProduction(nil, 0.01)
+		m.RecordDLQProduction(nil, 0.03)
+		m.RecordDLQProduction(errors.New("timeout"), 5.0)
+
+		require.Equal(t, float64(3), testutil.ToFloat64(m.dlqProduced.WithLabelValues("success")))
+		require.Equal(t, float64(2), testutil.ToFloat64(m.dlqProduced.WithLabelValues("error")))
+	})
+
+	t.Run("histogram_records_duration", func(t *testing.T) {
+		metricFamilies, err := reg.Gather()
+		require.NoError(t, err)
+
+		var found bool
+		for _, mf := range metricFamilies {
+			if mf.GetName() == "indexer_consumer_dlq_production_duration_seconds" {
+				found = true
+				metric := mf.GetMetric()[0]
+				histogram := metric.GetHistogram()
+				require.Equal(t, uint64(5), histogram.GetSampleCount())
+			}
+		}
+		require.True(t, found, "DLQ production duration histogram not found")
+	})
+}
+
+func TestMetrics_RecordKafkaError(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	t.Run("fatal_error", func(t *testing.T) {
+		m.RecordKafkaError(true)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.kafkaErrors.WithLabelValues("fatal")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.kafkaErrors.WithLabelValues("non_fatal")))
+	})
+
+	t.Run("non_fatal_error", func(t *testing.T) {
+		m.RecordKafkaError(false)
+
+		require.Equal(t, float64(1), testutil.ToFloat64(m.kafkaErrors.WithLabelValues("fatal")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.kafkaErrors.WithLabelValues("non_fatal")))
+	})
+
+	t.Run("multiple_errors", func(t *testing.T) {
+		m.RecordKafkaError(false)
+		m.RecordKafkaError(false)
+		m.RecordKafkaError(true)
+
+		require.Equal(t, float64(2), testutil.ToFloat64(m.kafkaErrors.WithLabelValues("fatal")))
+		require.Equal(t, float64(3), testutil.ToFloat64(m.kafkaErrors.WithLabelValues("non_fatal")))
+	})
+}
+
+func TestMetrics_IncreaseUnknownEventCount(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	require.Equal(t, float64(0), testutil.ToFloat64(m.unknownEvents))
+
+	m.IncreaseUnknownEventCount()
+	require.Equal(t, float64(1), testutil.ToFloat64(m.unknownEvents))
+
+	m.IncreaseUnknownEventCount()
+	m.IncreaseUnknownEventCount()
+	require.Equal(t, float64(3), testutil.ToFloat64(m.unknownEvents))
+}
+
+func TestMetrics_ConsumerMethods_NilReceiver(t *testing.T) {
+	var m *Metrics
+
+	require.NotPanics(t, func() {
+		m.RecordMessageReceived(0)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordMessageProcessed(0, nil, 0.5)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordMessageProcessed(0, errors.New("error"), 1.0)
+	})
+
+	require.NotPanics(t, func() {
+		m.IncMessagesInFlight()
+	})
+
+	require.NotPanics(t, func() {
+		m.DecMessagesInFlight()
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordDLQProduction(nil, 0.1)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordDLQProduction(errors.New("error"), 0.5)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordKafkaError(true)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordKafkaError(false)
+	})
+
+	require.NotPanics(t, func() {
+		m.IncreaseUnknownEventCount()
+	})
+
+	require.NotPanics(t, func() {
+		m.IncReceiptFetchInFlight()
+	})
+
+	require.NotPanics(t, func() {
+		m.DecReceiptFetchInFlight()
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordReceiptFetch(nil, 0.1, 5)
+	})
+
+	require.NotPanics(t, func() {
+		m.AddLogsProcessed(10)
+	})
+}

@@ -30,6 +30,7 @@ type Consumer struct {
 	log           *zap.SugaredLogger
 	sem           *semaphore.Weighted
 	offsetManager *OffsetManager
+	metrics       *metrics.Metrics
 
 	rebalanceContexts map[int32]rebalanceCtx
 
@@ -121,6 +122,7 @@ func NewConsumer(
 		errCh:             make(chan error, cfg.Concurrency),
 		doneCh:            make(chan struct{}),
 		processor:         proc,
+		metrics:           m,
 	}, nil
 }
 
@@ -175,6 +177,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 
 			switch msg := ev.(type) {
 			case *cKafka.Message:
+				c.metrics.RecordMessageReceived(msg.TopicPartition.Partition)
 				c.rebalanceMutex.RLock()
 				if _, ok := c.rebalanceContexts[msg.TopicPartition.Partition]; !ok {
 					c.log.Errorw("partition not found in rebalance context", "partition", msg.TopicPartition.Partition)
@@ -185,12 +188,15 @@ func (c *Consumer) Start(ctx context.Context) error {
 				c.rebalanceMutex.RUnlock()
 			case cKafka.Error:
 				if msg.IsFatal() {
+					c.metrics.RecordKafkaError(true)
 					c.log.Errorw("fatal kafka error", "error", msg)
 					run = false
 					continue
 				}
+				c.metrics.RecordKafkaError(false)
 				c.log.Warnw("kafka error (non-fatal)", "error", msg)
 			default:
+				c.metrics.IncreaseUnknownEventCount()
 				c.log.Debugw("ignoring kafka event", "event", msg)
 			}
 		}
@@ -216,11 +222,17 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 	}
 
 	c.wg.Add(1)
+	c.metrics.IncMessagesInFlight()
+
 	go func() {
 		defer c.wg.Done()
 		defer c.sem.Release(1)
+		defer c.metrics.DecMessagesInFlight()
+
+		start := time.Now()
 		err := c.processor.Process(ctx, msg)
 		if err == nil {
+			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, nil, time.Since(start).Seconds())
 			c.offsetManager.InsertOffsetWithRetry(ctx, msg)
 			return
 		}
@@ -235,6 +247,8 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 			return
 		}
 
+		c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
+
 		if !c.cfg.PublishToDLQ {
 			select {
 			case c.errCh <- err:
@@ -245,6 +259,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 		}
 
 		publishErr := c.publishToDLQ(ctx, msg)
+		c.metrics.RecordDLQProduction(publishErr, time.Since(start).Seconds())
 		if publishErr != nil {
 			if errors.Is(publishErr, context.Canceled) {
 				return

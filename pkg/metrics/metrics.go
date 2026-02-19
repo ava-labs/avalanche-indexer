@@ -18,6 +18,7 @@ const (
 	KafkaConsumer = "kafka_consumer"
 	Logs          = "logs"
 	Receipts      = "receipts"
+	Consumer      = "consumer"
 )
 
 // Labels holds constant labels applied to all metrics.
@@ -90,6 +91,20 @@ type Metrics struct {
 	partitionAssignments *prometheus.CounterVec
 	partitionRevocations *prometheus.CounterVec
 	assignedPartitions   prometheus.Gauge
+
+	// Consumer message processing metrics
+	messagesReceived          *prometheus.CounterVec   // by partition
+	messagesProcessed         *prometheus.CounterVec   // by partition, status
+	messageProcessingDuration *prometheus.HistogramVec // by partition
+	messagesInFlight          prometheus.Gauge
+
+	// DLQ production metrics
+	dlqProduced           *prometheus.CounterVec // by status
+	dlqProductionDuration prometheus.Histogram
+
+	// Consumer error metrics
+	kafkaErrors   *prometheus.CounterVec // by severity (fatal/non_fatal)
+	unknownEvents prometheus.Counter     // by event type
 }
 
 // New creates a new Metrics instance and registers all metrics with the provided registerer.
@@ -269,6 +284,62 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Name:      "assigned_partitions",
 			Help:      "Current number of partitions assigned to this consumer",
 		}),
+
+		// Consumer message processing metrics
+		messagesReceived: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "messages_received_total",
+			Help:      "Total number of messages polled from Kafka by partition",
+		}, []string{"partition"}),
+		messagesProcessed: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "messages_processed_total",
+			Help:      "Total number of messages processed by partition and status",
+		}, []string{"partition", "status"}),
+		messageProcessingDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "message_processing_duration_seconds",
+			Help:      "End-to-end message processing duration in seconds by partition",
+			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30},
+		}, []string{"partition"}),
+		messagesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "messages_in_flight",
+			Help:      "Number of messages currently being processed",
+		}),
+
+		// DLQ production metrics
+		dlqProduced: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "dlq_produced_total",
+			Help:      "Total number of messages published to the dead letter queue by status",
+		}, []string{"status"}),
+		dlqProductionDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "dlq_production_duration_seconds",
+			Help:      "Time taken to publish a message to the dead letter queue",
+			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+		}),
+
+		// Consumer error metrics
+		kafkaErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "kafka_errors_total",
+			Help:      "Total number of Kafka errors received by severity (fatal/non_fatal)",
+		}, []string{"severity"}),
+		unknownEvents: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "unknown_events_total",
+			Help:      "Total number of unknown events received by consumer",
+		}),
 	}
 
 	err := errors.Join(
@@ -298,6 +369,14 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		reg.Register(m.partitionAssignments),
 		reg.Register(m.partitionRevocations),
 		reg.Register(m.assignedPartitions),
+		reg.Register(m.messagesReceived),
+		reg.Register(m.messagesProcessed),
+		reg.Register(m.messageProcessingDuration),
+		reg.Register(m.messagesInFlight),
+		reg.Register(m.dlqProduced),
+		reg.Register(m.dlqProductionDuration),
+		reg.Register(m.kafkaErrors),
+		reg.Register(m.unknownEvents),
 	)
 	if err != nil {
 		return nil, err
@@ -491,4 +570,80 @@ func (m *Metrics) RecordPartitionRevocation(partitions []int32) {
 
 	// Clear the assigned partitions gauge (will be updated on next assignment)
 	m.assignedPartitions.Set(0)
+}
+
+// RecordMessageReceived increments the received counter when a message is polled from Kafka.
+func (m *Metrics) RecordMessageReceived(partition int32) {
+	if m == nil {
+		return
+	}
+	m.messagesReceived.WithLabelValues(strconv.Itoa(int(partition))).Inc()
+}
+
+// RecordMessageProcessed records a message processing outcome with duration.
+// Pass nil error for successful processing, non-nil for failures.
+func (m *Metrics) RecordMessageProcessed(partition int32, err error, durationSeconds float64) {
+	if m == nil {
+		return
+	}
+	partitionLabel := strconv.Itoa(int(partition))
+
+	status := StatusSuccess
+	if err != nil {
+		status = StatusError
+	}
+
+	m.messagesProcessed.WithLabelValues(partitionLabel, status).Inc()
+	m.messageProcessingDuration.WithLabelValues(partitionLabel).Observe(durationSeconds)
+}
+
+// IncMessagesInFlight increments the in-flight message processing gauge.
+func (m *Metrics) IncMessagesInFlight() {
+	if m == nil {
+		return
+	}
+	m.messagesInFlight.Inc()
+}
+
+// DecMessagesInFlight decrements the in-flight message processing gauge.
+func (m *Metrics) DecMessagesInFlight() {
+	if m == nil {
+		return
+	}
+	m.messagesInFlight.Dec()
+}
+
+// RecordDLQProduction records a DLQ publish attempt with duration.
+// Pass nil error for successful publishes, non-nil for failures.
+func (m *Metrics) RecordDLQProduction(err error, durationSeconds float64) {
+	if m == nil {
+		return
+	}
+	status := StatusSuccess
+	if err != nil {
+		status = StatusError
+	}
+	m.dlqProduced.WithLabelValues(status).Inc()
+	m.dlqProductionDuration.Observe(durationSeconds)
+}
+
+// RecordKafkaError records a Kafka error by severity.
+// fatal=true for fatal errors, false for non-fatal.
+func (m *Metrics) RecordKafkaError(fatal bool) {
+	if m == nil {
+		return
+	}
+	severity := "non_fatal"
+	if fatal {
+		severity = "fatal"
+	}
+	m.kafkaErrors.WithLabelValues(severity).Inc()
+}
+
+// IncreaseUnknownEventCount increases the unknown event counter.
+func (m *Metrics) IncreaseUnknownEventCount() {
+	if m == nil {
+		return
+	}
+	m.unknownEvents.Inc()
 }
