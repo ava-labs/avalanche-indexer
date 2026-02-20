@@ -99,7 +99,7 @@ type Metrics struct {
 	messagesInFlight          prometheus.Gauge
 
 	// DLQ production metrics
-	dlqProduced           *prometheus.CounterVec // by status
+	dlqMessageProduced    *prometheus.CounterVec // by status
 	dlqProductionDuration prometheus.Histogram
 
 	// Consumer error metrics
@@ -302,9 +302,9 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Namespace: Namespace,
 			Subsystem: Consumer,
 			Name:      "message_processing_duration_seconds",
-			Help:      "End-to-end message dispatch duration including processing, offset insertion, and DLQ publish by partition",
+			Help:      "End-to-end message dispatch duration including processing, offset insertion, and DLQ publish by partition and status",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30},
-		}, []string{"partition"}),
+		}, []string{"partition", "status"}),
 		messagesInFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: Namespace,
 			Subsystem: Consumer,
@@ -313,7 +313,7 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		}),
 
 		// DLQ production metrics
-		dlqProduced: prometheus.NewCounterVec(prometheus.CounterOpts{
+		dlqMessageProduced: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
 			Subsystem: Consumer,
 			Name:      "dlq_produced_total",
@@ -373,7 +373,7 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		reg.Register(m.messagesProcessed),
 		reg.Register(m.messageProcessingDuration),
 		reg.Register(m.messagesInFlight),
-		reg.Register(m.dlqProduced),
+		reg.Register(m.dlqMessageProduced),
 		reg.Register(m.dlqProductionDuration),
 		reg.Register(m.kafkaErrors),
 		reg.Register(m.unknownEvents),
@@ -594,7 +594,7 @@ func (m *Metrics) RecordMessageProcessed(partition int32, err error, durationSec
 	}
 
 	m.messagesProcessed.WithLabelValues(partitionLabel, status).Inc()
-	m.messageProcessingDuration.WithLabelValues(partitionLabel).Observe(durationSeconds)
+	m.messageProcessingDuration.WithLabelValues(partitionLabel, status).Observe(durationSeconds)
 }
 
 // IncMessagesInFlight increments the in-flight message processing gauge.
@@ -623,7 +623,7 @@ func (m *Metrics) RecordDLQProduction(err error, durationSeconds float64) {
 	if err != nil {
 		status = StatusError
 	}
-	m.dlqProduced.WithLabelValues(status).Inc()
+	m.dlqMessageProduced.WithLabelValues(status).Inc()
 	m.dlqProductionDuration.Observe(durationSeconds)
 }
 
@@ -640,8 +640,8 @@ func (m *Metrics) RecordKafkaError(fatal bool) {
 	m.kafkaErrors.WithLabelValues(severity).Inc()
 }
 
-// IncreaseUnknownEventCount increases the unknown event counter.
-func (m *Metrics) IncreaseUnknownEventCount() {
+// IncUnknownEventCount increases the unknown event counter.
+func (m *Metrics) IncUnknownEventCount() {
 	if m == nil {
 		return
 	}

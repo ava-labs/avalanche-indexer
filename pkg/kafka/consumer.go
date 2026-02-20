@@ -196,7 +196,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 				c.metrics.RecordKafkaError(false)
 				c.log.Warnw("kafka error (non-fatal)", "error", msg)
 			default:
-				c.metrics.IncreaseUnknownEventCount()
+				c.metrics.IncUnknownEventCount()
 				c.log.Debugw("ignoring kafka event", "event", msg)
 			}
 		}

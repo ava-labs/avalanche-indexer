@@ -874,15 +874,15 @@ func TestMetrics_RecordDLQProduction(t *testing.T) {
 	t.Run("successful_publish", func(t *testing.T) {
 		m.RecordDLQProduction(nil, 0.02)
 
-		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqProduced.WithLabelValues("success")))
-		require.Equal(t, float64(0), testutil.ToFloat64(m.dlqProduced.WithLabelValues("error")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqMessageProduced.WithLabelValues("success")))
+		require.Equal(t, float64(0), testutil.ToFloat64(m.dlqMessageProduced.WithLabelValues("error")))
 	})
 
 	t.Run("failed_publish", func(t *testing.T) {
 		m.RecordDLQProduction(errors.New("kafka unavailable"), 2.0)
 
-		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqProduced.WithLabelValues("success")))
-		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqProduced.WithLabelValues("error")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqMessageProduced.WithLabelValues("success")))
+		require.Equal(t, float64(1), testutil.ToFloat64(m.dlqMessageProduced.WithLabelValues("error")))
 	})
 
 	t.Run("multiple_publishes", func(t *testing.T) {
@@ -890,8 +890,8 @@ func TestMetrics_RecordDLQProduction(t *testing.T) {
 		m.RecordDLQProduction(nil, 0.03)
 		m.RecordDLQProduction(errors.New("timeout"), 5.0)
 
-		require.Equal(t, float64(3), testutil.ToFloat64(m.dlqProduced.WithLabelValues("success")))
-		require.Equal(t, float64(2), testutil.ToFloat64(m.dlqProduced.WithLabelValues("error")))
+		require.Equal(t, float64(3), testutil.ToFloat64(m.dlqMessageProduced.WithLabelValues("success")))
+		require.Equal(t, float64(2), testutil.ToFloat64(m.dlqMessageProduced.WithLabelValues("error")))
 	})
 
 	t.Run("histogram_records_duration", func(t *testing.T) {
@@ -947,11 +947,11 @@ func TestMetrics_IncreaseUnknownEventCount(t *testing.T) {
 
 	require.Equal(t, float64(0), testutil.ToFloat64(m.unknownEvents))
 
-	m.IncreaseUnknownEventCount()
+	m.IncUnknownEventCount()
 	require.Equal(t, float64(1), testutil.ToFloat64(m.unknownEvents))
 
-	m.IncreaseUnknownEventCount()
-	m.IncreaseUnknownEventCount()
+	m.IncUnknownEventCount()
+	m.IncUnknownEventCount()
 	require.Equal(t, float64(3), testutil.ToFloat64(m.unknownEvents))
 }
 
@@ -995,7 +995,7 @@ func TestMetrics_ConsumerMethods_NilReceiver(t *testing.T) {
 	})
 
 	require.NotPanics(t, func() {
-		m.IncreaseUnknownEventCount()
+		m.IncUnknownEventCount()
 	})
 
 	require.NotPanics(t, func() {
