@@ -894,7 +894,7 @@ func TestMetrics_RecordDLQProduction(t *testing.T) {
 		require.Equal(t, float64(2), testutil.ToFloat64(m.dlqMessageProduced.WithLabelValues("error")))
 	})
 
-	t.Run("histogram_records_duration", func(t *testing.T) {
+	t.Run("histogram_records_duration_by_status", func(t *testing.T) {
 		metricFamilies, err := reg.Gather()
 		require.NoError(t, err)
 
@@ -902,9 +902,21 @@ func TestMetrics_RecordDLQProduction(t *testing.T) {
 		for _, mf := range metricFamilies {
 			if mf.GetName() == "indexer_consumer_dlq_production_duration_seconds" {
 				found = true
-				metric := mf.GetMetric()[0]
-				histogram := metric.GetHistogram()
-				require.Equal(t, uint64(5), histogram.GetSampleCount())
+				for _, metric := range mf.GetMetric() {
+					labelMap := make(map[string]string)
+					for _, label := range metric.GetLabel() {
+						labelMap[label.GetName()] = label.GetValue()
+					}
+					histogram := metric.GetHistogram()
+					switch labelMap["status"] {
+					case "success":
+						// 1 from successful_publish + 2 from multiple_publishes = 3
+						require.Equal(t, uint64(3), histogram.GetSampleCount())
+					case "error":
+						// 1 from failed_publish + 1 from multiple_publishes = 2
+						require.Equal(t, uint64(2), histogram.GetSampleCount())
+					}
+				}
 			}
 		}
 		require.True(t, found, "DLQ production duration histogram not found")
@@ -940,7 +952,7 @@ func TestMetrics_RecordKafkaError(t *testing.T) {
 	})
 }
 
-func TestMetrics_IncreaseUnknownEventCount(t *testing.T) {
+func TestMetrics_IncUnknownEventCount(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m, err := New(reg)
 	require.NoError(t, err)

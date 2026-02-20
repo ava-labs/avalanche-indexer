@@ -95,12 +95,12 @@ type Metrics struct {
 	// Consumer message processing metrics
 	messagesReceived          *prometheus.CounterVec   // by partition
 	messagesProcessed         *prometheus.CounterVec   // by partition, status
-	messageProcessingDuration *prometheus.HistogramVec // by partition
+	messageProcessingDuration *prometheus.HistogramVec // by partition, status
 	messagesInFlight          prometheus.Gauge
 
 	// DLQ production metrics
-	dlqMessageProduced    *prometheus.CounterVec // by status
-	dlqProductionDuration prometheus.Histogram
+	dlqMessageProduced    *prometheus.CounterVec   // by status
+	dlqProductionDuration *prometheus.HistogramVec // by status
 
 	// Consumer error metrics
 	kafkaErrors   *prometheus.CounterVec // by severity (fatal/non_fatal)
@@ -319,13 +319,13 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Name:      "dlq_produced_total",
 			Help:      "Total number of messages published to the dead letter queue by status",
 		}, []string{"status"}),
-		dlqProductionDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+		dlqProductionDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: Namespace,
 			Subsystem: Consumer,
 			Name:      "dlq_production_duration_seconds",
-			Help:      "Time taken to publish a message to the dead letter queue",
+			Help:      "Time taken to publish a message to the dead letter queue by status",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
-		}),
+		}, []string{"status"}),
 
 		// Consumer error metrics
 		kafkaErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -624,7 +624,7 @@ func (m *Metrics) RecordDLQProduction(err error, durationSeconds float64) {
 		status = StatusError
 	}
 	m.dlqMessageProduced.WithLabelValues(status).Inc()
-	m.dlqProductionDuration.Observe(durationSeconds)
+	m.dlqProductionDuration.WithLabelValues(status).Observe(durationSeconds)
 }
 
 // RecordKafkaError records a Kafka error by severity.
