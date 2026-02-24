@@ -24,7 +24,9 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
 	corethClient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	corethRpc "github.com/ava-labs/coreth/rpc"
 	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
+	subnetRpc "github.com/ava-labs/subnet-evm/rpc"
 	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -43,7 +45,13 @@ func run(c *cli.Context) error {
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 
+	mode := "blocks"
+	if cfg.Traces {
+		mode = "traces"
+	}
+
 	sugar.Infow("config",
+		"mode", mode,
 		"verbose", cfg.Verbose,
 		"evmChainID", cfg.EVMChainID,
 		"bcID", cfg.BCID,
@@ -149,51 +157,97 @@ func run(c *cli.Context) error {
 
 	var w worker.Worker
 	var sub subscriber.Subscriber
-	switch cfg.ClientType {
-	case "coreth":
-		client, err := corethClient.DialContext(ctx, cfg.RPCURL)
-		if err != nil {
-			return fmt.Errorf("failed to dial rpc: %w", err)
-		}
-		defer client.Close()
 
-		// Create worker and subscriber
-		w, err = worker.NewCorethWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
-		if err != nil {
-			return fmt.Errorf("failed to create worker: %w", err)
-		}
-		sub = subscriber.NewCoreth(sugar, client)
-
-		if fetchLatestHeight {
-			end, err = client.BlockNumber(ctx)
+	if cfg.Traces {
+		switch cfg.ClientType {
+		case "coreth":
+			client, err := corethRpc.DialContext(ctx, cfg.RPCURL)
 			if err != nil {
-				return fmt.Errorf("failed to get latest block height: %w", err)
+				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
-			sugar.Infof("latest block height: %d", end)
-		}
-	case "subnet-evm":
-		client, err := subnetClient.DialContext(ctx, cfg.RPCURL)
-		if err != nil {
-			return fmt.Errorf("failed to dial rpc: %w", err)
-		}
-		defer client.Close()
+			defer client.Close()
 
-		// Create subscriber and worker
-		w, err = worker.NewSubnetEVMWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
-		if err != nil {
-			return fmt.Errorf("failed to create worker: %w", err)
-		}
-		sub = subscriber.NewSubnetEVM(sugar, client)
-
-		if fetchLatestHeight {
-			end, err = client.BlockNumber(ctx)
+			w, err = worker.NewCorethTracesWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
 			if err != nil {
-				return fmt.Errorf("failed to get latest block height: %w", err)
+				return fmt.Errorf("failed to create traces worker: %w", err)
 			}
-			sugar.Infof("latest block height: %d", end)
+			sub = subscriber.NewCoreth(sugar, corethClient.New(client))
+
+			if fetchLatestHeight {
+				end, err = corethClient.New(client).BlockNumber(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get latest block height: %w", err)
+				}
+				sugar.Infof("latest block height: %d", end)
+			}
+		case "subnet-evm":
+			client, err := subnetRpc.DialContext(ctx, cfg.RPCURL)
+			if err != nil {
+				return fmt.Errorf("failed to dial rpc: %w", err)
+			}
+			defer client.Close()
+
+			w, err = worker.NewSubnetEVMTracesWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
+			if err != nil {
+				return fmt.Errorf("failed to create traces worker: %w", err)
+			}
+			sub = subscriber.NewSubnetEVM(sugar, subnetClient.NewClient(client))
+
+			if fetchLatestHeight {
+				end, err = subnetClient.NewClient(client).BlockNumber(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get latest block height: %w", err)
+				}
+				sugar.Infof("latest block height: %d", end)
+			}
+		default:
+			return fmt.Errorf("invalid client type: %s", cfg.ClientType)
 		}
-	default:
-		return fmt.Errorf("invalid client type: %s", cfg.ClientType)
+	} else {
+		switch cfg.ClientType {
+		case "coreth":
+			client, err := corethClient.DialContext(ctx, cfg.RPCURL)
+			if err != nil {
+				return fmt.Errorf("failed to dial rpc: %w", err)
+			}
+			defer client.Close()
+
+			w, err = worker.NewCorethWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
+			if err != nil {
+				return fmt.Errorf("failed to create worker: %w", err)
+			}
+			sub = subscriber.NewCoreth(sugar, client)
+
+			if fetchLatestHeight {
+				end, err = client.BlockNumber(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get latest block height: %w", err)
+				}
+				sugar.Infof("latest block height: %d", end)
+			}
+		case "subnet-evm":
+			client, err := subnetClient.DialContext(ctx, cfg.RPCURL)
+			if err != nil {
+				return fmt.Errorf("failed to dial rpc: %w", err)
+			}
+			defer client.Close()
+
+			w, err = worker.NewSubnetEVMWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.ReceiptTimeout)
+			if err != nil {
+				return fmt.Errorf("failed to create worker: %w", err)
+			}
+			sub = subscriber.NewSubnetEVM(sugar, client)
+
+			if fetchLatestHeight {
+				end, err = client.BlockNumber(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get latest block height: %w", err)
+				}
+				sugar.Infof("latest block height: %d", end)
+			}
+		default:
+			return fmt.Errorf("invalid client type: %s", cfg.ClientType)
+		}
 	}
 
 	// Initialize ClickHouse client

@@ -16,6 +16,12 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"VERBOSE"},
 			Value:   false,
 		},
+		&cli.BoolFlag{
+			Name:    "traces",
+			Usage:   "Fetch debug traces instead of blocks",
+			EnvVars: []string{"TRACES"},
+			Value:   false,
+		},
 		&cli.StringFlag{
 			Name:     "evm-chain-id",
 			Aliases:  []string{"C"},
@@ -68,6 +74,13 @@ func runFlags() []cli.Flag {
 			Usage:   "The timeout for fetching a transaction receipt",
 			EnvVars: []string{"RECEIPT_TIMEOUT"},
 			Value:   10 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:    "trace-timeout",
+			Aliases: []string{"tt"},
+			Usage:   "The timeout for fetching block traces",
+			EnvVars: []string{"TRACE_TIMEOUT"},
+			Value:   360 * time.Second,
 		},
 		&cli.Uint64Flag{
 			Name:     "backfill-priority",

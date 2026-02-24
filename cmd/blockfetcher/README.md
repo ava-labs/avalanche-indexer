@@ -1,9 +1,10 @@
 # blockfetcher
 
-Fetches blocks from an RPC endpoint, processes them concurrently using a sliding window scheduler, and publishes them to Kafka.
+Fetches blocks or debug traces from an RPC endpoint, processes them concurrently using a sliding window scheduler, and publishes them to Kafka.
 
 ## Features
 
+- **Dual mode operation**: Fetch blocks (default) or debug traces (`--traces` flag)
 - **Realtime subscription** for new heads via WebSocket
 - **Backfill** of historical gaps within a bounded window
 - **Concurrency control** and backfill prioritization
@@ -56,6 +57,8 @@ Kafka Topic (blocks)
 
 **Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. Local Kafka (docker-compose) doesn't require SASL authentication.
 
+#### Fetch Blocks (default mode)
+
 ```bash
 bin/blockfetcher run \
   --evm-chain-id 43114 \
@@ -75,6 +78,36 @@ bin/blockfetcher run \
   --clickhouse-database default \
   --verbose
 ```
+
+#### Fetch Debug Traces
+
+To fetch debug traces instead of blocks, add the `--traces` flag:
+
+```bash
+bin/blockfetcher run --traces \
+  --evm-chain-id 43114 \
+  --bc-id "11111111111111111111111111111111LpoYY" \
+  --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --client-type coreth \
+  --start-height 0 \
+  --concurrency 16 \
+  --backfill-priority 4 \
+  --blocks-ch-capacity 200 \
+  --max-failures 5 \
+  --kafka-brokers localhost:9092 \
+  --kafka-topic traces \
+  --kafka-topic-num-partitions 1 \
+  --kafka-topic-replication-factor 1 \
+  --clickhouse-cluster default \
+  --clickhouse-database default \
+  --trace-timeout 30s \
+  --verbose
+```
+
+**Note:** When fetching traces, consider:
+- Using a separate Kafka topic (e.g., `traces` instead of `blocks`)
+- Increasing `--trace-timeout` as trace calls can be slower than block fetches
+- Trace data can be significantly larger than block data
 
 ### Run with SASL Authentication (OCI Kafka, etc.)
 
@@ -178,9 +211,12 @@ All flags have environment variable equivalents:
 - `--kafka-topic` / `-t` → `KAFKA_TOPIC` (Kafka topic for blocks)
 
 **Optional flags:**
+- `--traces` → `TRACES` (default: false, fetch debug traces instead of blocks)
 - `--client-type` / `-ct` → `CLIENT_TYPE` (default: coreth)
 - `--start-height` / `-s` → `START_HEIGHT` (default: 0, fetches from checkpoint if 0)
 - `--end-height` / `-e` → `END_HEIGHT` (optional; if unset the latest is used)
+- `--receipt-timeout` / `-rt` → `RECEIPT_TIMEOUT` (default: 10s, timeout for transaction receipt fetches)
+- `--trace-timeout` / `-tt` → `TRACE_TIMEOUT` (default: 10s, timeout for debug trace fetches)
 - `--blocks-ch-capacity` / `-B` → `BLOCKS_CH_CAPACITY` (default: 100, subscription channel capacity)
 - `--max-failures` / `-f` → `MAX_FAILURES` (default: 3, max failures before stopping)
 - `--kafka-enable-logs` / `-l` → `KAFKA_ENABLE_LOGS` (default: false, enable Kafka client logs)
