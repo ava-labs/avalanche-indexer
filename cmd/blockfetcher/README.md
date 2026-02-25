@@ -216,7 +216,7 @@ All flags have environment variable equivalents:
 - `--start-height` / `-s` → `START_HEIGHT` (default: 0, fetches from checkpoint if 0)
 - `--end-height` / `-e` → `END_HEIGHT` (optional; if unset the latest is used)
 - `--receipt-timeout` / `-rt` → `RECEIPT_TIMEOUT` (default: 10s, timeout for transaction receipt fetches)
-- `--trace-timeout` / `-tt` → `TRACE_TIMEOUT` (default: 10s, timeout for debug trace fetches)
+- `--trace-timeout` / `-tt` → `TRACE_TIMEOUT` (default: 360s, timeout for debug trace fetches)
 - `--blocks-ch-capacity` / `-B` → `BLOCKS_CH_CAPACITY` (default: 100, subscription channel capacity)
 - `--max-failures` / `-f` → `MAX_FAILURES` (default: 3, max failures before stopping)
 - `--kafka-enable-logs` / `-l` → `KAFKA_ENABLE_LOGS` (default: false, enable Kafka client logs)

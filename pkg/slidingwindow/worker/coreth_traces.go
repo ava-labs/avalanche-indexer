@@ -122,7 +122,7 @@ func (ctw *CorethTracesWorker) FetchBlockTraces(ctx context.Context, height uint
 		} else {
 			ctw.log.Warnw("debug_traceBlockByNumber failed", "height", height, "error", err, "duration_ms", rpcDuration.Milliseconds())
 		}
-		return nil, fmt.Errorf("debug_traceBlockByNumber failed %d: %w", height, err)
+		return nil, fmt.Errorf("%w for block %d: %w", ErrTracesFetchFailed, height, err)
 	}
 	return traces, nil
 }
