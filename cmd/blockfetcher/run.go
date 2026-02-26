@@ -30,7 +30,11 @@ import (
 	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
-const flushTimeoutOnClose = 15 * time.Second
+const (
+	flushTimeoutOnClose = 15 * time.Second
+	blocksMode          = "blocks"
+	tracesMode          = "traces"
+)
 
 func run(c *cli.Context) error {
 	// Build configuration from CLI flags
@@ -45,13 +49,8 @@ func run(c *cli.Context) error {
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 
-	mode := "blocks"
-	if cfg.Traces {
-		mode = "traces"
-	}
-
 	sugar.Infow("config",
-		"mode", mode,
+		"mode", cfg.Mode,
 		"verbose", cfg.Verbose,
 		"evmChainID", cfg.EVMChainID,
 		"bcID", cfg.BCID,
@@ -158,7 +157,8 @@ func run(c *cli.Context) error {
 	var w worker.Worker
 	var sub subscriber.Subscriber
 
-	if cfg.Traces {
+	switch cfg.Mode {
+	case tracesMode:
 		switch cfg.ClientType {
 		case "coreth":
 			client, err := corethRpc.DialContext(ctx, cfg.RPCURL)
@@ -171,10 +171,11 @@ func run(c *cli.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to create traces worker: %w", err)
 			}
-			sub = subscriber.NewCoreth(sugar, corethClient.New(client))
+			cclient := corethClient.New(client)
+			sub = subscriber.NewCoreth(sugar, cclient)
 
 			if fetchLatestHeight {
-				end, err = corethClient.New(client).BlockNumber(ctx)
+				end, err = cclient.BlockNumber(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to get latest block height: %w", err)
 				}
@@ -191,10 +192,11 @@ func run(c *cli.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to create traces worker: %w", err)
 			}
-			sub = subscriber.NewSubnetEVM(sugar, subnetClient.NewClient(client))
+			sclient := subnetClient.NewClient(client)
+			sub = subscriber.NewSubnetEVM(sugar, sclient)
 
 			if fetchLatestHeight {
-				end, err = subnetClient.NewClient(client).BlockNumber(ctx)
+				end, err = sclient.BlockNumber(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to get latest block height: %w", err)
 				}
@@ -203,7 +205,8 @@ func run(c *cli.Context) error {
 		default:
 			return fmt.Errorf("invalid client type: %s", cfg.ClientType)
 		}
-	} else {
+	case blocksMode:
+		// blocks mode
 		switch cfg.ClientType {
 		case "coreth":
 			client, err := corethClient.DialContext(ctx, cfg.RPCURL)
@@ -248,6 +251,8 @@ func run(c *cli.Context) error {
 		default:
 			return fmt.Errorf("invalid client type: %s", cfg.ClientType)
 		}
+	default:
+		return fmt.Errorf("invalid mode: %s", cfg.Mode)
 	}
 
 	// Initialize ClickHouse client

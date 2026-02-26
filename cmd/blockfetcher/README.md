@@ -4,7 +4,7 @@ Fetches blocks or debug traces from an RPC endpoint, processes them concurrently
 
 ## Features
 
-- **Dual mode operation**: Fetch blocks (default) or debug traces (`--traces` flag)
+- **Dual mode operation**: Fetch blocks (default) or debug traces (`--mode` flag)
 - **Realtime subscription** for new heads via WebSocket
 - **Backfill** of historical gaps within a bounded window
 - **Concurrency control** and backfill prioritization
@@ -81,10 +81,11 @@ bin/blockfetcher run \
 
 #### Fetch Debug Traces
 
-To fetch debug traces instead of blocks, add the `--traces` flag:
+To fetch debug traces instead of blocks, use `--mode traces`:
 
 ```bash
-bin/blockfetcher run --traces \
+bin/blockfetcher run \
+  --mode traces \
   --evm-chain-id 43114 \
   --bc-id "11111111111111111111111111111111LpoYY" \
   --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
@@ -211,8 +212,8 @@ All flags have environment variable equivalents:
 - `--kafka-topic` / `-t` → `KAFKA_TOPIC` (Kafka topic for blocks)
 
 **Optional flags:**
-- `--traces` → `TRACES` (default: false, fetch debug traces instead of blocks)
-- `--client-type` / `-ct` → `CLIENT_TYPE` (default: coreth)
+- `--mode` → `MODE` (default: blocks, operation mode: "blocks" or "traces")
+- `--client-type` / `-ct` → `CLIENT_TYPE` (default: coreth, client type: "coreth" or "subnet-evm")
 - `--start-height` / `-s` → `START_HEIGHT` (default: 0, fetches from checkpoint if 0)
 - `--end-height` / `-e` → `END_HEIGHT` (optional; if unset the latest is used)
 - `--receipt-timeout` / `-rt` → `RECEIPT_TIMEOUT` (default: 10s, timeout for transaction receipt fetches)
