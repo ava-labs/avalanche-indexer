@@ -16,11 +16,11 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"VERBOSE"},
 			Value:   false,
 		},
-		&cli.BoolFlag{
-			Name:    "traces",
-			Usage:   "Fetch debug traces instead of blocks",
-			EnvVars: []string{"TRACES"},
-			Value:   false,
+		&cli.StringFlag{
+			Name:    "mode",
+			Usage:   "The mode to run the block fetcher in (blocks or traces). Default is blocks.",
+			EnvVars: []string{"MODE"},
+			Value:   blocksMode,
 		},
 		&cli.StringFlag{
 			Name:     "evm-chain-id",

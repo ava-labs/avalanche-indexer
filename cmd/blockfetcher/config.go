@@ -49,7 +49,7 @@ func validateRetentionValue(value, fieldName string) error {
 type Config struct {
 	// Application settings
 	Verbose bool
-	Traces  bool
+	Mode    string
 
 	// Blockchain settings
 	EVMChainID uint64
@@ -147,7 +147,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 
 	return &Config{
 		Verbose:                     c.Bool("verbose"),
-		Traces:                      c.Bool("traces"),
+		Mode:                        c.String("mode"),
 		EVMChainID:                  c.Uint64("evm-chain-id"),
 		BCID:                        c.String("bc-id"),
 		RPCURL:                      c.String("rpc-url"),
