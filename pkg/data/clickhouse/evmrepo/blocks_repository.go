@@ -216,6 +216,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		block.ExcessBlobGas,
 		parentBeaconBlockRootBytes,
 		block.MinDelayExcess,
+		block.NumTxns,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write block: %w", err)

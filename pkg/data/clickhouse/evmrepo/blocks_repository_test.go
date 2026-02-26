@@ -120,6 +120,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			block.ExcessBlobGas,              // uint64
 			parentBeaconBlockRootStr,         // string or nil
 			block.MinDelayExcess,             // uint64
+			block.NumTxns,                    // uint32
 		).
 		Return(nil).
 		Once()
@@ -227,6 +228,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			block.ExcessBlobGas,
 			parentBeaconBlockRootStr,
 			block.MinDelayExcess,
+			block.NumTxns,
 		).
 		Return(execErr).
 		Once()

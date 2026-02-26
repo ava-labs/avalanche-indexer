@@ -150,6 +150,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		tx.Type,
 		tx.TransactionIndex,
 		tx.Success,
+		tx.NumLogs,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write transaction: %w", err)

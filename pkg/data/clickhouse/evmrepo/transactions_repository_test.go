@@ -69,7 +69,8 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
-			tx.Success, // UInt8: success status
+			tx.Success,  // UInt8: success status
+			tx.NumLogs,  // uint32: number of logs
 		).
 		Return(nil).
 		Once()
@@ -133,7 +134,8 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
-			tx.Success, // UInt8: success status
+			tx.Success,  // UInt8: success status
+			tx.NumLogs,  // uint32: number of logs
 		).
 		Return(execErr).
 		Once()
@@ -196,7 +198,8 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
-			tx.Success, // UInt8: success status
+			tx.Success,  // UInt8: success status
+			tx.NumLogs,  // uint32: number of logs
 		).
 		Return(nil).
 		Once()
