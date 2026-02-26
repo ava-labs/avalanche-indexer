@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
@@ -41,6 +42,8 @@ type Consumer struct {
 	rebalanceMutex sync.RWMutex
 
 	wg sync.WaitGroup
+
+	metrics *metrics.Metrics
 }
 
 type rebalanceCtx struct {
@@ -100,6 +103,7 @@ func NewConsumer(
 		cfg.AutoOffsetReset,
 		false,
 		log,
+		cfg.Metrics,
 	)
 
 	if cfg.PublishToDLQ && cfg.DLQTopic == "" {
@@ -118,6 +122,7 @@ func NewConsumer(
 		errCh:             make(chan error, cfg.Concurrency),
 		doneCh:            make(chan struct{}),
 		processor:         proc,
+		metrics:           cfg.Metrics,
 	}, nil
 }
 
@@ -208,6 +213,11 @@ func (c *Consumer) Start(ctx context.Context) error {
 // acquisition, the message is dropped (will be reprocessed after rebalance).
 // On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
 func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
+	start := time.Now()
+	if c.metrics != nil && msg != nil {
+		c.metrics.ObserveKafkaMessageSize("consumed", len(msg.Value))
+	}
+
 	if err := c.sem.Acquire(ctx, 1); err != nil {
 		return
 	}
@@ -216,6 +226,12 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 	go func() {
 		defer c.wg.Done()
 		defer c.sem.Release(1)
+		defer func() {
+			if c.metrics != nil {
+				c.metrics.ObserveConsumerMessageProcessingDuration(time.Since(start).Seconds())
+			}
+		}()
+
 		err := c.processor.Process(ctx, msg)
 		if err == nil {
 			c.offsetManager.InsertOffsetWithRetry(ctx, msg)

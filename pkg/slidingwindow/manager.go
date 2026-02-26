@@ -226,7 +226,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 			return
 		}
 		m.log.Debugw("failed processing block height", "height", h, "error", err)
-		m.handleFailure(h)
+		m.handleFailure(h, "process")
 		return
 	}
 
@@ -238,7 +238,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 			return
 		}
 		m.log.Warnw("failed to mark processed", "height", h, "error", err)
-		m.handleFailure(h)
+		m.handleFailure(h, "mark_processed")
 		return
 	}
 
@@ -272,8 +272,16 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 }
 
 // handleFailure increments the failure count for a height and sends a signal if the threshold is exceeded.
-func (m *Manager) handleFailure(h uint64) {
+func (m *Manager) handleFailure(h uint64, stage string) {
+	if m.metrics != nil {
+		m.metrics.IncBlockFailure(stage)
+	}
+
 	failCount := m.state.IncrementFailureCount(h)
+	if m.metrics != nil && failCount < m.maxFailures {
+		m.metrics.IncBlockRetry()
+	}
+
 	if failCount >= m.maxFailures {
 		select {
 		case m.failureChan <- h:

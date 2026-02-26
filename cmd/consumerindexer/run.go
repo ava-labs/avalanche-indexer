@@ -171,6 +171,7 @@ func run(c *cli.Context) error {
 		GoroutineWaitTimeout:        &cfg.GoroutineWaitTimeout,
 		PollInterval:                &cfg.PollInterval,
 		SASL:                        cfg.KafkaSASL,
+		Metrics:                     m,
 	}
 
 	// Create consumer

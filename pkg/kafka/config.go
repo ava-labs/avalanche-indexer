@@ -3,6 +3,7 @@ package kafka
 import (
 	"time"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -34,6 +35,7 @@ type ConsumerConfig struct {
 	PublishToDLQ                bool           // If true, failed messages are published to DLQ
 	SASL                        SASLConfig     // SASL authentication configuration
 	MessageMaxBytes             int            // Maximum message size in bytes
+	Metrics                     *metrics.Metrics
 }
 
 // WithDefaults returns a copy of the config with default values filled in for any nil pointer fields.

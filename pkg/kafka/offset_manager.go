@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 )
@@ -27,6 +28,7 @@ const (
 type offsetState struct {
 	window        []kafka.TopicPartition
 	lastCommitted kafka.Offset
+	topic         *string
 }
 
 /*
@@ -55,6 +57,7 @@ type OffsetManager struct {
 	mutex           sync.Mutex
 	dryRun          bool // skip interactions with Brokers for testing
 	log             *zap.SugaredLogger
+	metrics         *metrics.Metrics
 }
 
 // Creates new OffsetManager. To begin the OffsetManager, Start() must be called.
@@ -65,6 +68,7 @@ func NewOffsetManager(
 	autoOffsetReset string,
 	dryRun bool,
 	log *zap.SugaredLogger,
+	metrics *metrics.Metrics,
 ) *OffsetManager {
 	om := &OffsetManager{
 		consumer:        consumer,
@@ -72,6 +76,7 @@ func NewOffsetManager(
 		partitionStates: make(map[int32]*offsetState),
 		dryRun:          dryRun,
 		log:             log,
+		metrics:         metrics,
 	}
 	go om.run(ctx, interval, dryRun)
 	return om
@@ -88,6 +93,7 @@ func (om *OffsetManager) run(
 		select {
 		case <-ticker.C:
 			om.commitLatestValidOffsets(dryRun)
+			om.recordConsumerGroupLag(dryRun)
 		case <-ctx.Done():
 			return
 		}
@@ -141,11 +147,16 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 			om.log.Infof("committed offset %d for partition %d", window[end].Offset, partition)
 			if end == len(window)-1 {
 				om.partitionStates[partition] = &offsetState{
-					[]kafka.TopicPartition{},
-					window[end].Offset,
+					window:        []kafka.TopicPartition{},
+					lastCommitted: window[end].Offset,
+					topic:         state.topic,
 				}
 			} else {
-				om.partitionStates[partition] = &offsetState{window[end+1:], window[end].Offset}
+				om.partitionStates[partition] = &offsetState{
+					window:        window[end+1:],
+					lastCommitted: window[end].Offset,
+					topic:         state.topic,
+				}
 			}
 		}
 
@@ -181,6 +192,9 @@ func (om *OffsetManager) InsertOffset(ctx context.Context, offset kafka.TopicPar
 	if state == nil {
 		om.log.Warnf("partition %d not found in partition states, ignoring", offset.Partition)
 		return nil
+	}
+	if state.topic == nil && offset.Topic != nil {
+		state.topic = offset.Topic
 	}
 
 	// If the lastCommitted offset is not initialized, we set it to the offset
@@ -234,6 +248,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 			om.partitionStates[co.Partition] = &offsetState{
 				window:        []kafka.TopicPartition{},
 				lastCommitted: co.Offset,
+				topic:         co.Topic,
 			}
 
 			// If the group's stored offset is lower than the earliest offset of
@@ -273,12 +288,76 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 		for i, partition := range ev.Partitions {
 			logStr[i] = strconv.Itoa(int(partition.Partition))
 			delete(om.partitionStates, partition.Partition)
+			if om.metrics != nil {
+				om.metrics.DeleteKafkaConsumerGroupLag(partition.Partition)
+			}
 		}
 		om.log.Infof("rebalance event, removing state for partitions: %s\n", strings.Join(logStr, ","))
 	default:
 		om.log.Warnf("unknown rebalance event: %v", event)
 	}
 	return nil
+}
+
+func (om *OffsetManager) recordConsumerGroupLag(dryRun bool) {
+	if dryRun || om.metrics == nil {
+		return
+	}
+
+	om.mutex.Lock()
+	partitions := make([]kafka.TopicPartition, 0, len(om.partitionStates))
+	for partition, state := range om.partitionStates {
+		if state.topic == nil {
+			continue
+		}
+		partitions = append(partitions, kafka.TopicPartition{
+			Topic:     state.topic,
+			Partition: partition,
+		})
+	}
+	om.mutex.Unlock()
+
+	if len(partitions) == 0 {
+		return
+	}
+
+	committed, err := om.consumer.Committed(partitions, DefaultOffsetCommitTimeout)
+	if err != nil {
+		om.log.Warnf("failed to query committed offsets for lag metrics: %v", err)
+		return
+	}
+
+	for _, partition := range committed {
+		if partition.Topic == nil {
+			continue
+		}
+
+		low, high, err := om.consumer.QueryWatermarkOffsets(*partition.Topic, partition.Partition, DefaultOffsetCommitTimeout)
+		if err != nil {
+			om.log.Warnf("failed to query watermark offsets for lag metrics (partition=%d): %v", partition.Partition, err)
+			continue
+		}
+
+		var lag int64
+		if partition.Offset < 0 {
+			// No committed offset exists: effective lag depends on auto.offset.reset behavior.
+			switch strings.ToLower(om.autoOffsetReset) {
+			case "latest":
+				lag = 0
+			case "earliest":
+				lag = int64(high - low)
+			default:
+				lag = int64(high - low)
+			}
+		} else {
+			lag = int64(high) - int64(partition.Offset)
+		}
+		if lag < 0 {
+			lag = 0
+		}
+
+		om.metrics.SetKafkaConsumerGroupLag(partition.Partition, lag)
+	}
 }
 
 func (om *OffsetManager) InsertOffsetWithRetry(
@@ -324,6 +403,7 @@ func (om *OffsetManager) getPartitionState(partition int32) *offsetState {
 	return &offsetState{
 		window:        windowCopy,
 		lastCommitted: state.lastCommitted,
+		topic:         state.topic,
 	}
 }
 
