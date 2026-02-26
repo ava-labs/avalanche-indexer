@@ -244,7 +244,7 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(20006296), blockRow.GasLimit)
 	assert.Equal(t, uint64(183061), blockRow.GasUsed)
 	assertBigIntEqual(t, big.NewInt(470000000000), blockRow.BaseFeePerGas)
-	assert.Equal(t, "2a", blockRow.Nonce) // 42 in hex
+	assert.Equal(t, "2a", blockRow.Nonce)        // 42 in hex
 	assert.Equal(t, uint32(1), blockRow.NumTxns) // 1 transaction in the test block
 }
 
