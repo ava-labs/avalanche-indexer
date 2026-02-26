@@ -50,7 +50,9 @@ func NewTransactions(ctx context.Context, client clickhouse.Client, cluster, dat
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the raw_transactions table if it doesn't exist
+// CreateTableIfNotExists creates the raw_transactions table if it doesn't exist,
+// then runs all numbered migrations from queries/migrations/transactions/ to ensure
+// the schema is up to date for existing tables.
 func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createTransactionsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -61,6 +63,11 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create transactions table: %w", err)
 	}
+
+	if err := RunMigrations(ctx, r.client.Conn(), transactionsMigrationsFS, "queries/migrations/transactions", r.database, r.tableName, r.cluster); err != nil {
+		return fmt.Errorf("failed to run transactions migrations: %w", err)
+	}
+
 	return nil
 }
 

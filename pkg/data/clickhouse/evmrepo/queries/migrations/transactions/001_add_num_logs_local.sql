@@ -1,0 +1,1 @@
+ALTER TABLE `%s`.`%s_local` ON CLUSTER `%s` ADD COLUMN IF NOT EXISTS num_logs UInt32 DEFAULT 0
