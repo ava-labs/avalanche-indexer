@@ -199,14 +199,14 @@ func (q *Producer) produceWithRetry(
 			return nil
 		}
 
-		kafkaErr, ok := err.(cKafka.Error)
-		if !ok {
+		var kafkaErr cKafka.Error
+		if !errors.As(err, &kafkaErr) {
 			return fmt.Errorf("failed to produce: %w", err)
 		}
 
 		switch kafkaErr.Code() {
 		case cKafka.ErrQueueFull:
-			q.log.Warn("producer queue full, retrying in %s", queueFullErrorRetryDelay)
+			q.log.Warnf("producer queue full, retrying in %s", queueFullErrorRetryDelay)
 			time.Sleep(queueFullErrorRetryDelay)
 			continue
 		case cKafka.ErrBrokerNotAvailable:
@@ -279,7 +279,7 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 func handleDeliveryEvent(log *zap.SugaredLogger, msg *cKafka.Message, ev cKafka.Event) error {
 	e, ok := ev.(*cKafka.Message)
 	if !ok {
-		// Per-message delivery channels only receive *kafka.Message events,
+		// Per-message delivery channels only receive *ckafka.Message events,
 		// but we keep this check as a defensive measure.
 		return fmt.Errorf("unexpected delivery event: %T", ev)
 	}
