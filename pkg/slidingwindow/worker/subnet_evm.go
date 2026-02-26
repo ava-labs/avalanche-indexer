@@ -57,6 +57,7 @@ func NewSubnetEVMWorker(
 
 func (cw *SubnetEVMWorker) Process(ctx context.Context, height uint64) error {
 	cw.log.Debugw("worker starting block processing", "height", height)
+	processStart := time.Now()
 
 	evmBlock, err := cw.GetBlock(ctx, height)
 	if err != nil {
@@ -70,16 +71,26 @@ func (cw *SubnetEVMWorker) Process(ctx context.Context, height uint64) error {
 	}
 
 	cw.log.Debugw("block serialized, producing to kafka", "height", height, "bytes", len(bytes))
+	if cw.metrics != nil {
+		cw.metrics.ObserveKafkaMessageSize("produced", len(bytes))
+	}
 	produceStart := time.Now()
 	err = cw.producer.Produce(ctx, kafka.Msg{
 		Topic: cw.topic,
 		Value: bytes,
 		Key:   []byte(evmBlock.Number.String()),
 	})
+	produceDuration := time.Since(produceStart)
+	if cw.metrics != nil {
+		cw.metrics.RecordProducerResult(err, produceDuration.Seconds())
+	}
 	if err != nil {
 		return fmt.Errorf("produce block failed %d: %w", height, err)
 	}
-	cw.log.Debugw("kafka produce completed", "height", height, "duration_ms", time.Since(produceStart).Milliseconds())
+	if cw.metrics != nil {
+		cw.metrics.ObserveBlockToPublishDuration(time.Since(processStart).Seconds())
+	}
+	cw.log.Debugw("kafka produce completed", "height", height, "duration_ms", produceDuration.Milliseconds())
 
 	cw.log.Debugw("processed block",
 		"height", evmBlock.Number.Uint64(),

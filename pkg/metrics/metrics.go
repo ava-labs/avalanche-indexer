@@ -1,8 +1,10 @@
 package metrics
 
 import (
+	"context"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -76,6 +78,24 @@ type Metrics struct {
 	// Log metrics
 	logsFetched   prometheus.Counter
 	logsProcessed prometheus.Counter
+
+	// Producer metrics
+	producerMessages        *prometheus.CounterVec
+	producerProduceDuration prometheus.Histogram
+	producerErrors          *prometheus.CounterVec
+	blockToPublishDuration  prometheus.Histogram
+
+	// Retry/failure metrics
+	blockRetries  prometheus.Counter
+	blockFailures *prometheus.CounterVec
+
+	// Kafka consumer metrics
+	kafkaConsumerGroupLag *prometheus.GaugeVec
+	kafkaMessageSize      *prometheus.HistogramVec
+
+	// ClickHouse write metrics
+	clickHouseWrites        *prometheus.CounterVec
+	clickHouseWriteDuration *prometheus.HistogramVec
 
 	// Kafka offset manager metrics
 	lastCommittedOffset   *prometheus.GaugeVec
@@ -217,6 +237,70 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Name:      "processed_total",
 			Help:      "Total transaction logs processed and persisted",
 		}),
+		producerMessages: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: "producer",
+			Name:      "messages_total",
+			Help:      "Total Kafka producer messages by status",
+		}, []string{"status"}),
+		producerProduceDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: "producer",
+			Name:      "produce_duration_seconds",
+			Help:      "Time spent waiting for Kafka delivery acknowledgement",
+			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}),
+		producerErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: "producer",
+			Name:      "errors_total",
+			Help:      "Total Kafka producer errors by type",
+		}, []string{"type"}),
+		blockToPublishDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Name:      "block_to_publish_duration_seconds",
+			Help:      "Time from block fetch start to Kafka publish confirmation",
+			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}),
+		blockRetries: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      "block_retries_total",
+			Help:      "Total block retries after failed processing attempts",
+		}),
+		blockFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      "block_failures_total",
+			Help:      "Total block processing failures by stage",
+		}, []string{"stage"}),
+		kafkaConsumerGroupLag: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: "kafka",
+			Name:      "consumer_group_lag",
+			Help:      "Kafka consumer group lag to partition high watermark",
+		}, []string{"partition"}),
+		kafkaMessageSize: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: "kafka",
+			Name:      "message_size_bytes",
+			Help:      "Kafka message size in bytes by direction",
+			Buckets: []float64{
+				128, 256, 512, 1024, 2048, 4096, 8192,
+				16384, 32768, 65536, 131072, 262144,
+				524288, 1048576, 2097152, 4194304,
+				8388608, 16777216, 33554432,
+			},
+		}, []string{"direction"}),
+		clickHouseWrites: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      "clickhouse_writes_total",
+			Help:      "Total ClickHouse write attempts by table and status",
+		}, []string{"table", "status"}),
+		clickHouseWriteDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Name:      "clickhouse_write_duration_seconds",
+			Help:      "ClickHouse write duration in seconds by table",
+			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}, []string{"table"}),
 		lastCommittedOffset: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace,
 			Subsystem: KafkaOffset,
@@ -358,6 +442,16 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		reg.Register(m.receiptFetchesInFlight),
 		reg.Register(m.logsFetched),
 		reg.Register(m.logsProcessed),
+		reg.Register(m.producerMessages),
+		reg.Register(m.producerProduceDuration),
+		reg.Register(m.producerErrors),
+		reg.Register(m.blockToPublishDuration),
+		reg.Register(m.blockRetries),
+		reg.Register(m.blockFailures),
+		reg.Register(m.kafkaConsumerGroupLag),
+		reg.Register(m.kafkaMessageSize),
+		reg.Register(m.clickHouseWrites),
+		reg.Register(m.clickHouseWriteDuration),
 		reg.Register(m.lastCommittedOffset),
 		reg.Register(m.latestProcessedOffset),
 		reg.Register(m.offsetLag),
@@ -646,4 +740,134 @@ func (m *Metrics) IncUnknownEventCount() {
 		return
 	}
 	m.unknownEvents.Inc()
+}
+
+// RecordProducerResult records a Kafka produce attempt duration and status.
+func (m *Metrics) RecordProducerResult(err error, durationSeconds float64) {
+	if m == nil {
+		return
+	}
+
+	status := StatusSuccess
+	if err != nil {
+		status = StatusError
+		m.producerErrors.WithLabelValues(classifyProducerErrorType(err)).Inc()
+	}
+
+	m.producerMessages.WithLabelValues(status).Inc()
+	m.producerProduceDuration.Observe(durationSeconds)
+}
+
+// ObserveBlockToPublishDuration records end-to-end block-to-kafka publish latency.
+func (m *Metrics) ObserveBlockToPublishDuration(seconds float64) {
+	if m == nil {
+		return
+	}
+	m.blockToPublishDuration.Observe(seconds)
+}
+
+// IncBlockRetry increments the block retry counter.
+func (m *Metrics) IncBlockRetry() {
+	if m == nil {
+		return
+	}
+	m.blockRetries.Inc()
+}
+
+// IncBlockFailure increments the block failure counter for a processing stage.
+func (m *Metrics) IncBlockFailure(stage string) {
+	if m == nil {
+		return
+	}
+	if stage == "" {
+		stage = "unknown"
+	}
+	m.blockFailures.WithLabelValues(stage).Inc()
+}
+
+// SetKafkaConsumerGroupLag sets true consumer lag for a partition.
+func (m *Metrics) SetKafkaConsumerGroupLag(partition int32, lag int64) {
+	if m == nil {
+		return
+	}
+	if lag < 0 {
+		lag = 0
+	}
+	m.kafkaConsumerGroupLag.WithLabelValues(strconv.FormatInt(int64(partition), 10)).Set(float64(lag))
+}
+
+// DeleteKafkaConsumerGroupLag removes lag metric series for a partition.
+func (m *Metrics) DeleteKafkaConsumerGroupLag(partition int32) {
+	if m == nil {
+		return
+	}
+	m.kafkaConsumerGroupLag.DeleteLabelValues(strconv.FormatInt(int64(partition), 10))
+}
+
+// ObserveKafkaMessageSize records the kafka message size in bytes.
+func (m *Metrics) ObserveKafkaMessageSize(direction string, sizeBytes int) {
+	if m == nil || sizeBytes < 0 {
+		return
+	}
+	if direction == "" {
+		direction = "unknown"
+	}
+	m.kafkaMessageSize.WithLabelValues(direction).Observe(float64(sizeBytes))
+}
+
+// RecordClickHouseWrite records ClickHouse write duration and status for a table.
+func (m *Metrics) RecordClickHouseWrite(table string, err error, durationSeconds float64) {
+	if m == nil {
+		return
+	}
+
+	if table == "" {
+		table = "unknown"
+	}
+	status := StatusSuccess
+	if err != nil {
+		status = StatusError
+	}
+	m.clickHouseWrites.WithLabelValues(table, status).Inc()
+	m.clickHouseWriteDuration.WithLabelValues(table).Observe(durationSeconds)
+}
+
+func classifyProducerErrorType(err error) string {
+	if err == nil {
+		return "none"
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return "context_canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "context_deadline_exceeded"
+	}
+
+	msg := strings.ToLower(err.Error())
+	switch {
+	case containsAll(msg, "broker", "not available"):
+		return "broker_not_available"
+	case containsAll(msg, "invalid", "message", "size"):
+		return "invalid_message_size"
+	case containsAll(msg, "invalid", "message"):
+		return "invalid_message"
+	case containsAll(msg, "unknown", "topic"):
+		return "unknown_topic"
+	case containsAll(msg, "authentication"):
+		return "authentication"
+	case containsAll(msg, "delivery failed"):
+		return "delivery_failed"
+	default:
+		return "produce_failed"
+	}
+}
+
+func containsAll(msg string, substrings ...string) bool {
+	for _, sub := range substrings {
+		if !strings.Contains(msg, sub) {
+			return false
+		}
+	}
+	return true
 }

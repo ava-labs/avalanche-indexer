@@ -217,6 +217,10 @@ func (c *Consumer) Start(ctx context.Context) error {
 // acquisition, the message is dropped (will be reprocessed after rebalance).
 // On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
 func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
+	if msg != nil {
+		c.metrics.ObserveKafkaMessageSize("consumed", len(msg.Value))
+	}
+
 	if err := c.sem.Acquire(ctx, 1); err != nil {
 		return
 	}

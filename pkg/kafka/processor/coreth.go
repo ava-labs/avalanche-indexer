@@ -24,6 +24,12 @@ var (
 	ErrUnmarshalBlock = errors.New("failed to unmarshal coreth block")
 )
 
+const (
+	clickHouseTableBlocks       = "raw_blocks"
+	clickHouseTableTransactions = "raw_transactions"
+	clickHouseTableLogs         = "raw_logs"
+)
+
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
 // If repositories are provided, persists blocks and transactions to ClickHouse.
 // Safe for concurrent use.
@@ -60,13 +66,17 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	start := time.Now()
 
 	if msg == nil || msg.Value == nil {
-		p.metrics.IncError("coreth_nil_message")
+		if p.metrics != nil {
+			p.metrics.IncError("coreth_nil_message")
+		}
 		return ErrNilMessage
 	}
 
 	var block kafkamsg.EVMBlock
 	if err := json.Unmarshal(msg.Value, &block); err != nil {
-		p.metrics.IncError("coreth_unmarshal_error")
+		if p.metrics != nil {
+			p.metrics.IncError("coreth_unmarshal_error")
+		}
 		return fmt.Errorf("%w: %w", ErrUnmarshalBlock, err)
 	}
 
@@ -86,12 +96,21 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	if p.blocksRepo != nil {
 		blockRow, err := CorethBlockToBlockRow(&block)
 		if err != nil {
-			p.metrics.IncError("coreth_parse_error")
+			if p.metrics != nil {
+				p.metrics.IncError("coreth_parse_error")
+			}
 			return fmt.Errorf("failed to parse block for storage: %w", err)
 		}
 
-		if err := p.blocksRepo.WriteBlock(ctx, blockRow); err != nil {
-			p.metrics.IncError("coreth_write_error")
+		writeStart := time.Now()
+		err = p.blocksRepo.WriteBlock(ctx, blockRow)
+		if p.metrics != nil {
+			p.metrics.RecordClickHouseWrite(clickHouseTableBlocks, err, time.Since(writeStart).Seconds())
+		}
+		if err != nil {
+			if p.metrics != nil {
+				p.metrics.IncError("coreth_write_error")
+			}
 			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
 		}
 
@@ -103,8 +122,6 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		)
 	}
 
-	// Record successful processing duration
-	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	// Persist transactions to ClickHouse if repository is configured
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
 		if err := p.processTransactions(ctx, &block); err != nil {
@@ -117,6 +134,11 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		if err := p.processLogs(ctx, &block); err != nil {
 			return fmt.Errorf("failed to process logs: %w", err)
 		}
+	}
+
+	// Record successful end-to-end processing duration (block + transactions + logs)
+	if p.metrics != nil {
+		p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	}
 
 	return nil
@@ -294,7 +316,12 @@ func (p *CorethProcessor) processTransactions(
 			return fmt.Errorf("failed to convert transaction %d: %w", i, err)
 		}
 
-		if err := p.txsRepo.WriteTransaction(ctx, txRow); err != nil {
+		writeStart := time.Now()
+		err = p.txsRepo.WriteTransaction(ctx, txRow)
+		if p.metrics != nil {
+			p.metrics.RecordClickHouseWrite(clickHouseTableTransactions, err, time.Since(writeStart).Seconds())
+		}
+		if err != nil {
 			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
 		}
 
@@ -305,7 +332,9 @@ func (p *CorethProcessor) processTransactions(
 	}
 
 	// Record logs processed metric
-	p.metrics.AddLogsProcessed(totalLogs)
+	if p.metrics != nil {
+		p.metrics.AddLogsProcessed(totalLogs)
+	}
 
 	var blockNumber uint64
 	if block.Number != nil {
@@ -340,7 +369,12 @@ func (p *CorethProcessor) processLogs(
 				return fmt.Errorf("failed to convert log: %w", err)
 			}
 
-			if err := p.logsRepo.WriteLog(ctx, logRow); err != nil {
+			writeStart := time.Now()
+			err = p.logsRepo.WriteLog(ctx, logRow)
+			if p.metrics != nil {
+				p.metrics.RecordClickHouseWrite(clickHouseTableLogs, err, time.Since(writeStart).Seconds())
+			}
+			if err != nil {
 				return fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err)
 			}
 			totalLogs++
