@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -88,8 +88,8 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Ensure Kafka topic exists ----
-	adminCfg := ckafka.ConfigMap{"bootstrap.servers": kafkaBrokers}
-	adminClient, err := ckafka.NewAdminClient(&adminCfg)
+	adminCfg := cKafka.ConfigMap{"bootstrap.servers": kafkaBrokers}
+	adminClient, err := cKafka.NewAdminClient(&adminCfg)
 	require.NoError(t, err)
 	defer adminClient.Close()
 	err = stream.EnsureTopic(ctx, adminClient, stream.TopicConfig{
@@ -126,7 +126,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 
 	// ---- Start blockfetcher components (producer, worker, manager, subscriber, scheduler) ----
-	kCfg := &ckafka.ConfigMap{
+	kCfg := &cKafka.ConfigMap{
 		"bootstrap.servers":      kafkaBrokers,
 		"client.id":              kafkaClientID,
 		"acks":                   "all",
@@ -155,7 +155,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	sub := subscriber.NewCoreth(log, customethclient.New(rpcClient))
 
 	// ---- Test observer consumer to capture produced Kafka messages ----
-	testConsumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
+	testConsumer, err := cKafka.NewConsumer(&cKafka.ConfigMap{
 		"bootstrap.servers": kafkaBrokers,
 		"group.id":          fmt.Sprintf("combined-e2e-observer-%d", time.Now().UnixNano()),
 		"auto.offset.reset": "earliest",
@@ -198,7 +198,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 			continue
 		}
 		switch e := ev.(type) {
-		case *ckafka.Message:
+		case *cKafka.Message:
 			var n uint64
 			if len(e.Key) > 0 {
 				_, _ = fmt.Sscanf(string(e.Key), "%d", &n)
@@ -214,8 +214,8 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 				kafkaBlocks[n] = blk
 			}
 			received++
-		case ckafka.Error:
-			if e.IsFatal() || e.Code() == ckafka.ErrAllBrokersDown {
+		case cKafka.Error:
+			if e.IsFatal() || e.Code() == cKafka.ErrAllBrokersDown {
 				require.NoError(t, e, "fatal kafka error")
 			}
 		default:

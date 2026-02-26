@@ -279,7 +279,7 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 func handleDeliveryEvent(log *zap.SugaredLogger, msg *cKafka.Message, ev cKafka.Event) error {
 	e, ok := ev.(*cKafka.Message)
 	if !ok {
-		// Per-message delivery channels only receive *ckafka.Message events,
+		// Per-message delivery channels only receive *cKafka.Message events,
 		// but we keep this check as a defensive measure.
 		return fmt.Errorf("unexpected delivery event: %T", ev)
 	}

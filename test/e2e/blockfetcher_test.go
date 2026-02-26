@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
@@ -80,7 +80,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Kafka consumer to observe realtime blocks ----
-	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
+	consumer, err := cKafka.NewConsumer(&cKafka.ConfigMap{
 		"bootstrap.servers": kafkaBrokers,
 		"group.id":          fmt.Sprintf("e2e-blockfetcher-%d", time.Now().UnixNano()),
 		"auto.offset.reset": "earliest",
@@ -90,7 +90,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	require.NoError(t, consumer.Subscribe(kafkaTopic, nil))
 
 	// ---- Start blockfetcher components (producer, worker, manager, subscriber, scheduler) ----
-	kCfg := &ckafka.ConfigMap{
+	kCfg := &cKafka.ConfigMap{
 		"bootstrap.servers":      kafkaBrokers,
 		"client.id":              kafkaClientID,
 		"acks":                   "all",
@@ -150,7 +150,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 			continue
 		}
 		switch e := ev.(type) {
-		case *ckafka.Message:
+		case *cKafka.Message:
 			// Parse block number from message key (decimal string)
 			var n uint64
 			if len(e.Key) > 0 {
@@ -163,9 +163,9 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 				kafkaByNumber[n] = e.Value
 			}
 			received++
-		case ckafka.Error:
+		case cKafka.Error:
 			// Non-fatal errors can occur; surface fatal/all-brokers-down.
-			if e.IsFatal() || e.Code() == ckafka.ErrAllBrokersDown {
+			if e.IsFatal() || e.Code() == cKafka.ErrAllBrokersDown {
 				require.NoError(t, e, "fatal kafka error")
 			}
 		default:
@@ -244,7 +244,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, err, "failed to create checkpoint repository")
 
 	// ---- Kafka consumer to observe backfilled blocks ----
-	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
+	consumer, err := cKafka.NewConsumer(&cKafka.ConfigMap{
 		"bootstrap.servers": kafkaBrokers,
 		"group.id":          fmt.Sprintf("e2e-blockfetcher-backfill-%d", time.Now().UnixNano()),
 		"auto.offset.reset": "earliest",
@@ -254,7 +254,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	require.NoError(t, consumer.Subscribe(kafkaTopic, nil))
 
 	// ---- Start producer/worker/manager (no realtime subscriber) ----
-	kCfg := &ckafka.ConfigMap{
+	kCfg := &cKafka.ConfigMap{
 		"bootstrap.servers":      kafkaBrokers,
 		"client.id":              kafkaClientID,
 		"acks":                   "all",
@@ -311,7 +311,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 			continue
 		}
 		switch e := ev.(type) {
-		case *ckafka.Message:
+		case *cKafka.Message:
 			var n uint64
 			if len(e.Key) > 0 {
 				_, _ = fmt.Sscanf(string(e.Key), "%d", &n)
@@ -323,8 +323,8 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 				}
 				kafkaByNumber[n] = e.Value
 			}
-		case ckafka.Error:
-			if e.IsFatal() || e.Code() == ckafka.ErrAllBrokersDown {
+		case cKafka.Error:
+			if e.IsFatal() || e.Code() == cKafka.ErrAllBrokersDown {
 				require.NoError(t, e, "fatal kafka error")
 			}
 		default:
