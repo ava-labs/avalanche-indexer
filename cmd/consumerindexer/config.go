@@ -58,6 +58,7 @@ func validateBlockBufferSize(size int) (uint8, error) {
 type Config struct {
 	// Application settings
 	Verbose bool
+	Mode    string
 
 	// Kafka consumer settings
 	BootstrapServers               string
@@ -89,9 +90,10 @@ type Config struct {
 	ClickHouse clickhouse.Config
 
 	// Table names
-	RawBlocksTableName       string
-	RawTransactionsTableName string
-	RawLogsTableName         string
+	RawBlocksTableName               string
+	RawTransactionsTableName         string
+	RawLogsTableName                 string
+	InternalTransactionsTableName    string
 
 	// Metrics settings
 	MetricsHost   string
@@ -138,6 +140,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 
 	return &Config{
 		Verbose:                        c.Bool("verbose"),
+		Mode:                           c.String("mode"),
 		BootstrapServers:               c.String("bootstrap-servers"),
 		GroupID:                        c.String("group-id"),
 		Topic:                          c.String("topic"),
@@ -167,11 +170,12 @@ func buildConfig(c *cli.Context) (*Config, error) {
 			Mechanism:        c.String("kafka-sasl-mechanism"),
 			SecurityProtocol: c.String("kafka-security-protocol"),
 		},
-		ClickHouse:               chCfg,
-		RawBlocksTableName:       c.String("raw-blocks-table-name"),
-		RawTransactionsTableName: c.String("raw-transactions-table-name"),
-		RawLogsTableName:         c.String("raw-logs-table-name"),
-		MetricsHost:              c.String("metrics-host"),
+		ClickHouse:                    chCfg,
+		RawBlocksTableName:            c.String("raw-blocks-table-name"),
+		RawTransactionsTableName:      c.String("raw-transactions-table-name"),
+		RawLogsTableName:              c.String("raw-logs-table-name"),
+		InternalTransactionsTableName: c.String("internal-transactions-table-name"),
+		MetricsHost:                   c.String("metrics-host"),
 		MetricsPort:              c.Int("metrics-port"),
 		ChainID:                  c.Uint64("chain-id"),
 		Environment:              c.String("environment"),

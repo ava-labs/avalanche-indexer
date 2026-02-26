@@ -244,6 +244,15 @@ type EVMBlockTrace struct {
 	Traces       []json.RawMessage `json:"traces"`
 }
 
+// evmBlockTraceJSON is the JSON wire format for EVMBlockTrace.
+// Uses encodingjson.RawMessage for *big.Int fields to accept both JSON strings and numbers.
+type evmBlockTraceJSON struct {
+	EVMChainID   json.RawMessage   `json:"evmChainId,omitempty"`
+	BlockchainID *string           `json:"blockchainId,omitempty"`
+	BlockNumber  uint64            `json:"blockNumber"`
+	Traces       []json.RawMessage `json:"traces"`
+}
+
 func MarshalEVMBlockTrace(blockNumber uint64, traces []json.RawMessage, evmChainID *big.Int, blockchainID *string) ([]byte, error) {
 	blockTrace := EVMBlockTrace{
 		EVMChainID:   evmChainID,
@@ -252,6 +261,39 @@ func MarshalEVMBlockTrace(blockNumber uint64, traces []json.RawMessage, evmChain
 		Traces:       traces,
 	}
 	return json.Marshal(blockTrace)
+}
+
+// MarshalJSON implements json.Marshaler.
+// Converts *big.Int fields to decimal strings to prevent scientific notation in JSON output.
+func (b *EVMBlockTrace) MarshalJSON() ([]byte, error) {
+	alias := evmBlockTraceJSON{
+		EVMChainID:   bigIntToRawJSON(b.EVMChainID),
+		BlockchainID: b.BlockchainID,
+		BlockNumber:  b.BlockNumber,
+		Traces:       b.Traces,
+	}
+
+	return jsonIter.Marshal(alias)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+// Parses *big.Int fields from strings, supporting both decimal and scientific notation.
+func (b *EVMBlockTrace) UnmarshalJSON(data []byte) error {
+	var alias evmBlockTraceJSON
+	if err := jsonIter.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+
+	b.BlockchainID = alias.BlockchainID
+	b.BlockNumber = alias.BlockNumber
+	b.Traces = alias.Traces
+
+	var err error
+	if b.EVMChainID, err = parseBigIntFromRaw(alias.EVMChainID, "evmChainId"); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // EVMBlockFromLibevmCoreth converts a libevm coreth Block to a EVM Block.
