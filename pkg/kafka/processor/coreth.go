@@ -31,7 +31,7 @@ const (
 )
 
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
-// If repositories are provided, persists blocks and transactions to ClickHouse.
+// If repositories are provided, persists blocks, transactions, and logs to ClickHouse.
 // Safe for concurrent use.
 type CorethProcessor struct {
 	log        *zap.SugaredLogger
@@ -42,7 +42,7 @@ type CorethProcessor struct {
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
-// If repositories are provided, blocks and transactions will be persisted to ClickHouse.
+// If repositories are provided, blocks, transactions, and logs will be persisted to ClickHouse.
 func NewCorethProcessor(
 	log *zap.SugaredLogger,
 	blocksRepo evmrepo.Blocks,
@@ -66,17 +66,13 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	start := time.Now()
 
 	if msg == nil || msg.Value == nil {
-		if p.metrics != nil {
-			p.metrics.IncError("coreth_nil_message")
-		}
+		p.metrics.IncError("coreth_nil_message")
 		return ErrNilMessage
 	}
 
 	var block kafkamsg.EVMBlock
 	if err := json.Unmarshal(msg.Value, &block); err != nil {
-		if p.metrics != nil {
-			p.metrics.IncError("coreth_unmarshal_error")
-		}
+		p.metrics.IncError("coreth_unmarshal_error")
 		return fmt.Errorf("%w: %w", ErrUnmarshalBlock, err)
 	}
 
@@ -96,21 +92,15 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	if p.blocksRepo != nil {
 		blockRow, err := CorethBlockToBlockRow(&block)
 		if err != nil {
-			if p.metrics != nil {
-				p.metrics.IncError("coreth_parse_error")
-			}
+			p.metrics.IncError("coreth_parse_error")
 			return fmt.Errorf("failed to parse block for storage: %w", err)
 		}
 
 		writeStart := time.Now()
 		err = p.blocksRepo.WriteBlock(ctx, blockRow)
-		if p.metrics != nil {
-			p.metrics.RecordClickHouseWrite(clickHouseTableBlocks, err, time.Since(writeStart).Seconds())
-		}
+		p.metrics.RecordClickHouseWrite(clickHouseTableBlocks, err, time.Since(writeStart).Seconds())
 		if err != nil {
-			if p.metrics != nil {
-				p.metrics.IncError("coreth_write_error")
-			}
+			p.metrics.IncError("coreth_write_error")
 			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
 		}
 
@@ -137,15 +127,13 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 	}
 
 	// Record successful end-to-end processing duration (block + transactions + logs)
-	if p.metrics != nil {
-		p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
-	}
+	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 
 	return nil
 }
 
-// CorethBlockToBlockRow converts a kafkamsg.CorethBlock to BlockRow
-// Exported for testing purposes
+// CorethBlockToBlockRow converts a kafkamsg.EVMBlock to BlockRow.
+// Exported for testing purposes.
 func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) {
 	// Validate blockchain ID
 	if block.BlockchainID == nil {
@@ -229,8 +217,8 @@ func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) 
 	return blockRow, nil
 }
 
-// CorethTransactionToTransactionRow converts a coreth.Transaction to TransactionRow
-// Exported for testing purposes
+// CorethTransactionToTransactionRow converts a kafkamsg.EVMTransaction to TransactionRow.
+// Exported for testing purposes.
 func CorethTransactionToTransactionRow(
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
@@ -318,9 +306,7 @@ func (p *CorethProcessor) processTransactions(
 
 		writeStart := time.Now()
 		err = p.txsRepo.WriteTransaction(ctx, txRow)
-		if p.metrics != nil {
-			p.metrics.RecordClickHouseWrite(clickHouseTableTransactions, err, time.Since(writeStart).Seconds())
-		}
+		p.metrics.RecordClickHouseWrite(clickHouseTableTransactions, err, time.Since(writeStart).Seconds())
 		if err != nil {
 			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
 		}
@@ -331,10 +317,7 @@ func (p *CorethProcessor) processTransactions(
 		}
 	}
 
-	// Record logs processed metric
-	if p.metrics != nil {
-		p.metrics.AddLogsProcessed(totalLogs)
-	}
+	p.metrics.AddLogsProcessed(totalLogs)
 
 	var blockNumber uint64
 	if block.Number != nil {
@@ -371,9 +354,7 @@ func (p *CorethProcessor) processLogs(
 
 			writeStart := time.Now()
 			err = p.logsRepo.WriteLog(ctx, logRow)
-			if p.metrics != nil {
-				p.metrics.RecordClickHouseWrite(clickHouseTableLogs, err, time.Since(writeStart).Seconds())
-			}
+			p.metrics.RecordClickHouseWrite(clickHouseTableLogs, err, time.Since(writeStart).Seconds())
 			if err != nil {
 				return fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err)
 			}

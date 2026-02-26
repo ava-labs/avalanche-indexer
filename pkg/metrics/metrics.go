@@ -127,6 +127,13 @@ type Metrics struct {
 	unknownEvents prometheus.Counter     // total count of unknown events
 }
 
+// NewNoOp creates a Metrics instance registered to a throwaway registry.
+// Use this when metrics collection is not needed but callers require a non-nil *Metrics.
+func NewNoOp() *Metrics {
+	m, _ := newMetrics(prometheus.NewRegistry())
+	return m
+}
+
 // New creates a new Metrics instance and registers all metrics with the provided registerer.
 // Returns an error if any metric registration fails.
 // For metrics with constant labels (e.g., evm_chain_id), use NewWithLabels instead.
@@ -758,7 +765,8 @@ func (m *Metrics) RecordProducerResult(err error, durationSeconds float64) {
 	m.producerProduceDuration.Observe(durationSeconds)
 }
 
-// ObserveBlockToPublishDuration records end-to-end block-to-kafka publish latency.
+// ObserveBlockToPublishDuration records end-to-end latency from the start of block
+// processing (including RPC fetch and serialization) through successful Kafka publish.
 func (m *Metrics) ObserveBlockToPublishDuration(seconds float64) {
 	if m == nil {
 		return
@@ -785,7 +793,8 @@ func (m *Metrics) IncBlockFailure(stage string) {
 	m.blockFailures.WithLabelValues(stage).Inc()
 }
 
-// SetKafkaConsumerGroupLag sets true consumer lag for a partition.
+// SetKafkaConsumerGroupLag sets the broker-reported consumer group lag for a partition,
+// based on the difference between the high watermark and the committed offset.
 func (m *Metrics) SetKafkaConsumerGroupLag(partition int32, lag int64) {
 	if m == nil {
 		return
@@ -832,11 +841,10 @@ func (m *Metrics) RecordClickHouseWrite(table string, err error, durationSeconds
 	m.clickHouseWriteDuration.WithLabelValues(table).Observe(durationSeconds)
 }
 
+// classifyProducerErrorType categorizes a Kafka producer error by inspecting the error
+// message string. This uses substring matching because the confluent-kafka-go library
+// does not expose typed errors for all failure modes.
 func classifyProducerErrorType(err error) string {
-	if err == nil {
-		return "none"
-	}
-
 	if errors.Is(err, context.Canceled) {
 		return "context_canceled"
 	}

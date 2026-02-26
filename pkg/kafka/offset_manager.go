@@ -44,7 +44,7 @@ lastCommitted offset and those in the window to determine the highest offset to
 commit to Kafka brokers.
 
 When threads are done processing consumed messages, they should call
-InsertCommit() to add the commits to the window.
+InsertOffset() to add the commits to the window.
 
 The window length is unbounded, meaning code bugs can lead to no offsets
 committed and a continually growing window size. If the offset window length
@@ -122,9 +122,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 			latestProcessed = lastCommitted
 		}
 
-		if om.metrics != nil {
-			om.metrics.UpdateOffsetMetrics(partition, int64(lastCommitted), int64(latestProcessed), windowSize)
-		}
+		om.metrics.UpdateOffsetMetrics(partition, int64(lastCommitted), int64(latestProcessed), windowSize)
 
 		if len(window) == 0 {
 			om.log.Debug("no offsets to commit")
@@ -156,9 +154,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 			}
 			commitDuration := time.Since(commitStart).Seconds()
 
-			if om.metrics != nil {
-				om.metrics.RecordOffsetCommit(partition, err, commitDuration)
-			}
+			om.metrics.RecordOffsetCommit(partition, err, commitDuration)
 
 			if err != nil {
 				om.log.Errorf("failed to commit offsets: %v", err)
@@ -187,9 +183,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 			} else {
 				newLatestProcessed = window[end].Offset
 			}
-			if om.metrics != nil {
-				om.metrics.UpdateOffsetMetrics(partition, int64(window[end].Offset), int64(newLatestProcessed), newWindowSize)
-			}
+			om.metrics.UpdateOffsetMetrics(partition, int64(window[end].Offset), int64(newLatestProcessed), newWindowSize)
 		}
 
 		if len(om.partitionStates[partition].window) > WindowLengthWarningThreshold {
@@ -248,9 +242,7 @@ func (om *OffsetManager) InsertOffset(ctx context.Context, offset kafka.TopicPar
 	}
 	om.partitionStates[offset.Partition].window = slices.Insert(window, i, offset)
 
-	if om.metrics != nil {
-		om.metrics.RecordOffsetInsert(offset.Partition)
-	}
+	om.metrics.RecordOffsetInsert(offset.Partition)
 
 	return nil
 }
@@ -270,10 +262,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 			partitionNums[i] = p.Partition
 		}
 
-		// Record metrics for assignment event
-		if om.metrics != nil {
-			om.metrics.RecordPartitionAssignment(partitionNums)
-		}
+		om.metrics.RecordPartitionAssignment(partitionNums)
 
 		// Rebalance events may provide offsets, but offsets seem to be
 		// kafka.InvalidOffset (-1001) when a consumer is joining an idle, but
@@ -330,9 +319,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 			// Initialize offset metrics for this partition using the actual
 			// state value, which may have been reset to OffsetInvalid above.
 			actualCommitted := int64(om.partitionStates[co.Partition].lastCommitted)
-			if om.metrics != nil {
-				om.metrics.UpdateOffsetMetrics(co.Partition, actualCommitted, actualCommitted, 0)
-			}
+			om.metrics.UpdateOffsetMetrics(co.Partition, actualCommitted, actualCommitted, 0)
 
 			logStr[i] = fmt.Sprintf("(partition: %d, lastCommitted: %d)", co.Partition, om.partitionStates[co.Partition].lastCommitted)
 		}
@@ -345,18 +332,13 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 			partitionNums[i] = p.Partition
 		}
 
-		// Record metrics for revocation event
-		if om.metrics != nil {
-			om.metrics.RecordPartitionRevocation(partitionNums)
-		}
+		om.metrics.RecordPartitionRevocation(partitionNums)
 
 		logStr := make([]string, len(ev.Partitions))
 		for i, partition := range ev.Partitions {
 			logStr[i] = strconv.Itoa(int(partition.Partition))
 			delete(om.partitionStates, partition.Partition)
-			if om.metrics != nil {
-				om.metrics.DeleteKafkaConsumerGroupLag(partition.Partition)
-			}
+			om.metrics.DeleteKafkaConsumerGroupLag(partition.Partition)
 		}
 		om.log.Infof("rebalance event, removing state for partitions: %s\n", strings.Join(logStr, ","))
 	default:
@@ -365,6 +347,11 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 	return nil
 }
 
+// recordConsumerGroupLag queries committed offsets and partition watermarks from Kafka
+// brokers to compute and record true consumer group lag for each assigned partition.
+// When no committed offset exists (offset < 0), lag is estimated based on auto.offset.reset:
+// zero for "latest", full partition range for "earliest" or unknown values.
+// Skipped in dryRun mode or when metrics is nil.
 func (om *OffsetManager) recordConsumerGroupLag(dryRun bool) {
 	if dryRun || om.metrics == nil {
 		return
@@ -390,6 +377,7 @@ func (om *OffsetManager) recordConsumerGroupLag(dryRun bool) {
 	committed, err := om.consumer.Committed(partitions, DefaultOffsetCommitTimeout)
 	if err != nil {
 		om.log.Warnf("failed to query committed offsets for lag metrics: %v", err)
+		om.metrics.IncError("lag_query_committed_offsets")
 		return
 	}
 
@@ -401,6 +389,7 @@ func (om *OffsetManager) recordConsumerGroupLag(dryRun bool) {
 		low, high, err := om.consumer.QueryWatermarkOffsets(*partition.Topic, partition.Partition, DefaultOffsetCommitTimeout)
 		if err != nil {
 			om.log.Warnf("failed to query watermark offsets for lag metrics (partition=%d): %v", partition.Partition, err)
+			om.metrics.IncError("lag_query_watermark_offsets")
 			continue
 		}
 
@@ -413,6 +402,8 @@ func (om *OffsetManager) recordConsumerGroupLag(dryRun bool) {
 			case "earliest":
 				lag = int64(high - low)
 			default:
+				// Treat unknown auto.offset.reset values as "earliest" (conservative: assume maximum lag)
+				om.log.Warnf("unrecognized auto.offset.reset value %q, defaulting to earliest-style lag calculation", om.autoOffsetReset)
 				lag = int64(high - low)
 			}
 		} else {
