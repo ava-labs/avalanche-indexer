@@ -19,7 +19,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 func run(c *cli.Context) error {
@@ -126,9 +126,9 @@ func run(c *cli.Context) error {
 	// Create CorethProcessor with ClickHouse persistence and metrics
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
 
-	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
+	adminConfig := cKafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
-	adminClient, err := confluentKafka.NewAdminClient(&adminConfig)
+	adminClient, err := cKafka.NewAdminClient(&adminConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka admin client: %w", err)
 	}

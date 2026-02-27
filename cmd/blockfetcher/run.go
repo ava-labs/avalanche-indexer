@@ -25,7 +25,7 @@ import (
 
 	corethClient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const flushTimeoutOnClose = 15 * time.Second
@@ -111,9 +111,9 @@ func run(c *cli.Context) error {
 	defer stop()
 
 	// Create Kafka admin client to ensure topic exists
-	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers}
+	adminConfig := cKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
-	kafkaAdminClient, err := confluentKafka.NewAdminClient(&adminConfig)
+	kafkaAdminClient, err := cKafka.NewAdminClient(&adminConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka admin client: %w", err)
 	}

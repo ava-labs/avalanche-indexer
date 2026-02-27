@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
@@ -27,8 +27,8 @@ const (
 )
 
 type offsetState struct {
-	window        []kafka.TopicPartition
-	lastCommitted kafka.Offset
+	window        []cKafka.TopicPartition
+	lastCommitted cKafka.Offset
 }
 
 /*
@@ -51,7 +51,7 @@ goes above WindowLengthWarningThreshold, warning logs will be printed to help
 diagnose.
 */
 type OffsetManager struct {
-	consumer        *kafka.Consumer
+	consumer        *cKafka.Consumer
 	autoOffsetReset string                 // auto.offset.reset config: "earliest" or "latest"
 	partitionStates map[int32]*offsetState // map of offset states for each assigned partition
 	mutex           sync.Mutex
@@ -63,7 +63,7 @@ type OffsetManager struct {
 // Creates new OffsetManager. To begin the OffsetManager, Start() must be called.
 func NewOffsetManager(
 	ctx context.Context,
-	consumer *kafka.Consumer,
+	consumer *cKafka.Consumer,
 	interval time.Duration,
 	autoOffsetReset string,
 	dryRun bool,
@@ -113,7 +113,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 		lastCommitted := state.lastCommitted
 
 		windowSize := len(window)
-		var latestProcessed kafka.Offset
+		var latestProcessed cKafka.Offset
 		if windowSize > 0 {
 			latestProcessed = window[windowSize-1].Offset
 		} else {
@@ -148,7 +148,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 
 			commitStart := time.Now()
 			if !dryRun {
-				_, err = om.consumer.CommitOffsets([]kafka.TopicPartition{window[end]})
+				_, err = om.consumer.CommitOffsets([]cKafka.TopicPartition{window[end]})
 			}
 			commitDuration := time.Since(commitStart).Seconds()
 
@@ -162,7 +162,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 			om.log.Debugf("committed offset %d for partition %d", window[end].Offset, partition)
 			if end == len(window)-1 {
 				om.partitionStates[partition] = &offsetState{
-					[]kafka.TopicPartition{},
+					[]cKafka.TopicPartition{},
 					window[end].Offset,
 				}
 			} else {
@@ -170,7 +170,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 			}
 
 			newWindowSize := len(om.partitionStates[partition].window)
-			var newLatestProcessed kafka.Offset
+			var newLatestProcessed cKafka.Offset
 			if newWindowSize > 0 {
 				newLatestProcessed = om.partitionStates[partition].window[newWindowSize-1].Offset
 			} else {
@@ -197,7 +197,7 @@ func (om *OffsetManager) commitLatestValidOffsets(dryRun bool) {
 // https://github.com/confluentinc/confluent-kafka-go/issues/350
 //
 // Topic, Partition, and Offset fields are required.
-func (om *OffsetManager) InsertOffset(ctx context.Context, offset kafka.TopicPartition) error {
+func (om *OffsetManager) InsertOffset(ctx context.Context, offset cKafka.TopicPartition) error {
 	om.mutex.Lock()
 	defer om.mutex.Unlock()
 
@@ -241,11 +241,11 @@ func (om *OffsetManager) InsertOffset(ctx context.Context, offset kafka.TopicPar
 // callback function must be passed to kafka.Consumer.Subscribe(). When the
 // consumer joins a group, this will then be called as a way to initialize the
 // OffsetManager
-func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event) error {
+func (om *OffsetManager) RebalanceCb(consumer *cKafka.Consumer, event cKafka.Event) error {
 	om.mutex.Lock()
 	defer om.mutex.Unlock()
 	switch ev := event.(type) {
-	case kafka.AssignedPartitions:
+	case cKafka.AssignedPartitions:
 		// Extract partition numbers for metrics (before processing)
 		partitionNums := make([]int32, len(ev.Partitions))
 		for i, p := range ev.Partitions {
@@ -260,7 +260,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 		// already existing, group. So we explicitly get the committed offsets
 		// from the broker.
 		var err error
-		var committedOffsets []kafka.TopicPartition
+		var committedOffsets []cKafka.TopicPartition
 		if om.dryRun {
 			committedOffsets = ev.Partitions
 		} else {
@@ -274,7 +274,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 		logStr := make([]string, len(committedOffsets))
 		for i, co := range committedOffsets {
 			om.partitionStates[co.Partition] = &offsetState{
-				window:        []kafka.TopicPartition{},
+				window:        []cKafka.TopicPartition{},
 				lastCommitted: co.Offset,
 			}
 
@@ -298,11 +298,11 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 					om.autoOffsetReset,
 				)
 
-				if co.Offset < 0 || co.Offset < kafka.Offset(low) {
+				if co.Offset < 0 || co.Offset < cKafka.Offset(low) {
 					// Reset the offset to kafka.OffsetInvalid (-1001) to
 					// indicate a stored offset does not exist or is now out of
 					// range
-					om.partitionStates[co.Partition].lastCommitted = kafka.OffsetInvalid
+					om.partitionStates[co.Partition].lastCommitted = cKafka.OffsetInvalid
 				}
 			}
 
@@ -315,7 +315,7 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 		}
 
 		om.log.Infof("rebalance event, adding partition states: %s\n", strings.Join(logStr, ","))
-	case kafka.RevokedPartitions:
+	case cKafka.RevokedPartitions:
 		// Extract partition numbers for metrics (before processing)
 		partitionNums := make([]int32, len(ev.Partitions))
 		for i, p := range ev.Partitions {
@@ -339,10 +339,10 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 
 func (om *OffsetManager) InsertOffsetWithRetry(
 	ctx context.Context,
-	msg *kafka.Message,
+	msg *cKafka.Message,
 ) {
 	for {
-		err := om.InsertOffset(ctx, kafka.TopicPartition{
+		err := om.InsertOffset(ctx, cKafka.TopicPartition{
 			Topic:     msg.TopicPartition.Topic,
 			Partition: msg.TopicPartition.Partition,
 			Offset:    msg.TopicPartition.Offset + 1,
@@ -374,7 +374,7 @@ func (om *OffsetManager) getPartitionState(partition int32) *offsetState {
 	}
 
 	// Return a copy to avoid race conditions
-	windowCopy := make([]kafka.TopicPartition, len(state.window))
+	windowCopy := make([]cKafka.TopicPartition, len(state.window))
 	copy(windowCopy, state.window)
 
 	return &offsetState{

@@ -11,7 +11,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -99,8 +99,8 @@ func (c *Config) MetricsAddr() string {
 }
 
 // KafkaProducerConfig builds a Kafka producer ConfigMap from the config
-func (c *Config) KafkaProducerConfig() *confluentKafka.ConfigMap {
-	cfg := &confluentKafka.ConfigMap{
+func (c *Config) KafkaProducerConfig() *cKafka.ConfigMap {
+	cfg := &cKafka.ConfigMap{
 		// Required
 		"bootstrap.servers": c.KafkaBrokers,
 		"client.id":         c.KafkaClientID,
