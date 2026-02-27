@@ -400,14 +400,14 @@ func (om *OffsetManager) recordConsumerGroupLag(dryRun bool) {
 			case "latest":
 				lag = 0
 			case "earliest":
-				lag = int64(high - low)
+				lag = high - low
 			default:
 				// Treat unknown auto.offset.reset values as "earliest" (conservative: assume maximum lag)
 				om.log.Warnf("unrecognized auto.offset.reset value %q, defaulting to earliest-style lag calculation", om.autoOffsetReset)
-				lag = int64(high - low)
+				lag = high - low
 			}
 		} else {
-			lag = int64(high) - int64(partition.Offset)
+			lag = high - int64(partition.Offset)
 		}
 		if lag < 0 {
 			lag = 0

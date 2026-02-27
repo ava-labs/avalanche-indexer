@@ -15,6 +15,7 @@ const (
 	// Status label values for success/error metrics
 	StatusSuccess = "success"
 	StatusError   = "error"
+	LabelUnknown  = "unknown"
 
 	KafkaOffset   = "kafka_offset"
 	KafkaConsumer = "kafka_consumer"
@@ -788,7 +789,7 @@ func (m *Metrics) IncBlockFailure(stage string) {
 		return
 	}
 	if stage == "" {
-		stage = "unknown"
+		stage = LabelUnknown
 	}
 	m.blockFailures.WithLabelValues(stage).Inc()
 }
@@ -819,7 +820,7 @@ func (m *Metrics) ObserveKafkaMessageSize(direction string, sizeBytes int) {
 		return
 	}
 	if direction == "" {
-		direction = "unknown"
+		direction = LabelUnknown
 	}
 	m.kafkaMessageSize.WithLabelValues(direction).Observe(float64(sizeBytes))
 }
@@ -831,7 +832,7 @@ func (m *Metrics) RecordClickHouseWrite(table string, err error, durationSeconds
 	}
 
 	if table == "" {
-		table = "unknown"
+		table = LabelUnknown
 	}
 	status := StatusSuccess
 	if err != nil {
