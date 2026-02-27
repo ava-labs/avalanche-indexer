@@ -257,7 +257,7 @@ func (om *OffsetManager) RebalanceCb(consumer *cKafka.Consumer, event cKafka.Eve
 		om.metrics.RecordPartitionAssignment(partitionNums)
 
 		// Rebalance events may provide offsets, but offsets seem to be
-		// kafka.InvalidOffset (-1001) when a consumer is joining an idle, but
+		// cKafka.InvalidOffset (-1001) when a consumer is joining an idle, but
 		// already existing, group. So we explicitly get the committed offsets
 		// from the broker.
 		var err error
@@ -300,7 +300,7 @@ func (om *OffsetManager) RebalanceCb(consumer *cKafka.Consumer, event cKafka.Eve
 				)
 
 				if co.Offset < 0 || co.Offset < cKafka.Offset(low) {
-					// Reset the offset to kafka.OffsetInvalid (-1001) to
+					// Reset the offset to cKafka.OffsetInvalid (-1001) to
 					// indicate a stored offset does not exist or is now out of
 					// range
 					om.partitionStates[co.Partition].lastCommitted = cKafka.OffsetInvalid
