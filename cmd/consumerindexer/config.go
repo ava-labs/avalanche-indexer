@@ -90,10 +90,10 @@ type Config struct {
 	ClickHouse clickhouse.Config
 
 	// Table names
-	RawBlocksTableName               string
-	RawTransactionsTableName         string
-	RawLogsTableName                 string
-	InternalTransactionsTableName    string
+	RawBlocksTableName            string
+	RawTransactionsTableName      string
+	RawLogsTableName              string
+	InternalTransactionsTableName string
 
 	// Metrics settings
 	MetricsHost   string
@@ -176,11 +176,11 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		RawLogsTableName:              c.String("raw-logs-table-name"),
 		InternalTransactionsTableName: c.String("internal-transactions-table-name"),
 		MetricsHost:                   c.String("metrics-host"),
-		MetricsPort:              c.Int("metrics-port"),
-		ChainID:                  c.Uint64("chain-id"),
-		Environment:              c.String("environment"),
-		Region:                   c.String("region"),
-		CloudProvider:            c.String("cloud-provider"),
+		MetricsPort:                   c.Int("metrics-port"),
+		ChainID:                       c.Uint64("chain-id"),
+		Environment:                   c.String("environment"),
+		Region:                        c.String("region"),
+		CloudProvider:                 c.String("cloud-provider"),
 	}, nil
 }
 

@@ -89,8 +89,8 @@ func (p *CorethTracesProcessor) processTraces(
 	ctx context.Context,
 	blockTrace *kafkamsg.EVMBlockTrace,
 ) error {
-	for _, trace := range blockTrace.Traces {
-		txHash, traces, err := GetTracesForTransaction(trace)
+	for _, rawTrace := range blockTrace.Traces {
+		txHash, traces, err := GetTracesForTransaction(rawTrace)
 		if err != nil {
 			return fmt.Errorf("failed to get traces for transaction: %w", err)
 		}

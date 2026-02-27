@@ -61,6 +61,25 @@ func TestGetTracesForTransaction_MissingTxHash(t *testing.T) {
 	require.ErrorIs(t, err, ErrMissingTxHash)
 }
 
+func TestGetTracesForTransaction_EmptyTxHash(t *testing.T) {
+	t.Parallel()
+
+	trace := map[string]interface{}{
+		"txHash": "",
+		"result": map[string]interface{}{
+			"type": "CALL",
+			"from": "0x4142434445464748494a4b4c4d4e4f5051525354",
+			"to":   "0x55565758595a5b5c5d5e5f6061626364656667",
+		},
+	}
+
+	traceBytes, err := json.Marshal(trace)
+	require.NoError(t, err)
+
+	_, _, err = GetTracesForTransaction(traceBytes)
+	require.ErrorIs(t, err, ErrMissingTxHash)
+}
+
 func TestGetTracesForTransaction_InvalidTxHashType(t *testing.T) {
 	t.Parallel()
 
@@ -77,7 +96,7 @@ func TestGetTracesForTransaction_InvalidTxHashType(t *testing.T) {
 	require.NoError(t, err)
 
 	_, _, err = GetTracesForTransaction(traceBytes)
-	require.ErrorIs(t, err, ErrInvalidTxHashType)
+	require.ErrorIs(t, err, ErrTraceUnmarshal)
 }
 
 func TestGetTracesForTransaction_MissingResult(t *testing.T) {
@@ -90,8 +109,11 @@ func TestGetTracesForTransaction_MissingResult(t *testing.T) {
 	traceBytes, err := json.Marshal(trace)
 	require.NoError(t, err)
 
-	_, _, err = GetTracesForTransaction(traceBytes)
-	require.ErrorIs(t, err, ErrMissingResult)
+	txHash, traces, err := GetTracesForTransaction(traceBytes)
+	require.NoError(t, err)
+	assert.Equal(t, "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273", txHash)
+	// Result will be zero-value CallFrame, which produces a single root call
+	assert.Len(t, traces, 1)
 }
 
 func TestGetTracesForTransaction_InvalidJSON(t *testing.T) {
