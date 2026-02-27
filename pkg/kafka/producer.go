@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 type Msg struct {
@@ -27,7 +27,7 @@ type Msg struct {
 // Close MUST be called at least once to stop background goroutines and flush
 // all in-flight messages.
 type Producer struct {
-	producer   *cKafka.Producer
+	producer   *kafka.Producer
 	log        *zap.SugaredLogger
 	errCh      chan error // used to send fatal errors to the caller
 	eventsDone chan struct{}
@@ -44,13 +44,13 @@ const queueFullErrorRetryDelay = time.Second
 // Canceling the context signals the producer to stop processing events.
 //
 // Callers must call Close to flush messages and release resources.
-func NewProducer(ctx context.Context, conf *cKafka.ConfigMap, log *zap.SugaredLogger) (*Producer, error) {
+func NewProducer(ctx context.Context, conf *kafka.ConfigMap, log *zap.SugaredLogger) (*Producer, error) {
 	logsChEnabled, err := conf.Get("go.logs.channel.enable", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get go.logs.channel.enable: %w", err)
 	}
 
-	p, err := cKafka.NewProducer(conf)
+	p, err := kafka.NewProducer(conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
 	}
@@ -92,13 +92,13 @@ func NewProducer(ctx context.Context, conf *cKafka.ConfigMap, log *zap.SugaredLo
 // ctx.Err(). The message MAY still be delivered after Produce returns.
 // Callers should design for possible duplicate delivery when retrying.
 func (q *Producer) Produce(ctx context.Context, msg Msg) error {
-	deliveryCh := make(chan cKafka.Event, 1)
+	deliveryCh := make(chan kafka.Event, 1)
 	defer close(deliveryCh)
 
-	kMsg := &cKafka.Message{
-		TopicPartition: cKafka.TopicPartition{
+	kMsg := &kafka.Message{
+		TopicPartition: kafka.TopicPartition{
 			Topic:     &msg.Topic,
-			Partition: cKafka.PartitionAny,
+			Partition: kafka.PartitionAny,
 		},
 		Value: msg.Value,
 		Key:   msg.Key,
@@ -185,8 +185,8 @@ func (q *Producer) printKafkaLogs(ctx context.Context) {
 // topic or partition is unknown, or the authentication fails, produceWithRetry returns an error.
 func (q *Producer) produceWithRetry(
 	ctx context.Context,
-	msg *cKafka.Message,
-	deliveryCh chan cKafka.Event,
+	msg *kafka.Message,
+	deliveryCh chan kafka.Event,
 ) error {
 	for {
 		select {
@@ -200,25 +200,25 @@ func (q *Producer) produceWithRetry(
 			return nil
 		}
 
-		var kafkaErr cKafka.Error
+		var kafkaErr kafka.Error
 		if !errors.As(err, &kafkaErr) {
 			return fmt.Errorf("failed to produce: %w", err)
 		}
 
 		switch kafkaErr.Code() {
-		case cKafka.ErrQueueFull:
+		case kafka.ErrQueueFull:
 			q.log.Warnf("producer queue full, retrying in %s", queueFullErrorRetryDelay)
 			time.Sleep(queueFullErrorRetryDelay)
 			continue
-		case cKafka.ErrBrokerNotAvailable:
+		case kafka.ErrBrokerNotAvailable:
 			return fmt.Errorf("broker not available: %w", err)
-		case cKafka.ErrInvalidMsgSize:
+		case kafka.ErrInvalidMsgSize:
 			return fmt.Errorf("invalid message size: %w", err)
-		case cKafka.ErrInvalidMsg:
+		case kafka.ErrInvalidMsg:
 			return fmt.Errorf("invalid message: %w", err)
-		case cKafka.ErrUnknownTopicOrPart:
+		case kafka.ErrUnknownTopicOrPart:
 			return fmt.Errorf("unknown topic or partition: %w", err)
-		case cKafka.ErrAuthentication:
+		case kafka.ErrAuthentication:
 			return fmt.Errorf("authentication error: %w", err)
 		default:
 			return fmt.Errorf("failed to produce: %w", err)
@@ -248,7 +248,7 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 			}
 
 			switch e := ev.(type) {
-			case *cKafka.Message:
+			case *kafka.Message:
 				q.log.Error("delivery receipts should be handled during producing")
 				if e.TopicPartition.Error != nil {
 					q.log.Errorf("failed to deliver message: %v", e.TopicPartition)
@@ -256,10 +256,10 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 					q.log.Debugf("Successfully produced record to topic %s partition [%d] @ offset %v",
 						*e.TopicPartition.Topic, e.TopicPartition.Partition, e.TopicPartition.Offset)
 				}
-			case *cKafka.Stats:
+			case *kafka.Stats:
 				q.log.Debugw("kafka stats event received", "stats", e.String())
-			case cKafka.Error:
-				if e.IsFatal() || e.Code() == cKafka.ErrAllBrokersDown {
+			case kafka.Error:
+				if e.IsFatal() || e.Code() == kafka.ErrAllBrokersDown {
 					err := fmt.Errorf("fatal err or ErrAllBrokersDown: %#x, %w", e.Code(), e)
 					select {
 					case q.errCh <- err:
@@ -277,10 +277,10 @@ func (q *Producer) monitorProducerEvents(ctx context.Context) {
 	}
 }
 
-func handleDeliveryEvent(log *zap.SugaredLogger, msg *cKafka.Message, ev cKafka.Event) error {
-	e, ok := ev.(*cKafka.Message)
+func handleDeliveryEvent(log *zap.SugaredLogger, msg *kafka.Message, ev kafka.Event) error {
+	e, ok := ev.(*kafka.Message)
 	if !ok {
-		// Per-message delivery channels only receive *cKafka.Message events,
+		// Per-message delivery channels only receive *kafka.Message events,
 		// but we keep this check as a defensive measure.
 		return fmt.Errorf("unexpected delivery event: %T", ev)
 	}
