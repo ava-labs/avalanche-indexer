@@ -161,6 +161,7 @@ func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) 
 		Hash:            block.Hash,
 		ParentHash:      block.ParentHash,
 		BlockTime:       time.Unix(int64(block.Timestamp), 0).UTC(),
+		TimestampMs:     block.TimestampMs,
 		Miner:           block.Miner,
 		Difficulty:      difficulty,
 		TotalDifficulty: totalDifficulty,

@@ -193,6 +193,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		string(hashBytes[:]),
 		string(parentHashBytes[:]),
 		block.BlockTime,
+		block.TimestampMs,
 		string(minerBytes[:]),
 		difficultyStr,
 		totalDifficultyStr,
