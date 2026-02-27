@@ -178,6 +178,7 @@ func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) 
 		GasLimit:        block.GasLimit,
 		GasUsed:         block.GasUsed,
 		BaseFeePerGas:   block.BaseFee,
+		NumTxns:         uint32(len(block.Transactions)),
 	}
 
 	// Direct string assignments - no conversions needed
@@ -242,6 +243,12 @@ func CorethTransactionToTransactionRow(
 		evmChainID = big.NewInt(0)
 	}
 
+	// Determine number of logs from receipt
+	var numLogs uint32
+	if tx.Receipt != nil {
+		numLogs = uint32(len(tx.Receipt.Logs))
+	}
+
 	txRow := &evmrepo.TransactionRow{
 		BlockchainID:     blockchainID,
 		EVMChainID:       evmChainID,
@@ -256,6 +263,7 @@ func CorethTransactionToTransactionRow(
 		Type:             tx.Type,
 		TransactionIndex: txIndex,
 		Success:          0, // TODO: Extract from transaction receipt when available in CorethBlock
+		NumLogs:          numLogs,
 	}
 
 	// Handle nullable To field

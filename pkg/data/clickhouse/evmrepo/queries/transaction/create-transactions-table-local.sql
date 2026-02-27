@@ -18,7 +18,8 @@ ON CLUSTER `%s`
 	input String,
 	type UInt8,
 	transaction_index UInt64,
-	success UInt8
+	success UInt8,
+	num_logs UInt32
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
 ORDER BY (blockchain_id, block_time, hash)

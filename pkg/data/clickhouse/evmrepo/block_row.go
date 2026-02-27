@@ -43,4 +43,5 @@ type BlockRow struct {
 	ExcessBlobGas         uint64
 	ParentBeaconBlockRoot string
 	MinDelayExcess        uint64
+	NumTxns               uint32
 }
