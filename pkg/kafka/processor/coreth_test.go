@@ -244,7 +244,21 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(20006296), blockRow.GasLimit)
 	assert.Equal(t, uint64(183061), blockRow.GasUsed)
 	assertBigIntEqual(t, big.NewInt(470000000000), blockRow.BaseFeePerGas)
-	assert.Equal(t, "2a", blockRow.Nonce) // 42 in hex
+	assert.Equal(t, "2a", blockRow.Nonce)        // 42 in hex
+	assert.Equal(t, uint32(1), blockRow.NumTxns) // 1 transaction in the test block
+}
+
+func TestCorethBlockToBlockRow_NoTransactions(t *testing.T) {
+	t.Parallel()
+
+	block := createTestBlock()
+	block.Transactions = []*kafkamsg.EVMTransaction{} // No transactions
+
+	blockRow, err := CorethBlockToBlockRow(block)
+	require.NoError(t, err)
+	require.NotNil(t, blockRow)
+
+	assert.Equal(t, uint32(0), blockRow.NumTxns)
 }
 
 func TestCorethBlockToBlockRow_NilBlockchainID(t *testing.T) {
@@ -346,6 +360,7 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(21000), txRow.Gas)
 	assertBigIntEqual(t, big.NewInt(470000000000), txRow.GasPrice)
 	assert.Equal(t, txIndex, txRow.TransactionIndex)
+	assert.Equal(t, uint32(0), txRow.NumLogs) // No receipt on test transaction
 }
 
 func TestCorethTransactionToTransactionRow_NilBlockchainID(t *testing.T) {
@@ -418,6 +433,20 @@ func TestCorethTransactionToTransactionRow_MaxFeeFields(t *testing.T) {
 	require.NotNil(t, txRow.MaxPriorityFee)
 	assertBigIntEqual(t, big.NewInt(1000000000), txRow.MaxFeePerGas)
 	assertBigIntEqual(t, big.NewInt(2000000000), txRow.MaxPriorityFee)
+}
+
+func TestCorethTransactionToTransactionRow_WithReceipt(t *testing.T) {
+	t.Parallel()
+
+	block := createTestBlockWithLogs()
+	tx := block.Transactions[0] // This transaction has a receipt with 2 logs
+	txIndex := uint64(0)
+
+	txRow, err := CorethTransactionToTransactionRow(tx, block, txIndex)
+	require.NoError(t, err)
+	require.NotNil(t, txRow)
+
+	assert.Equal(t, uint32(2), txRow.NumLogs) // 2 logs in the test receipt
 }
 
 func TestCorethTransactionToTransactionRow_NilBlockNumber(t *testing.T) {
@@ -531,6 +560,7 @@ func TestProcess_Success_WithBlocksRepo(t *testing.T) {
 	require.NotNil(t, capturedBlock)
 	assert.Equal(t, testBlockchainID, *capturedBlock.BlockchainID)
 	assert.Equal(t, testBlockHash, capturedBlock.Hash)
+	assert.Equal(t, uint32(1), capturedBlock.NumTxns) // 1 transaction in the test block
 }
 
 func TestProcess_BlocksRepoError(t *testing.T) {
