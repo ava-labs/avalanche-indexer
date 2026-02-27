@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 func createLogger(t *testing.T) *zap.SugaredLogger {

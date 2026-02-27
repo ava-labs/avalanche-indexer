@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (

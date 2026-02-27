@@ -10,10 +10,11 @@ import (
 	"sync"
 	"time"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
+	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -238,7 +239,7 @@ func (om *OffsetManager) InsertOffset(ctx context.Context, offset cKafka.TopicPa
 }
 
 // Resets or initializes the OffsetManager's partitionStates. This rebalance
-// callback function must be passed to kafka.Consumer.Subscribe(). When the
+// callback function must be passed to cKafka.Consumer.Subscribe(). When the
 // consumer joins a group, this will then be called as a way to initialize the
 // OffsetManager
 func (om *OffsetManager) RebalanceCb(consumer *cKafka.Consumer, event cKafka.Event) error {
