@@ -4,6 +4,7 @@ ON CLUSTER `%s`
 	blockchain_id String,
 	evm_chain_id UInt256,
 	block_number UInt64,
+	block_timestamp DateTime64(3),
 	transaction_hash FixedString(32),
 	type String,
 	from_address FixedString(20),

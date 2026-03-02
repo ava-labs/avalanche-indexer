@@ -92,6 +92,7 @@ func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx 
 		blockchainID,
 		evmChainIDStr,
 		tx.BlockNumber,
+		tx.BlockTimestamp,
 		string(txHashBytes[:]),
 		tx.Type,
 		string(tx.From[:]),

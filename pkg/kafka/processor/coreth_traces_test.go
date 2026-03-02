@@ -83,10 +83,11 @@ func TestCorethTracesProcessor_Process_MissingBlockchainID(t *testing.T) {
 	proc := NewCorethTracesProcessor(sugar, nil, nil)
 
 	blockTrace := &kafkamsg.EVMBlockTrace{
-		EVMChainID:   big.NewInt(43113),
-		BlockNumber:  1647,
-		BlockchainID: nil,
-		Traces:       []json.RawMessage{},
+		EVMChainID:     big.NewInt(43113),
+		BlockNumber:    1647,
+		BlockTimestamp: 1640000000,
+		BlockchainID:   nil,
+		Traces:         []json.RawMessage{},
 	}
 
 	data, err := json.Marshal(blockTrace)
@@ -186,10 +187,11 @@ func TestCorethTracesProcessor_Process_EmptyTraces(t *testing.T) {
 
 	blockchainID := testBlockchainID
 	blockTrace := &kafkamsg.EVMBlockTrace{
-		EVMChainID:   big.NewInt(43113),
-		BlockNumber:  1647,
-		BlockchainID: &blockchainID,
-		Traces:       []json.RawMessage{},
+		EVMChainID:     big.NewInt(43113),
+		BlockNumber:    1647,
+		BlockTimestamp: 1640000000,
+		BlockchainID:   &blockchainID,
+		Traces:         []json.RawMessage{},
 	}
 	data, err := json.Marshal(blockTrace)
 	require.NoError(t, err)
@@ -273,10 +275,11 @@ func createTestBlockTrace() *kafkamsg.EVMBlockTrace {
 
 	traceBytes, _ := json.Marshal(trace)
 	return &kafkamsg.EVMBlockTrace{
-		EVMChainID:   big.NewInt(43113),
-		BlockNumber:  1647,
-		BlockchainID: &blockchainID,
-		Traces:       []json.RawMessage{traceBytes},
+		EVMChainID:     big.NewInt(43113),
+		BlockNumber:    1647,
+		BlockTimestamp: 1640000000,
+		BlockchainID:   &blockchainID,
+		Traces:         []json.RawMessage{traceBytes},
 	}
 }
 
@@ -315,9 +318,10 @@ func createTestBlockTraceWithMultipleTransactions() *kafkamsg.EVMBlockTrace {
 	trace2Bytes, _ := json.Marshal(trace2)
 
 	return &kafkamsg.EVMBlockTrace{
-		EVMChainID:   big.NewInt(43113),
-		BlockNumber:  1648,
-		BlockchainID: &blockchainID,
-		Traces:       []json.RawMessage{trace1Bytes, trace2Bytes},
+		EVMChainID:     big.NewInt(43113),
+		BlockNumber:    1648,
+		BlockTimestamp: 1640000001,
+		BlockchainID:   &blockchainID,
+		Traces:         []json.RawMessage{trace1Bytes, trace2Bytes},
 	}
 }

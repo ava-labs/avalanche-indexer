@@ -56,7 +56,7 @@ func newTestTracesWorker(t *testing.T, serverURL string) *CorethTracesWorker {
 	}
 	bcID := "test-blockchain-id-1"
 	return &CorethTracesWorker{
-		client:       c,
+		rpc:          c,
 		log:          zap.NewNop().Sugar(),
 		producer:     nil,
 		topic:        "",
@@ -167,8 +167,9 @@ func TestCorethMarshalBlockTrace(t *testing.T) {
 
 	evmChainID := big.NewInt(43114)
 	bcID := "test-blockchain-id-2"
+	blockTimestamp := uint64(1640000000)
 
-	bytes, err := messages.MarshalEVMBlockTrace(123, traces, evmChainID, &bcID)
+	bytes, err := messages.MarshalEVMBlockTrace(123, blockTimestamp, traces, evmChainID, &bcID)
 	require.NoError(t, err)
 	require.NotEmpty(t, bytes)
 
@@ -176,6 +177,7 @@ func TestCorethMarshalBlockTrace(t *testing.T) {
 	err = json.Unmarshal(bytes, &result)
 	require.NoError(t, err)
 	require.Equal(t, uint64(123), result.BlockNumber)
+	require.Equal(t, blockTimestamp, result.BlockTimestamp)
 	require.Equal(t, evmChainID, result.EVMChainID)
 	require.Equal(t, bcID, *result.BlockchainID)
 	require.Len(t, result.Traces, 1)
