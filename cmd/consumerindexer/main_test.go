@@ -15,7 +15,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Helper to compare *big.Int values (handles nil cases)
@@ -242,7 +242,7 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	proc := processor.NewCorethProcessor(sugar, nil, nil, nil, nil)
 
-	msg := &cKafka.Message{
+	msg := &ckafka.Message{
 		Value: invalidJSON,
 	}
 
@@ -267,7 +267,7 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	proc := processor.NewCorethProcessor(sugar, nil, nil, nil, nil)
 
-	msg := &cKafka.Message{
+	msg := &ckafka.Message{
 		Value: data,
 	}
 

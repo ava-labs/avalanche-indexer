@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
@@ -88,8 +88,8 @@ func (kc *adminKafkaContainer) teardown(t *testing.T) {
 	}
 }
 
-func createAdminClient(t *testing.T, brokers string) *cKafka.AdminClient {
-	admin, err := cKafka.NewAdminClient(&cKafka.ConfigMap{
+func createAdminClient(t *testing.T, brokers string) *ckafka.AdminClient {
+	admin, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 	})
 	require.NoError(t, err)
@@ -454,9 +454,9 @@ func TestGetReplicationFactor(t *testing.T) {
 	})
 
 	t.Run("returns 0 for empty partitions", func(t *testing.T) {
-		metadata := &cKafka.TopicMetadata{
+		metadata := &ckafka.TopicMetadata{
 			Topic:      "empty",
-			Partitions: []cKafka.PartitionMetadata{},
+			Partitions: []ckafka.PartitionMetadata{},
 		}
 
 		rf := getReplicationFactor(metadata)
@@ -568,12 +568,12 @@ func TestTopicConfigManagement(t *testing.T) {
 		time.Sleep(1 * time.Second)
 
 		// Verify topic configs
-		resource := cKafka.ConfigResource{
-			Type: cKafka.ResourceTopic,
+		resource := ckafka.ConfigResource{
+			Type: ckafka.ResourceTopic,
 			Name: "test-config-create",
 		}
 
-		results, err := admin.DescribeConfigs(ctx, []cKafka.ConfigResource{resource})
+		results, err := admin.DescribeConfigs(ctx, []ckafka.ConfigResource{resource})
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 
@@ -615,12 +615,12 @@ func TestTopicConfigManagement(t *testing.T) {
 		time.Sleep(1 * time.Second)
 
 		// Verify updated configs
-		resource := cKafka.ConfigResource{
-			Type: cKafka.ResourceTopic,
+		resource := ckafka.ConfigResource{
+			Type: ckafka.ResourceTopic,
 			Name: "test-config-update",
 		}
 
-		results, err := admin.DescribeConfigs(ctx, []cKafka.ConfigResource{resource})
+		results, err := admin.DescribeConfigs(ctx, []ckafka.ConfigResource{resource})
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 
