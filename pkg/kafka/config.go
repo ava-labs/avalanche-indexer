@@ -68,7 +68,7 @@ func (c ConsumerConfig) WithDefaults() ConsumerConfig {
 // SASLConfig holds SASL authentication configuration
 type SASLConfig struct {
 	Username         string // SASL username
-	Password         string
+	Password         string //nolint:gosec // runtime-provided credential required for Kafka SASL; not hardcoded
 	Mechanism        string // SASL mechanism: "SCRAM-SHA-256", "SCRAM-SHA-512", or "PLAIN"
 	SecurityProtocol string // Security protocol: "SASL_SSL" or "SASL_PLAINTEXT"
 }
