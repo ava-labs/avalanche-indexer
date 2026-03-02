@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
@@ -95,7 +95,7 @@ func waitForKafkaBroker(t *testing.T, brokers string) {
 	retryDelay := time.Second
 
 	for i := 0; i < maxRetries; i++ {
-		adminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{
+		adminClient, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
 			"bootstrap.servers":                  brokers,
 			"socket.connection.setup.timeout.ms": 10000, // 10s timeout for initial connection
 			"socket.timeout.ms":                  10000, // 10s socket timeout
@@ -130,7 +130,7 @@ func waitForKafkaBroker(t *testing.T, brokers string) {
 }
 
 func createTestTopic(t *testing.T, brokers string) {
-	adminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{
+	adminClient, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 	})
 	require.NoError(t, err)
@@ -139,7 +139,7 @@ func createTestTopic(t *testing.T, brokers string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	topics := []cKafka.TopicSpecification{
+	topics := []ckafka.TopicSpecification{
 		{
 			Topic:             testTopic,
 			NumPartitions:     1,
@@ -151,7 +151,7 @@ func createTestTopic(t *testing.T, brokers string) {
 	require.NoError(t, err)
 
 	for _, result := range results {
-		if result.Error.Code() != cKafka.ErrNoError && result.Error.Code() != cKafka.ErrTopicAlreadyExists {
+		if result.Error.Code() != ckafka.ErrNoError && result.Error.Code() != ckafka.ErrTopicAlreadyExists {
 			t.Fatalf("failed to create topic %s: %v", result.Topic, result.Error)
 		}
 	}
@@ -174,18 +174,18 @@ func TestHandleDeliveryEvent_Success(t *testing.T) {
 	log := zaptest.NewLogger(t).Sugar()
 
 	topic := "test-topic"
-	msg := &cKafka.Message{
-		TopicPartition: cKafka.TopicPartition{
+	msg := &ckafka.Message{
+		TopicPartition: ckafka.TopicPartition{
 			Topic:     &topic,
 			Partition: 0,
 		},
 	}
 
-	event := &cKafka.Message{
-		TopicPartition: cKafka.TopicPartition{
+	event := &ckafka.Message{
+		TopicPartition: ckafka.TopicPartition{
 			Topic:     &topic,
 			Partition: 0,
-			Offset:    cKafka.Offset(123),
+			Offset:    ckafka.Offset(123),
 			Error:     nil,
 		},
 	}
@@ -201,15 +201,15 @@ func TestHandleDeliveryEvent_Error(t *testing.T) {
 	topic := "test-topic"
 	deliveryErr := errors.New("delivery failed")
 
-	msg := &cKafka.Message{
-		TopicPartition: cKafka.TopicPartition{
+	msg := &ckafka.Message{
+		TopicPartition: ckafka.TopicPartition{
 			Topic:     &topic,
-			Partition: cKafka.PartitionAny,
+			Partition: ckafka.PartitionAny,
 		},
 	}
 
-	event := &cKafka.Message{
-		TopicPartition: cKafka.TopicPartition{
+	event := &ckafka.Message{
+		TopicPartition: ckafka.TopicPartition{
 			Topic:     &topic,
 			Partition: 0,
 			Error:     deliveryErr,
@@ -226,14 +226,14 @@ func TestHandleDeliveryEvent_UnexpectedEventType(t *testing.T) {
 	log := zaptest.NewLogger(t).Sugar()
 
 	topic := "test-topic"
-	msg := &cKafka.Message{
-		TopicPartition: cKafka.TopicPartition{
+	msg := &ckafka.Message{
+		TopicPartition: ckafka.TopicPartition{
 			Topic:     &topic,
-			Partition: cKafka.PartitionAny,
+			Partition: ckafka.PartitionAny,
 		},
 	}
 
-	event := cKafka.Error{}
+	event := ckafka.Error{}
 
 	err := handleDeliveryEvent(log, msg, event)
 	assert.Error(t, err)
@@ -249,7 +249,7 @@ func TestProducer_NewProducer(t *testing.T) {
 	log := zaptest.NewLogger(t).Sugar()
 
 	t.Run("successful creation", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 		}
@@ -296,7 +296,7 @@ func TestProducer_NewProducer(t *testing.T) {
 	})
 
 	t.Run("creation with invalid config", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"invalid.config": "value",
 		}
 
@@ -306,7 +306,7 @@ func TestProducer_NewProducer(t *testing.T) {
 	})
 
 	t.Run("creation with logs value", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"go.logs.channel.enable": "invalid",
 			"bootstrap.servers":      kc.brokers,
 			"client.id":              "test-producer",
@@ -322,7 +322,7 @@ func TestProducer_NewProducer(t *testing.T) {
 	})
 
 	t.Run("creation with logs enabled", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers":      kc.brokers,
 			"go.logs.channel.enable": true,
 		}
@@ -358,7 +358,7 @@ func TestProducer_Produce(t *testing.T) {
 	log := zaptest.NewLogger(t).Sugar()
 
 	t.Run("successful produce", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 			"acks":              "all",
@@ -379,7 +379,7 @@ func TestProducer_Produce(t *testing.T) {
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 		}
@@ -403,7 +403,7 @@ func TestProducer_Produce(t *testing.T) {
 	})
 
 	t.Run("context timeout", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 		}
@@ -429,7 +429,7 @@ func TestProducer_Produce(t *testing.T) {
 	})
 
 	t.Run("concurrent production", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 			"acks":              "all",
@@ -476,7 +476,7 @@ func TestProducer_Close(t *testing.T) {
 	log := zaptest.NewLogger(t).Sugar()
 
 	t.Run("close after produce", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 		}
@@ -532,7 +532,7 @@ func TestProducer_Close(t *testing.T) {
 	})
 
 	t.Run("close is idempotent", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 		}
@@ -554,7 +554,7 @@ func TestProducer_Errors(t *testing.T) {
 	ctx := context.Background()
 	log := zaptest.NewLogger(t).Sugar()
 
-	conf := &cKafka.ConfigMap{
+	conf := &ckafka.ConfigMap{
 		"bootstrap.servers": kc.brokers,
 		"client.id":         "test-producer",
 	}
@@ -583,7 +583,7 @@ func TestProducer_StatsEvents(t *testing.T) {
 	ctx := context.Background()
 	log := zaptest.NewLogger(t).Sugar()
 
-	conf := &cKafka.ConfigMap{
+	conf := &ckafka.ConfigMap{
 		"bootstrap.servers":      kc.brokers,
 		"client.id":              "test-producer",
 		"statistics.interval.ms": 1000, // Emit stats every 1 second
@@ -621,7 +621,7 @@ func TestProducer_ProduceErrors(t *testing.T) {
 	log := zaptest.NewLogger(t).Sugar()
 
 	t.Run("invalid message size", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 			"message.max.bytes": 1000, // Kafka minimum is 1000 bytes
@@ -645,7 +645,7 @@ func TestProducer_ProduceErrors(t *testing.T) {
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers": kc.brokers,
 			"client.id":         "test-producer",
 		}
@@ -679,7 +679,7 @@ func TestProducer_BackgroundGoroutines(t *testing.T) {
 		ctx := context.Background()
 		log := zaptest.NewLogger(t).Sugar()
 
-		conf := &cKafka.ConfigMap{
+		conf := &ckafka.ConfigMap{
 			"bootstrap.servers":      kc.brokers,
 			"client.id":              "test-producer",
 			"go.logs.channel.enable": true,

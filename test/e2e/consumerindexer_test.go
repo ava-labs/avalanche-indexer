@@ -19,7 +19,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 	"github.com/ava-labs/libevm/common"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -324,23 +324,23 @@ func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messa
 func produceBlocksToKafka(t *testing.T, brokers, topic string, blocks []messages.EVMBlock) {
 	t.Helper()
 
-	producer, err := cKafka.NewProducer(&cKafka.ConfigMap{
+	producer, err := ckafka.NewProducer(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 		"client.id":         "e2e-test-producer",
 	})
 	require.NoError(t, err)
 	defer producer.Close()
 
-	deliveryChan := make(chan cKafka.Event, len(blocks))
+	deliveryChan := make(chan ckafka.Event, len(blocks))
 
 	for _, block := range blocks {
 		data, err := json.Marshal(block)
 		require.NoError(t, err, "failed to marshal block")
 
-		msg := &cKafka.Message{
-			TopicPartition: cKafka.TopicPartition{
+		msg := &ckafka.Message{
+			TopicPartition: ckafka.TopicPartition{
 				Topic:     &topic,
-				Partition: cKafka.PartitionAny,
+				Partition: ckafka.PartitionAny,
 			},
 			Key:   []byte(fmt.Sprintf("%d", block.Number.Uint64())),
 			Value: data,
@@ -353,7 +353,7 @@ func produceBlocksToKafka(t *testing.T, brokers, topic string, blocks []messages
 	// Wait for delivery reports
 	for i := 0; i < len(blocks); i++ {
 		e := <-deliveryChan
-		m := e.(*cKafka.Message)
+		m := e.(*ckafka.Message)
 		require.Nil(t, m.TopicPartition.Error, "delivery failed")
 	}
 
@@ -365,19 +365,19 @@ func produceBlocksToKafka(t *testing.T, brokers, topic string, blocks []messages
 func produceInvalidMessage(t *testing.T, brokers, topic string) {
 	t.Helper()
 
-	producer, err := cKafka.NewProducer(&cKafka.ConfigMap{
+	producer, err := ckafka.NewProducer(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 		"client.id":         "e2e-test-producer-invalid",
 	})
 	require.NoError(t, err)
 	defer producer.Close()
 
-	deliveryChan := make(chan cKafka.Event, 1)
+	deliveryChan := make(chan ckafka.Event, 1)
 
-	msg := &cKafka.Message{
-		TopicPartition: cKafka.TopicPartition{
+	msg := &ckafka.Message{
+		TopicPartition: ckafka.TopicPartition{
 			Topic:     &topic,
-			Partition: cKafka.PartitionAny,
+			Partition: ckafka.PartitionAny,
 		},
 		Key:   []byte("invalid"),
 		Value: []byte("this is not a valid protobuf message"),
@@ -387,7 +387,7 @@ func produceInvalidMessage(t *testing.T, brokers, topic string) {
 	require.NoError(t, err)
 
 	e := <-deliveryChan
-	m := e.(*cKafka.Message)
+	m := e.(*ckafka.Message)
 	require.Nil(t, m.TopicPartition.Error)
 
 	producer.Flush(5000)
@@ -467,7 +467,7 @@ func verifyTransactionsInClickHouse(t *testing.T, ctx context.Context, client cl
 func verifyMessageInDLQ(t *testing.T, ctx context.Context, brokers, dlqTopic string) {
 	t.Helper()
 
-	consumer, err := cKafka.NewConsumer(&cKafka.ConfigMap{
+	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 		"group.id":          fmt.Sprintf("e2e-dlq-verifier-%d", time.Now().UnixNano()),
 		"auto.offset.reset": "earliest",
@@ -489,12 +489,12 @@ func verifyMessageInDLQ(t *testing.T, ctx context.Context, brokers, dlqTopic str
 		}
 
 		switch e := ev.(type) {
-		case *cKafka.Message:
+		case *ckafka.Message:
 			t.Logf("Found message in DLQ: key=%s", string(e.Key))
 			t.Logf("Message: %s", string(e.Value))
 			foundDLQMessage = true
 			return
-		case cKafka.Error:
+		case ckafka.Error:
 			if !e.IsFatal() {
 				continue
 			}
@@ -1070,7 +1070,7 @@ func createTestBlocksWithTransactions(evmChainID uint64, blockchainID string, bl
 func getTopicOffsets(t *testing.T, brokers, topic string) (map[int32]int64, error) {
 	t.Helper()
 
-	consumer, err := cKafka.NewConsumer(&cKafka.ConfigMap{
+	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 		"group.id":          fmt.Sprintf("offset-reader-%d", time.Now().UnixNano()),
 		"auto.offset.reset": "earliest",
@@ -1114,7 +1114,7 @@ func getCommittedOffsets(t *testing.T, brokers, groupID, topic string) (map[int3
 	t.Helper()
 
 	// Create a temporary consumer to query committed offsets
-	consumer, err := cKafka.NewConsumer(&cKafka.ConfigMap{
+	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 		"group.id":          groupID,
 		"auto.offset.reset": "earliest",
@@ -1136,9 +1136,9 @@ func getCommittedOffsets(t *testing.T, brokers, groupID, topic string) (map[int3
 	}
 
 	// Build list of partitions
-	var partitions []cKafka.TopicPartition
+	var partitions []ckafka.TopicPartition
 	for _, partition := range topicMetadata.Partitions {
-		partitions = append(partitions, cKafka.TopicPartition{
+		partitions = append(partitions, ckafka.TopicPartition{
 			Topic:     &topic,
 			Partition: partition.ID,
 		})

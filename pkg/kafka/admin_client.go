@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -52,7 +52,7 @@ func (tc TopicConfig) Validate() error {
 // Returns:
 //   - metadata: Topic metadata if the topic exists, nil if it doesn't exist
 //   - error: Non-nil if there was an error checking topic existence (network, permission, etc.)
-func TopicMetadata(admin *cKafka.AdminClient, topicName string) (*cKafka.TopicMetadata, error) {
+func TopicMetadata(admin *ckafka.AdminClient, topicName string) (*ckafka.TopicMetadata, error) {
 	// First, list all topics to check existence without triggering auto-creation
 	metadata, err := admin.GetMetadata(nil, false, int(metadataTimeout.Milliseconds()))
 	if err != nil {
@@ -61,12 +61,12 @@ func TopicMetadata(admin *cKafka.AdminClient, topicName string) (*cKafka.TopicMe
 
 	// Check if topic exists in the list
 	topicMetadata, exists := metadata.Topics[topicName]
-	if !exists || topicMetadata.Error.Code() == cKafka.ErrUnknownTopicOrPart {
+	if !exists || topicMetadata.Error.Code() == ckafka.ErrUnknownTopicOrPart {
 		// Topic doesn't exist - this is not an error condition
 		return nil, nil
 	}
 
-	if topicMetadata.Error.Code() != cKafka.ErrNoError {
+	if topicMetadata.Error.Code() != ckafka.ErrNoError {
 		return nil, fmt.Errorf("topic metadata for topic %q has error: %w", topicName, topicMetadata.Error)
 	}
 
@@ -82,7 +82,7 @@ func TopicMetadata(admin *cKafka.AdminClient, topicName string) (*cKafka.TopicMe
 // If TopicConfig.Config is provided, those configurations will be applied to the new topic.
 func CreateTopic(
 	ctx context.Context,
-	admin *cKafka.AdminClient,
+	admin *ckafka.AdminClient,
 	config TopicConfig,
 	log *zap.SugaredLogger,
 ) error {
@@ -90,25 +90,25 @@ func CreateTopic(
 		return fmt.Errorf("invalid topic config: %w", err)
 	}
 
-	spec := cKafka.TopicSpecification{
+	spec := ckafka.TopicSpecification{
 		Topic:             config.Name,
 		NumPartitions:     config.NumPartitions,
 		ReplicationFactor: config.ReplicationFactor,
 		Config:            config.Config,
 	}
 
-	results, err := admin.CreateTopics(ctx, []cKafka.TopicSpecification{spec})
+	results, err := admin.CreateTopics(ctx, []ckafka.TopicSpecification{spec})
 	if err != nil {
 		return fmt.Errorf("failed to create topic %q: %w", config.Name, err)
 	}
 
 	// Check result - should only have one result since we created one topic
 	for _, result := range results {
-		if result.Error.Code() != cKafka.ErrNoError && result.Error.Code() != cKafka.ErrTopicAlreadyExists {
+		if result.Error.Code() != ckafka.ErrNoError && result.Error.Code() != ckafka.ErrTopicAlreadyExists {
 			return fmt.Errorf("failed to create topic %q: %w", result.Topic, result.Error)
 		}
 
-		if result.Error.Code() == cKafka.ErrTopicAlreadyExists {
+		if result.Error.Code() == ckafka.ErrTopicAlreadyExists {
 			log.Errorw("topic already exists",
 				"topic", result.Topic,
 				"partitions", config.NumPartitions,
@@ -152,7 +152,7 @@ func CreateTopic(
 //   - Topic configs can be updated dynamically if they differ from desired state.
 func EnsureTopic(
 	ctx context.Context,
-	admin *cKafka.AdminClient,
+	admin *ckafka.AdminClient,
 	config TopicConfig,
 	log *zap.SugaredLogger,
 ) error {
@@ -181,7 +181,7 @@ func EnsureTopic(
 //   - If topic configs differ: Updates configs automatically
 //
 // This is an internal helper function used by EnsureTopic.
-func ensureTopicStructure(ctx context.Context, admin *cKafka.AdminClient, topicMetadata *cKafka.TopicMetadata, log *zap.SugaredLogger, config TopicConfig) error {
+func ensureTopicStructure(ctx context.Context, admin *ckafka.AdminClient, topicMetadata *ckafka.TopicMetadata, log *zap.SugaredLogger, config TopicConfig) error {
 	currentPartitions := len(topicMetadata.Partitions)
 	currentRF := getReplicationFactor(topicMetadata)
 
@@ -236,12 +236,12 @@ func ensureTopicStructure(ctx context.Context, admin *cKafka.AdminClient, topicM
 // This is an internal helper function. Partitions can only be increased, never decreased.
 func increasePartitions(
 	ctx context.Context,
-	admin *cKafka.AdminClient,
+	admin *ckafka.AdminClient,
 	topicName string,
 	newPartitionCount int,
 	log *zap.SugaredLogger,
 ) error {
-	partitionSpec := []cKafka.PartitionsSpecification{
+	partitionSpec := []ckafka.PartitionsSpecification{
 		{
 			Topic:      topicName,
 			IncreaseTo: newPartitionCount,
@@ -254,7 +254,7 @@ func increasePartitions(
 	}
 
 	for _, result := range results {
-		if result.Error.Code() != cKafka.ErrNoError {
+		if result.Error.Code() != ckafka.ErrNoError {
 			return fmt.Errorf("failed to increase partitions for topic %q: %w", result.Topic, result.Error)
 		}
 		log.Infow("increased partitions",
@@ -270,17 +270,17 @@ func increasePartitions(
 // Updates any configs that differ from the desired state.
 func updateTopicConfig(
 	ctx context.Context,
-	admin *cKafka.AdminClient,
+	admin *ckafka.AdminClient,
 	topicName string,
 	desiredConfig map[string]string,
 	log *zap.SugaredLogger,
 ) error {
-	resource := cKafka.ConfigResource{
-		Type: cKafka.ResourceTopic,
+	resource := ckafka.ConfigResource{
+		Type: ckafka.ResourceTopic,
 		Name: topicName,
 	}
 
-	results, err := admin.DescribeConfigs(ctx, []cKafka.ConfigResource{resource})
+	results, err := admin.DescribeConfigs(ctx, []ckafka.ConfigResource{resource})
 	if err != nil {
 		return fmt.Errorf("failed to describe configs for topic %q: %w", topicName, err)
 	}
@@ -290,11 +290,11 @@ func updateTopicConfig(
 	}
 
 	result := results[0]
-	if result.Error.Code() != cKafka.ErrNoError {
+	if result.Error.Code() != ckafka.ErrNoError {
 		return fmt.Errorf("failed to describe configs for topic %q: %w", topicName, result.Error)
 	}
 
-	configsToUpdate := make(map[string]cKafka.ConfigEntry)
+	configsToUpdate := make(map[string]ckafka.ConfigEntry)
 	for key, desiredValue := range desiredConfig {
 		// Find current value
 		var currentValue string
@@ -314,7 +314,7 @@ func updateTopicConfig(
 				"current", currentValue,
 				"desired", desiredValue)
 
-			configsToUpdate[key] = cKafka.ConfigEntry{
+			configsToUpdate[key] = ckafka.ConfigEntry{
 				Name:  key,
 				Value: desiredValue,
 			}
@@ -326,24 +326,24 @@ func updateTopicConfig(
 		return nil
 	}
 
-	configEntries := make([]cKafka.ConfigEntry, 0, len(configsToUpdate))
+	configEntries := make([]ckafka.ConfigEntry, 0, len(configsToUpdate))
 	for _, entry := range configsToUpdate {
 		configEntries = append(configEntries, entry)
 	}
 
-	alterResource := cKafka.ConfigResource{
-		Type:   cKafka.ResourceTopic,
+	alterResource := ckafka.ConfigResource{
+		Type:   ckafka.ResourceTopic,
 		Name:   topicName,
 		Config: configEntries,
 	}
 
-	alterResults, err := admin.IncrementalAlterConfigs(ctx, []cKafka.ConfigResource{alterResource})
+	alterResults, err := admin.IncrementalAlterConfigs(ctx, []ckafka.ConfigResource{alterResource})
 	if err != nil {
 		return fmt.Errorf("failed to alter configs for topic %q: %w", topicName, err)
 	}
 
 	for _, alterResult := range alterResults {
-		if alterResult.Error.Code() != cKafka.ErrNoError {
+		if alterResult.Error.Code() != ckafka.ErrNoError {
 			return fmt.Errorf("failed to alter configs for topic %q: %w", topicName, alterResult.Error)
 		}
 		log.Infow("updated topic configs",
@@ -356,7 +356,7 @@ func updateTopicConfig(
 
 // getReplicationFactor extracts the replication factor from topic metadata.
 // Returns 0 if the topic has no partitions (shouldn't happen in practice).
-func getReplicationFactor(metadata *cKafka.TopicMetadata) int {
+func getReplicationFactor(metadata *ckafka.TopicMetadata) int {
 	if len(metadata.Partitions) == 0 {
 		return 0
 	}

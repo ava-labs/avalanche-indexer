@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
@@ -30,10 +30,10 @@ const (
 )
 
 type testProcessor struct {
-	processFunc     func(ctx context.Context, msg *cKafka.Message) error
+	processFunc     func(ctx context.Context, msg *ckafka.Message) error
 	mu              sync.Mutex
 	processedCount  int32
-	processedMsgs   []*cKafka.Message
+	processedMsgs   []*ckafka.Message
 	shouldFail      bool
 	failureError    error
 	processingDelay time.Duration
@@ -41,11 +41,11 @@ type testProcessor struct {
 
 func newTestProcessor() *testProcessor {
 	return &testProcessor{
-		processedMsgs: make([]*cKafka.Message, 0),
+		processedMsgs: make([]*ckafka.Message, 0),
 	}
 }
 
-func (p *testProcessor) Process(ctx context.Context, msg *cKafka.Message) error {
+func (p *testProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 	if p.processingDelay > 0 {
 		select {
 		case <-time.After(p.processingDelay):
@@ -78,10 +78,10 @@ func (p *testProcessor) GetProcessedCount() int {
 	return int(atomic.LoadInt32(&p.processedCount))
 }
 
-func (p *testProcessor) GetProcessedMessages() []*cKafka.Message {
+func (p *testProcessor) GetProcessedMessages() []*ckafka.Message {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]*cKafka.Message{}, p.processedMsgs...)
+	return append([]*ckafka.Message{}, p.processedMsgs...)
 }
 
 func (p *testProcessor) SetShouldFail(shouldFail bool) {
@@ -169,15 +169,15 @@ func newTestConsumerConfig(brokers, groupID string) ConsumerConfig {
 }
 
 func createTestTopics(t *testing.T, brokers string, topics []string) {
-	adminClient, err := cKafka.NewAdminClient(&cKafka.ConfigMap{
+	adminClient, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 	})
 	require.NoError(t, err)
 	defer adminClient.Close()
 
-	var topicSpecs []cKafka.TopicSpecification
+	var topicSpecs []ckafka.TopicSpecification
 	for _, topic := range topics {
-		topicSpecs = append(topicSpecs, cKafka.TopicSpecification{
+		topicSpecs = append(topicSpecs, ckafka.TopicSpecification{
 			Topic:             topic,
 			NumPartitions:     3,
 			ReplicationFactor: 1,
@@ -188,7 +188,7 @@ func createTestTopics(t *testing.T, brokers string, topics []string) {
 	require.NoError(t, err)
 
 	for _, result := range results {
-		if result.Error.Code() != cKafka.ErrNoError {
+		if result.Error.Code() != ckafka.ErrNoError {
 			require.Fail(t, "Failed to create topic", "topic: %s, error: %v", result.Topic, result.Error)
 		}
 		t.Logf("Created topic: %s", result.Topic)
@@ -196,19 +196,19 @@ func createTestTopics(t *testing.T, brokers string, topics []string) {
 }
 
 func produceTestMessages(t *testing.T, brokers, topic string, count int) {
-	config := &cKafka.ConfigMap{
+	config := &ckafka.ConfigMap{
 		"bootstrap.servers": brokers,
 		"client.id":         "test-producer",
 	}
 
-	producer, err := cKafka.NewProducer(config)
+	producer, err := ckafka.NewProducer(config)
 	require.NoError(t, err)
 	defer producer.Close()
 
-	deliveryChan := make(chan cKafka.Event, count)
+	deliveryChan := make(chan ckafka.Event, count)
 	for i := 0; i < count; i++ {
-		msg := &cKafka.Message{
-			TopicPartition: cKafka.TopicPartition{Topic: &topic, Partition: cKafka.PartitionAny},
+		msg := &ckafka.Message{
+			TopicPartition: ckafka.TopicPartition{Topic: &topic, Partition: ckafka.PartitionAny},
 			Key:            []byte(fmt.Sprintf("key-%d", i)),
 			Value:          []byte(fmt.Sprintf("value-%d", i)),
 		}
@@ -218,7 +218,7 @@ func produceTestMessages(t *testing.T, brokers, topic string, count int) {
 
 	for i := 0; i < count; i++ {
 		e := <-deliveryChan
-		m := e.(*cKafka.Message)
+		m := e.(*ckafka.Message)
 		require.Nil(t, m.TopicPartition.Error, "Delivery failed")
 	}
 
@@ -455,7 +455,7 @@ func TestConsumer_Concurrency(t *testing.T) {
 		var maxConcurrent int32
 
 		processor := newTestProcessor()
-		processor.processFunc = func(ctx context.Context, msg *cKafka.Message) error {
+		processor.processFunc = func(ctx context.Context, msg *ckafka.Message) error {
 			current := atomic.AddInt32(&processingCount, 1)
 
 			for {
