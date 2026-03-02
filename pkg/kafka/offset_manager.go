@@ -13,13 +13,17 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
 
 const (
 	// Default suggested Offset Manager parameters
 	OffsetManagerCommitInterval  = 5 * time.Second
 	OffsetManagerAutoOffsetReset = "latest"
+
+	// ConsumerGroupLagInterval is the interval at which the offset manager queries
+	// broker watermarks and committed offsets to compute consumer group lag.
+	ConsumerGroupLagInterval = 30 * time.Second
 
 	WindowLengthWarningThreshold  = 10000
 	DefaultOffsetCommitTimeout    = 5000
@@ -58,7 +62,7 @@ type OffsetManager struct {
 	mutex           sync.Mutex
 	dryRun          bool // skip interactions with Brokers for testing
 	log             *zap.SugaredLogger
-	metrics         *metrics.Metrics // Prometheus metrics for offset tracking
+	metrics         *metricslib.Metrics // Prometheus metrics for offset tracking
 }
 
 // Creates new OffsetManager. To begin the OffsetManager, Start() must be called.
@@ -69,8 +73,11 @@ func NewOffsetManager(
 	autoOffsetReset string,
 	dryRun bool,
 	log *zap.SugaredLogger,
-	metrics *metrics.Metrics,
+	metrics *metricslib.Metrics,
 ) *OffsetManager {
+	if metrics == nil {
+		metrics = metricslib.NewNoOp()
+	}
 	om := &OffsetManager{
 		consumer:        consumer,
 		autoOffsetReset: autoOffsetReset,
@@ -80,6 +87,9 @@ func NewOffsetManager(
 		metrics:         metrics,
 	}
 	go om.run(ctx, interval, dryRun)
+	if !dryRun {
+		go om.runLagRecorder(ctx)
+	}
 	return om
 }
 
@@ -94,7 +104,6 @@ func (om *OffsetManager) run(
 		select {
 		case <-ticker.C:
 			om.commitLatestValidOffsets(dryRun)
-			om.recordConsumerGroupLag(dryRun)
 		case <-ctx.Done():
 			return
 		}
@@ -347,16 +356,29 @@ func (om *OffsetManager) RebalanceCb(consumer *kafka.Consumer, event kafka.Event
 	return nil
 }
 
+// runLagRecorder periodically queries broker watermarks and committed offsets to compute
+// consumer group lag on its own timer, independent of the offset commit loop.
+func (om *OffsetManager) runLagRecorder(ctx context.Context) {
+	ticker := time.NewTicker(ConsumerGroupLagInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			om.recordConsumerGroupLag()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 // recordConsumerGroupLag queries committed offsets and partition watermarks from Kafka
 // brokers to compute and record true consumer group lag for each assigned partition.
+// TODO: the lag gauge should eventually be defined locally in the kafka package with a
+// prometheus.Registerer passed to NewOffsetManager.
 // When no committed offset exists (offset < 0), lag is estimated based on auto.offset.reset:
 // zero for "latest", full partition range for "earliest" or unknown values.
-// Skipped in dryRun mode or when metrics is nil.
-func (om *OffsetManager) recordConsumerGroupLag(dryRun bool) {
-	if dryRun || om.metrics == nil {
-		return
-	}
-
+// Only called from runLagRecorder, which is not started in dryRun mode.
+func (om *OffsetManager) recordConsumerGroupLag() {
 	om.mutex.Lock()
 	partitions := make([]kafka.TopicPartition, 0, len(om.partitionStates))
 	for partition, state := range om.partitionStates {

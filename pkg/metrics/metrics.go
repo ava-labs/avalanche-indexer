@@ -17,11 +17,21 @@ const (
 	StatusError   = "error"
 	LabelUnknown  = "unknown"
 
+	// Direction label values for Kafka message size metrics
+	DirectionProduced = "produced"
+	DirectionConsumed = "consumed"
+
+	// Stage label values for block failure metrics
+	StageProcess       = "process"
+	StageMarkProcessed = "mark_processed"
+
 	KafkaOffset   = "kafka_offset"
 	KafkaConsumer = "kafka_consumer"
 	Logs          = "logs"
 	Receipts      = "receipts"
 	Consumer      = "consumer"
+
+	subsystemProducer = "producer"
 )
 
 // Labels holds constant labels applied to all metrics.
@@ -247,20 +257,20 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		}),
 		producerMessages: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "producer",
+			Subsystem: subsystemProducer,
 			Name:      "messages_total",
 			Help:      "Total Kafka producer messages by status",
 		}, []string{"status"}),
 		producerProduceDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Namespace: Namespace,
-			Subsystem: "producer",
+			Subsystem: subsystemProducer,
 			Name:      "produce_duration_seconds",
 			Help:      "Time spent waiting for Kafka delivery acknowledgement",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
 		producerErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
-			Subsystem: "producer",
+			Subsystem: subsystemProducer,
 			Name:      "errors_total",
 			Help:      "Total Kafka producer errors by type",
 		}, []string{"type"}),
@@ -306,9 +316,9 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		clickHouseWriteDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: Namespace,
 			Name:      "clickhouse_write_duration_seconds",
-			Help:      "ClickHouse write duration in seconds by table",
+			Help:      "ClickHouse write duration in seconds by table and status",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
-		}, []string{"table"}),
+		}, []string{"table", "status"}),
 		lastCommittedOffset: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace,
 			Subsystem: KafkaOffset,
@@ -839,7 +849,7 @@ func (m *Metrics) RecordClickHouseWrite(table string, err error, durationSeconds
 		status = StatusError
 	}
 	m.clickHouseWrites.WithLabelValues(table, status).Inc()
-	m.clickHouseWriteDuration.WithLabelValues(table).Observe(durationSeconds)
+	m.clickHouseWriteDuration.WithLabelValues(table, status).Observe(durationSeconds)
 }
 
 // classifyProducerErrorType categorizes a Kafka producer error by inspecting the error

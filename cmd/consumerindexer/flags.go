@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
 // runFlags returns all CLI runFlags for the consumerindexer run command
@@ -287,19 +289,19 @@ func runFlags() []cli.Flag {
 			Name:    "raw-blocks-table-name",
 			Usage:   "ClickHouse table name for raw blocks",
 			EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
-			Value:   "raw_blocks",
+			Value:   clickhouse.TableRawBlocks,
 		},
 		&cli.StringFlag{
 			Name:    "raw-transactions-table-name",
 			Usage:   "ClickHouse table name for raw transactions",
 			EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
-			Value:   "raw_transactions",
+			Value:   clickhouse.TableRawTransactions,
 		},
 		&cli.StringFlag{
 			Name:    "raw-logs-table-name",
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
-			Value:   "raw_logs",
+			Value:   clickhouse.TableRawLogs,
 		},
 		// Metrics configuration flags
 		&cli.StringFlag{
@@ -467,19 +469,19 @@ func removeFlags() []cli.Flag {
 			Name:    "raw-blocks-table-name",
 			Usage:   "ClickHouse table name for raw blocks",
 			EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
-			Value:   "raw_blocks",
+			Value:   clickhouse.TableRawBlocks,
 		},
 		&cli.StringFlag{
 			Name:    "raw-transactions-table-name",
 			Usage:   "ClickHouse table name for raw transactions",
 			EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
-			Value:   "raw_transactions",
+			Value:   clickhouse.TableRawTransactions,
 		},
 		&cli.StringFlag{
 			Name:    "raw-logs-table-name",
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
-			Value:   "raw_logs",
+			Value:   clickhouse.TableRawLogs,
 		},
 	}
 }

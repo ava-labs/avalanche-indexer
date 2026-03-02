@@ -60,6 +60,9 @@ func NewConsumer(
 	proc processor.Processor,
 	m *metrics.Metrics,
 ) (*Consumer, error) {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	// Apply defaults to config
 	cfg = cfg.WithDefaults()
 
@@ -218,7 +221,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 // On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
 func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 	if msg != nil {
-		c.metrics.ObserveKafkaMessageSize("consumed", len(msg.Value))
+		observeConsumedMessageSize(c.metrics, len(msg.Value))
 	}
 
 	if err := c.sem.Acquire(ctx, 1); err != nil {
@@ -398,4 +401,9 @@ func (c *Consumer) printKafkaLogs(ctx context.Context) {
 			c.log.Debugf("consumer level: %d tag: %s message: %s ", log.Level, log.Tag, log.Message)
 		}
 	}
+}
+
+// observeConsumedMessageSize records the size of a Kafka message consumed.
+func observeConsumedMessageSize(m *metrics.Metrics, sizeBytes int) {
+	m.ObserveKafkaMessageSize(metrics.DirectionConsumed, sizeBytes)
 }

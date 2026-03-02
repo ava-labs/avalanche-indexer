@@ -11,10 +11,11 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
-	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
+	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -22,12 +23,6 @@ import (
 var (
 	ErrNilMessage     = errors.New("received nil message or empty value")
 	ErrUnmarshalBlock = errors.New("failed to unmarshal coreth block")
-)
-
-const (
-	clickHouseTableBlocks       = "raw_blocks"
-	clickHouseTableTransactions = "raw_transactions"
-	clickHouseTableLogs         = "raw_logs"
 )
 
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
@@ -38,7 +33,7 @@ type CorethProcessor struct {
 	blocksRepo evmrepo.Blocks
 	txsRepo    evmrepo.Transactions
 	logsRepo   evmrepo.Logs
-	metrics    *metrics.Metrics
+	metrics    *metricslib.Metrics
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
@@ -48,8 +43,11 @@ func NewCorethProcessor(
 	blocksRepo evmrepo.Blocks,
 	txsRepo evmrepo.Transactions,
 	logsRepo evmrepo.Logs,
-	metrics *metrics.Metrics,
+	metrics *metricslib.Metrics,
 ) *CorethProcessor {
+	if metrics == nil {
+		metrics = metricslib.NewNoOp()
+	}
 	return &CorethProcessor{
 		log:        log,
 		blocksRepo: blocksRepo,
@@ -98,7 +96,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 
 		writeStart := time.Now()
 		err = p.blocksRepo.WriteBlock(ctx, blockRow)
-		p.metrics.RecordClickHouseWrite(clickHouseTableBlocks, err, time.Since(writeStart).Seconds())
+		recordClickHouseWrite(p.metrics, clickhouse.TableRawBlocks, err, writeStart)
 		if err != nil {
 			p.metrics.IncError("coreth_write_error")
 			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
@@ -314,7 +312,7 @@ func (p *CorethProcessor) processTransactions(
 
 		writeStart := time.Now()
 		err = p.txsRepo.WriteTransaction(ctx, txRow)
-		p.metrics.RecordClickHouseWrite(clickHouseTableTransactions, err, time.Since(writeStart).Seconds())
+		recordClickHouseWrite(p.metrics, clickhouse.TableRawTransactions, err, writeStart)
 		if err != nil {
 			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
 		}
@@ -362,7 +360,7 @@ func (p *CorethProcessor) processLogs(
 
 			writeStart := time.Now()
 			err = p.logsRepo.WriteLog(ctx, logRow)
-			p.metrics.RecordClickHouseWrite(clickHouseTableLogs, err, time.Since(writeStart).Seconds())
+			recordClickHouseWrite(p.metrics, clickhouse.TableRawLogs, err, writeStart)
 			if err != nil {
 				return fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err)
 			}

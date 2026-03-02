@@ -73,6 +73,10 @@ func NewManager(
 		return nil, errors.New("invalid max failures: must be greater than 0")
 	}
 
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
+
 	return &Manager{
 		log:         log,
 		state:       s,
@@ -224,7 +228,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 			return
 		}
 		m.log.Debugw("failed processing block height", "height", h, "error", err)
-		m.handleFailure(h, "process")
+		m.handleFailure(h, metrics.StageProcess)
 		return
 	}
 
@@ -236,7 +240,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 			return
 		}
 		m.log.Warnw("failed to mark processed", "height", h, "error", err)
-		m.handleFailure(h, "mark_processed")
+		m.handleFailure(h, metrics.StageMarkProcessed)
 		return
 	}
 
