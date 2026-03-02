@@ -3,7 +3,7 @@ package kafka
 import (
 	"time"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Default timeout values for Kafka consumer
@@ -79,7 +79,7 @@ func (s SASLConfig) IsEnabled() bool {
 }
 
 // ApplyToConfigMap applies SASL configuration to a Kafka ConfigMap
-func (s SASLConfig) ApplyToConfigMap(cfg *cKafka.ConfigMap) {
+func (s SASLConfig) ApplyToConfigMap(cfg *ckafka.ConfigMap) {
 	if !s.IsEnabled() {
 		return
 	}
