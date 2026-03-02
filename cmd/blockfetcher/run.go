@@ -139,6 +139,9 @@ func run(c *cli.Context) error {
 	if cfg.KafkaTopicRetentionBytes != "" {
 		topicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
 	}
+	if cfg.KafkaTopicMessageMaxBytes != "" {
+		topicConfig.Config["max.message.bytes"] = cfg.KafkaTopicMessageMaxBytes
+	}
 
 	err = kafka.EnsureTopic(ctx, kafkaAdminClient, topicConfig, sugar)
 	if err != nil {

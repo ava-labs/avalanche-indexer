@@ -76,6 +76,7 @@ type Config struct {
 	KafkaTopicReplicationFactor int
 	KafkaTopicRetentionMs       string
 	KafkaTopicRetentionBytes    string
+	KafkaTopicMessageMaxBytes   string
 	KafkaSASL                   kafka.SASLConfig
 
 	// ClickHouse settings
@@ -168,6 +169,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		KafkaTopicReplicationFactor: c.Int("kafka-topic-replication-factor"),
 		KafkaTopicRetentionMs:       c.String("kafka-topic-retention-ms"),
 		KafkaTopicRetentionBytes:    c.String("kafka-topic-retention-bytes"),
+		KafkaTopicMessageMaxBytes:   c.String("kafka-topic-message-max-bytes"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),
 			Password:         c.String("kafka-sasl-password"),

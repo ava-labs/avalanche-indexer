@@ -147,6 +147,9 @@ func run(c *cli.Context) error {
 	if cfg.KafkaTopicRetentionBytes != "" {
 		mainTopicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
 	}
+	if cfg.KafkaTopicMessageMaxBytes != "" {
+		mainTopicConfig.Config["max.message.bytes"] = cfg.KafkaTopicMessageMaxBytes
+	}
 
 	err = kafka.EnsureTopic(ctx, adminClient, mainTopicConfig, sugar)
 	if err != nil {
@@ -167,6 +170,9 @@ func run(c *cli.Context) error {
 		}
 		if cfg.KafkaDLQTopicRetentionBytes != "" {
 			dlqTopicConfig.Config["retention.bytes"] = cfg.KafkaDLQTopicRetentionBytes
+		}
+		if cfg.KafkaTopicMessageMaxBytes != "" {
+			dlqTopicConfig.Config["max.message.bytes"] = cfg.KafkaTopicMessageMaxBytes
 		}
 
 		err = kafka.EnsureTopic(ctx, adminClient, dlqTopicConfig, sugar)
