@@ -438,5 +438,10 @@ func CorethLogToLogRow(
 	}, nil
 }
 
+// recordClickHouseWrite records a ClickHouse write duration and status for a table.
+func recordClickHouseWrite(m *metricslib.Metrics, table string, err error, writeStart time.Time) {
+	m.RecordClickHouseWrite(table, err, time.Since(writeStart).Seconds())
+}
+
 // Compile-time check that CorethProcessor implements Processor.
 var _ Processor = (*CorethProcessor)(nil)
