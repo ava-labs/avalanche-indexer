@@ -103,8 +103,6 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		)
 	}
 
-	// Record successful processing duration
-	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	// Persist transactions to ClickHouse if repository is configured
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
 		if err := p.processTransactions(ctx, &block); err != nil {
@@ -119,6 +117,8 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		}
 	}
 
+	// Record successful processing duration
+	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	return nil
 }
 
@@ -168,6 +168,7 @@ func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) 
 		GasLimit:        block.GasLimit,
 		GasUsed:         block.GasUsed,
 		BaseFeePerGas:   block.BaseFee,
+		NumTxns:         uint32(len(block.Transactions)),
 	}
 
 	// Direct string assignments - no conversions needed
@@ -232,6 +233,12 @@ func CorethTransactionToTransactionRow(
 		evmChainID = big.NewInt(0)
 	}
 
+	// Determine number of logs from receipt
+	var numLogs uint32
+	if tx.Receipt != nil {
+		numLogs = uint32(len(tx.Receipt.Logs))
+	}
+
 	txRow := &evmrepo.TransactionRow{
 		BlockchainID:     blockchainID,
 		EVMChainID:       evmChainID,
@@ -246,6 +253,7 @@ func CorethTransactionToTransactionRow(
 		Type:             tx.Type,
 		TransactionIndex: txIndex,
 		Success:          0, // TODO: Extract from transaction receipt when available in CorethBlock
+		NumLogs:          numLogs,
 	}
 
 	// Handle nullable To field
