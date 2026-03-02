@@ -13,8 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
-
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -33,7 +31,7 @@ const (
 )
 
 type offsetState struct {
-	window        []kafka.TopicPartition
+	window        []ckafka.TopicPartition
 	lastCommitted ckafka.Offset
 	topic         *string
 }
@@ -382,12 +380,12 @@ func (om *OffsetManager) runLagRecorder(ctx context.Context) {
 // Only called from runLagRecorder, which is not started in dryRun mode.
 func (om *OffsetManager) recordConsumerGroupLag() {
 	om.mutex.Lock()
-	partitions := make([]kafka.TopicPartition, 0, len(om.partitionStates))
+	partitions := make([]ckafka.TopicPartition, 0, len(om.partitionStates))
 	for partition, state := range om.partitionStates {
 		if state.topic == nil {
 			continue
 		}
-		partitions = append(partitions, kafka.TopicPartition{
+		partitions = append(partitions, ckafka.TopicPartition{
 			Topic:     state.topic,
 			Partition: partition,
 		})
