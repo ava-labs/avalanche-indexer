@@ -27,7 +27,7 @@ import (
 	corethRpc "github.com/ava-labs/coreth/rpc"
 	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
 	subnetRpc "github.com/ava-labs/subnet-evm/rpc"
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -118,9 +118,9 @@ func run(c *cli.Context) error {
 	defer stop()
 
 	// Create Kafka admin client to ensure topic exists
-	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers}
+	adminConfig := ckafka.ConfigMap{"bootstrap.servers": cfg.KafkaBrokers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
-	kafkaAdminClient, err := confluentKafka.NewAdminClient(&adminConfig)
+	kafkaAdminClient, err := ckafka.NewAdminClient(&adminConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka admin client: %w", err)
 	}
@@ -138,6 +138,9 @@ func run(c *cli.Context) error {
 	}
 	if cfg.KafkaTopicRetentionBytes != "" {
 		topicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
+	}
+	if cfg.KafkaTopicMessageMaxBytes != "" {
+		topicConfig.Config["max.message.bytes"] = cfg.KafkaTopicMessageMaxBytes
 	}
 
 	err = kafka.EnsureTopic(ctx, kafkaAdminClient, topicConfig, sugar)

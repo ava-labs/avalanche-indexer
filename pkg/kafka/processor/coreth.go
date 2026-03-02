@@ -16,7 +16,7 @@ import (
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // ErrNilMessage is returned when a nil message or empty value is received.
@@ -60,7 +60,7 @@ func NewCorethProcessor(
 // Process unmarshals msg.Value into a Coreth Block and logs its details.
 // Returns an error if msg or msg.Value is nil, or if unmarshaling fails.
 // Records processing duration and errors to metrics if configured.
-func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) error {
+func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 	start := time.Now()
 
 	if msg == nil || msg.Value == nil {

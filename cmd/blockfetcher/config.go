@@ -11,7 +11,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -76,6 +76,7 @@ type Config struct {
 	KafkaTopicReplicationFactor int
 	KafkaTopicRetentionMs       string
 	KafkaTopicRetentionBytes    string
+	KafkaTopicMessageMaxBytes   string
 	KafkaSASL                   kafka.SASLConfig
 
 	// ClickHouse settings
@@ -101,8 +102,8 @@ func (c *Config) MetricsAddr() string {
 }
 
 // KafkaProducerConfig builds a Kafka producer ConfigMap from the config
-func (c *Config) KafkaProducerConfig() *confluentKafka.ConfigMap {
-	cfg := &confluentKafka.ConfigMap{
+func (c *Config) KafkaProducerConfig() *ckafka.ConfigMap {
+	cfg := &ckafka.ConfigMap{
 		// Required
 		"bootstrap.servers": c.KafkaBrokers,
 		"client.id":         c.KafkaClientID,
@@ -168,6 +169,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		KafkaTopicReplicationFactor: c.Int("kafka-topic-replication-factor"),
 		KafkaTopicRetentionMs:       c.String("kafka-topic-retention-ms"),
 		KafkaTopicRetentionBytes:    c.String("kafka-topic-retention-bytes"),
+		KafkaTopicMessageMaxBytes:   c.String("kafka-topic-message-max-bytes"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),
 			Password:         c.String("kafka-sasl-password"),

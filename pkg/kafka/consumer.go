@@ -13,7 +13,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 // Not safe for concurrent use of exported methods.
 type Consumer struct {
 	processor     processor.Processor
-	consumer      *cKafka.Consumer
+	consumer      *ckafka.Consumer
 	dlqProducer   *Producer
 	log           *zap.SugaredLogger
 	sem           *semaphore.Weighted
@@ -66,7 +66,7 @@ func NewConsumer(
 	// Apply defaults to config
 	cfg = cfg.WithDefaults()
 
-	consumerConfig := cKafka.ConfigMap{
+	consumerConfig := ckafka.ConfigMap{
 		"bootstrap.servers":             cfg.BootstrapServers,
 		"group.id":                      cfg.GroupID,
 		"auto.offset.reset":             cfg.AutoOffsetReset,
@@ -78,12 +78,12 @@ func NewConsumer(
 		"fetch.message.max.bytes":       cfg.MessageMaxBytes,
 	}
 	cfg.SASL.ApplyToConfigMap(&consumerConfig)
-	consumer, err := cKafka.NewConsumer(&consumerConfig)
+	consumer, err := ckafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka consumer: %w", err)
 	}
 
-	dlqProducerConfig := cKafka.ConfigMap{
+	dlqProducerConfig := ckafka.ConfigMap{
 		"bootstrap.servers":      cfg.BootstrapServers,
 		"acks":                   "all", // All brokers must acknowledge the message
 		"linger.ms":              5,     // Batch messages for 5ms
@@ -179,7 +179,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 			}
 
 			switch msg := ev.(type) {
-			case *cKafka.Message:
+			case *ckafka.Message:
 				c.metrics.RecordMessageReceived(msg.TopicPartition.Partition)
 				c.rebalanceMutex.RLock()
 				if _, ok := c.rebalanceContexts[msg.TopicPartition.Partition]; !ok {
@@ -189,7 +189,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 				}
 				c.dispatch(c.rebalanceContexts[msg.TopicPartition.Partition].ctx, msg)
 				c.rebalanceMutex.RUnlock()
-			case cKafka.Error:
+			case ckafka.Error:
 				if msg.IsFatal() {
 					c.metrics.RecordKafkaError(true)
 					c.log.Errorw("fatal kafka error", "error", msg)
@@ -219,7 +219,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 // Returns immediately after spawning (non-blocking). If context is cancelled during semaphore
 // acquisition, the message is dropped (will be reprocessed after rebalance).
 // On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
-func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
+func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 	if msg != nil {
 		observeConsumedMessageSize(c.metrics, len(msg.Value))
 	}
@@ -289,7 +289,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *cKafka.Message) {
 
 // publishToDLQ publishes msg to the configured DLQ topic, preserving original key and value.
 // Returns an error if DLQTopic is not configured or if production fails.
-func (c *Consumer) publishToDLQ(ctx context.Context, msg *cKafka.Message) error {
+func (c *Consumer) publishToDLQ(ctx context.Context, msg *ckafka.Message) error {
 	dlqMsg := Msg{
 		Topic: c.cfg.DLQTopic,
 		Key:   msg.Key,
@@ -337,13 +337,13 @@ func (c *Consumer) close() error {
 // getRebalanceCallback returns a thread-safe callback that manages partition contexts.
 // On assignment, creates a cancellable context per partition. On revocation, cancels
 // partition contexts to stop in-flight processing for revoked partitions.
-func (c *Consumer) getRebalanceCallback(ctx context.Context) cKafka.RebalanceCb {
-	return func(kc *cKafka.Consumer, event cKafka.Event) error {
+func (c *Consumer) getRebalanceCallback(ctx context.Context) ckafka.RebalanceCb {
+	return func(kc *ckafka.Consumer, event ckafka.Event) error {
 		c.rebalanceMutex.Lock()
 		defer c.rebalanceMutex.Unlock()
 
 		switch ev := event.(type) {
-		case cKafka.AssignedPartitions:
+		case ckafka.AssignedPartitions:
 			c.log.Infow("partitions assigned",
 				"protocol", kc.GetRebalanceProtocol(),
 				"count", len(ev.Partitions),
@@ -355,7 +355,7 @@ func (c *Consumer) getRebalanceCallback(ctx context.Context) cKafka.RebalanceCb 
 				c.rebalanceContexts[partition.Partition] = rCtx
 			}
 
-		case cKafka.RevokedPartitions:
+		case ckafka.RevokedPartitions:
 			c.log.Infow("partitions revoked",
 				"protocol", kc.GetRebalanceProtocol(),
 				"count", len(ev.Partitions),
