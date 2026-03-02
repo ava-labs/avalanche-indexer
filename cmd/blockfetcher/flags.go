@@ -189,6 +189,11 @@ func runFlags() []cli.Flag {
 			Value:   "161061273600", // 150GB
 		},
 		&cli.StringFlag{
+			Name:    "kafka-topic-message-max-bytes",
+			Usage:   "Maximum message size in bytes for the Kafka topic (e.g., 20971521 for ~20MB). If not set, uses broker default.",
+			EnvVars: []string{"KAFKA_TOPIC_MESSAGE_MAX_BYTES"},
+		},
+		&cli.StringFlag{
 			Name:    "kafka-sasl-username",
 			Usage:   "SASL username for Kafka authentication",
 			EnvVars: []string{"KAFKA_SASL_USERNAME"},
