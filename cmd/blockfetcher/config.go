@@ -49,6 +49,7 @@ func validateRetentionValue(value, fieldName string) error {
 type Config struct {
 	// Application settings
 	Verbose bool
+	Mode    string
 
 	// Blockchain settings
 	EVMChainID uint64
@@ -61,6 +62,7 @@ type Config struct {
 	// Worker settings
 	Concurrency    int64
 	ReceiptTimeout time.Duration
+	TraceTimeout   time.Duration
 	Backfill       int64
 	BlocksCap      int
 	MaxFailures    int
@@ -145,6 +147,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 
 	return &Config{
 		Verbose:                     c.Bool("verbose"),
+		Mode:                        c.String("mode"),
 		EVMChainID:                  c.Uint64("evm-chain-id"),
 		BCID:                        c.String("bc-id"),
 		RPCURL:                      c.String("rpc-url"),
@@ -153,6 +156,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		End:                         c.Uint64("end-height"),
 		Concurrency:                 c.Int64("concurrency"),
 		ReceiptTimeout:              c.Duration("receipt-timeout"),
+		TraceTimeout:                c.Duration("trace-timeout"),
 		Backfill:                    c.Int64("backfill-priority"),
 		BlocksCap:                   c.Int("blocks-ch-capacity"),
 		MaxFailures:                 c.Int("max-failures"),

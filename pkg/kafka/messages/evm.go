@@ -237,6 +237,23 @@ type evmTransactionJSON struct {
 	Receipt        *EVMTxReceipt   `json:"receipt,omitempty"`
 }
 
+type EVMBlockTrace struct {
+	EVMChainID   *big.Int          `json:"evmChainId,omitempty"`
+	BlockchainID *string           `json:"blockchainId,omitempty"`
+	BlockNumber  uint64            `json:"blockNumber"`
+	Traces       []json.RawMessage `json:"traces"`
+}
+
+func MarshalEVMBlockTrace(blockNumber uint64, traces []json.RawMessage, evmChainID *big.Int, blockchainID *string) ([]byte, error) {
+	blockTrace := EVMBlockTrace{
+		EVMChainID:   evmChainID,
+		BlockchainID: blockchainID,
+		BlockNumber:  blockNumber,
+		Traces:       traces,
+	}
+	return json.Marshal(blockTrace)
+}
+
 // EVMBlockFromLibevmCoreth converts a libevm coreth Block to a EVM Block.
 // chainID should be provided since blocks may not have transactions to extract it from.
 func EVMBlockFromLibevmCoreth(block *libevmtypes.Block, evmChainID *big.Int, blockchainID *string) (*EVMBlock, error) {
