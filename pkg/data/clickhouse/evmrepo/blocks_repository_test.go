@@ -97,6 +97,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			string(hashBytes[:]),             // string: 32-byte binary string
 			string(parentHashBytes[:]),       // string: 32-byte binary string
 			block.BlockTime,                  // time.Time
+			block.TimestampMs,                // uint64
 			string(minerBytes[:]),            // string: 20-byte binary string
 			block.Difficulty.String(),        // string: "1" (UInt256)
 			block.TotalDifficulty.String(),   // string: "1000" (UInt256)
@@ -204,6 +205,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			string(hashBytes[:]),
 			string(parentHashBytes[:]),
 			block.BlockTime,
+			block.TimestampMs,
 			string(minerBytes[:]),
 			block.Difficulty.String(),
 			block.TotalDifficulty.String(),
