@@ -19,6 +19,7 @@ type TransactionRow struct {
 	BlockNumber      uint64
 	BlockHash        string
 	BlockTime        time.Time
+	TimestampMs      uint64
 	Hash             string
 	From             string
 	To               *string // Nullable

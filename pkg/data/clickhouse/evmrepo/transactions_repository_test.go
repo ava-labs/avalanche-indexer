@@ -55,6 +55,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.BlockNumber,
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(hashBytes[:]), // string: 32-byte binary string
 			string(fromBytes[:]), // string: 20-byte binary string
 			toBytes,              // string or nil: 20-byte binary string
@@ -119,6 +120,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.BlockNumber,
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(hashBytes[:]), // string: 32-byte binary string
 			string(fromBytes[:]), // string: 20-byte binary string
 			toBytes,              // string or nil: 20-byte binary string
@@ -182,6 +184,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.BlockNumber,
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(hashBytes[:]), // string: 32-byte binary string
 			string(fromBytes[:]), // string: 20-byte binary string
 			toBytes,              // nil for contract creation
@@ -277,6 +280,7 @@ func createTestTransaction() *TransactionRow {
 		BlockNumber:      1647,
 		BlockHash:        blockHash,
 		BlockTime:        time.Unix(1604768510, 0).UTC(),
+		TimestampMs:      1604768510000,
 		Hash:             txHash,
 		From:             from,
 		To:               &to,

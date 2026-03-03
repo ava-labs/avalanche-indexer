@@ -18,6 +18,9 @@ var blocksMigrationsFS embed.FS
 //go:embed queries/migrations/transactions/*.sql
 var transactionsMigrationsFS embed.FS
 
+//go:embed queries/migrations/logs/*.sql
+var logsMigrationsFS embed.FS
+
 // RunMigrations reads all .sql files from the given embed.FS directory, sorts
 // them lexically, and executes each one against the ClickHouse connection.
 //

@@ -144,6 +144,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		tx.BlockNumber,
 		string(blockHashBytes[:]),
 		tx.BlockTime,
+		tx.TimestampMs,
 		string(hashBytes[:]),
 		string(fromBytes[:]),
 		toBytes,

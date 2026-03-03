@@ -61,6 +61,11 @@ func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create logs table: %w", err)
 	}
+
+	if err := RunMigrations(ctx, r.client.Conn(), logsMigrationsFS, "queries/migrations/logs", r.database, r.tableName, r.cluster); err != nil {
+		return fmt.Errorf("failed to run logs migrations: %w", err)
+	}
+
 	return nil
 }
 
@@ -119,6 +124,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 		log.BlockNumber,
 		string(blockHashBytes[:]),
 		log.BlockTime,
+		log.TimestampMs,
 		string(txHashBytes[:]),
 		log.TxIndex,
 		string(addressBytes[:]),
