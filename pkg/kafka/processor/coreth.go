@@ -15,7 +15,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // ErrNilMessage is returned when a nil message or empty value is received.
@@ -56,7 +56,7 @@ func NewCorethProcessor(
 // Process unmarshals msg.Value into a Coreth Block and logs its details.
 // Returns an error if msg or msg.Value is nil, or if unmarshaling fails.
 // Records processing duration and errors to metrics if configured.
-func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) error {
+func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 	start := time.Now()
 
 	if msg == nil || msg.Value == nil {
@@ -103,8 +103,6 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		)
 	}
 
-	// Record successful processing duration
-	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	// Persist transactions to ClickHouse if repository is configured
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
 		if err := p.processTransactions(ctx, &block); err != nil {
@@ -119,6 +117,8 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *cKafka.Message) erro
 		}
 	}
 
+	// Record successful processing duration
+	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 	return nil
 }
 
@@ -169,6 +169,7 @@ func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) 
 		GasLimit:        block.GasLimit,
 		GasUsed:         block.GasUsed,
 		BaseFeePerGas:   block.BaseFee,
+		NumTxns:         uint32(len(block.Transactions)),
 	}
 
 	// Direct string assignments - no conversions needed
@@ -233,6 +234,12 @@ func CorethTransactionToTransactionRow(
 		evmChainID = big.NewInt(0)
 	}
 
+	// Determine number of logs from receipt
+	var numLogs uint32
+	if tx.Receipt != nil {
+		numLogs = uint32(len(tx.Receipt.Logs))
+	}
+
 	txRow := &evmrepo.TransactionRow{
 		BlockchainID:     blockchainID,
 		EVMChainID:       evmChainID,
@@ -247,6 +254,7 @@ func CorethTransactionToTransactionRow(
 		Type:             tx.Type,
 		TransactionIndex: txIndex,
 		Success:          0, // TODO: Extract from transaction receipt when available in CorethBlock
+		NumLogs:          numLogs,
 	}
 
 	// Handle nullable To field

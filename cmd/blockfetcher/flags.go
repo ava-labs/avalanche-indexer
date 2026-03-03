@@ -17,6 +17,12 @@ func runFlags() []cli.Flag {
 			Value:   false,
 		},
 		&cli.StringFlag{
+			Name:    "mode",
+			Usage:   "The mode to run the block fetcher in (blocks or traces). Default is blocks.",
+			EnvVars: []string{"MODE"},
+			Value:   blocksMode,
+		},
+		&cli.StringFlag{
 			Name:     "evm-chain-id",
 			Aliases:  []string{"C"},
 			Usage:    "The EVM chain ID of the blockchain being ingested",
@@ -68,6 +74,13 @@ func runFlags() []cli.Flag {
 			Usage:   "The timeout for fetching a transaction receipt",
 			EnvVars: []string{"RECEIPT_TIMEOUT"},
 			Value:   10 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:    "trace-timeout",
+			Aliases: []string{"tt"},
+			Usage:   "The timeout for fetching block traces",
+			EnvVars: []string{"TRACE_TIMEOUT"},
+			Value:   360 * time.Second,
 		},
 		&cli.Uint64Flag{
 			Name:     "backfill-priority",
@@ -174,6 +187,11 @@ func runFlags() []cli.Flag {
 			Usage:   "Retention size in bytes for the Kafka topic (e.g., 161061273600 for 150GB, -1 for infinite)",
 			EnvVars: []string{"KAFKA_TOPIC_RETENTION_BYTES"},
 			Value:   "161061273600", // 150GB
+		},
+		&cli.StringFlag{
+			Name:    "kafka-topic-message-max-bytes",
+			Usage:   "Maximum message size in bytes for the Kafka topic (e.g., 20971521 for ~20MB). If not set, uses broker default.",
+			EnvVars: []string{"KAFKA_TOPIC_MESSAGE_MAX_BYTES"},
 		},
 		&cli.StringFlag{
 			Name:    "kafka-sasl-username",

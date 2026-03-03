@@ -16,7 +16,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -244,7 +244,21 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(20006296), blockRow.GasLimit)
 	assert.Equal(t, uint64(183061), blockRow.GasUsed)
 	assertBigIntEqual(t, big.NewInt(470000000000), blockRow.BaseFeePerGas)
-	assert.Equal(t, "2a", blockRow.Nonce) // 42 in hex
+	assert.Equal(t, "2a", blockRow.Nonce)        // 42 in hex
+	assert.Equal(t, uint32(1), blockRow.NumTxns) // 1 transaction in the test block
+}
+
+func TestCorethBlockToBlockRow_NoTransactions(t *testing.T) {
+	t.Parallel()
+
+	block := createTestBlock()
+	block.Transactions = []*kafkamsg.EVMTransaction{} // No transactions
+
+	blockRow, err := CorethBlockToBlockRow(block)
+	require.NoError(t, err)
+	require.NotNil(t, blockRow)
+
+	assert.Equal(t, uint32(0), blockRow.NumTxns)
 }
 
 func TestCorethBlockToBlockRow_NilBlockchainID(t *testing.T) {
@@ -346,6 +360,7 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(21000), txRow.Gas)
 	assertBigIntEqual(t, big.NewInt(470000000000), txRow.GasPrice)
 	assert.Equal(t, txIndex, txRow.TransactionIndex)
+	assert.Equal(t, uint32(0), txRow.NumLogs) // No receipt on test transaction
 }
 
 func TestCorethTransactionToTransactionRow_NilBlockchainID(t *testing.T) {
@@ -420,6 +435,20 @@ func TestCorethTransactionToTransactionRow_MaxFeeFields(t *testing.T) {
 	assertBigIntEqual(t, big.NewInt(2000000000), txRow.MaxPriorityFee)
 }
 
+func TestCorethTransactionToTransactionRow_WithReceipt(t *testing.T) {
+	t.Parallel()
+
+	block := createTestBlockWithLogs()
+	tx := block.Transactions[0] // This transaction has a receipt with 2 logs
+	txIndex := uint64(0)
+
+	txRow, err := CorethTransactionToTransactionRow(tx, block, txIndex)
+	require.NoError(t, err)
+	require.NotNil(t, txRow)
+
+	assert.Equal(t, uint32(2), txRow.NumLogs) // 2 logs in the test receipt
+}
+
 func TestCorethTransactionToTransactionRow_NilBlockNumber(t *testing.T) {
 	t.Parallel()
 
@@ -454,7 +483,7 @@ func TestProcess_NilMessageValue(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
-	msg := &cKafka.Message{Value: nil}
+	msg := &ckafka.Message{Value: nil}
 	err := proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, ErrNilMessage)
 }
@@ -465,7 +494,7 @@ func TestProcess_InvalidJSON(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
 
-	msg := &cKafka.Message{Value: []byte(`{invalid json}`)}
+	msg := &ckafka.Message{Value: []byte(`{invalid json}`)}
 	err := proc.Process(t.Context(), msg)
 
 	require.ErrorIs(t, err, ErrUnmarshalBlock)
@@ -487,7 +516,7 @@ func TestProcess_MissingBlockchainID(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, evmrepo.ErrBlockChainIDRequired)
 }
@@ -502,7 +531,7 @@ func TestProcess_Success_NoRepos(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 }
@@ -524,13 +553,14 @@ func TestProcess_Success_WithBlocksRepo(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 
 	require.NotNil(t, capturedBlock)
 	assert.Equal(t, testBlockchainID, *capturedBlock.BlockchainID)
 	assert.Equal(t, testBlockHash, capturedBlock.Hash)
+	assert.Equal(t, uint32(1), capturedBlock.NumTxns) // 1 transaction in the test block
 }
 
 func TestProcess_BlocksRepoError(t *testing.T) {
@@ -549,7 +579,7 @@ func TestProcess_BlocksRepoError(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, expectedErr)
 }
@@ -571,7 +601,7 @@ func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 
@@ -595,7 +625,7 @@ func TestProcess_TransactionsRepoError(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, expectedErr)
 }
@@ -617,7 +647,7 @@ func TestProcess_Success_WithLogsRepo(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 
@@ -640,7 +670,7 @@ func TestProcess_LogsRepoError(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, expectedErr)
 }
@@ -671,7 +701,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 	data, err := json.Marshal(block)
 	require.NoError(t, err)
 
-	msg := &cKafka.Message{Value: data}
+	msg := &ckafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.NoError(t, err)
 

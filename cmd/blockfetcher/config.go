@@ -11,7 +11,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 const (
@@ -49,6 +49,7 @@ func validateRetentionValue(value, fieldName string) error {
 type Config struct {
 	// Application settings
 	Verbose bool
+	Mode    string
 
 	// Blockchain settings
 	EVMChainID uint64
@@ -61,6 +62,7 @@ type Config struct {
 	// Worker settings
 	Concurrency    int64
 	ReceiptTimeout time.Duration
+	TraceTimeout   time.Duration
 	Backfill       int64
 	BlocksCap      int
 	MaxFailures    int
@@ -74,6 +76,7 @@ type Config struct {
 	KafkaTopicReplicationFactor int
 	KafkaTopicRetentionMs       string
 	KafkaTopicRetentionBytes    string
+	KafkaTopicMessageMaxBytes   string
 	KafkaSASL                   kafka.SASLConfig
 
 	// ClickHouse settings
@@ -99,8 +102,8 @@ func (c *Config) MetricsAddr() string {
 }
 
 // KafkaProducerConfig builds a Kafka producer ConfigMap from the config
-func (c *Config) KafkaProducerConfig() *confluentKafka.ConfigMap {
-	cfg := &confluentKafka.ConfigMap{
+func (c *Config) KafkaProducerConfig() *ckafka.ConfigMap {
+	cfg := &ckafka.ConfigMap{
 		// Required
 		"bootstrap.servers": c.KafkaBrokers,
 		"client.id":         c.KafkaClientID,
@@ -145,6 +148,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 
 	return &Config{
 		Verbose:                     c.Bool("verbose"),
+		Mode:                        c.String("mode"),
 		EVMChainID:                  c.Uint64("evm-chain-id"),
 		BCID:                        c.String("bc-id"),
 		RPCURL:                      c.String("rpc-url"),
@@ -153,6 +157,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		End:                         c.Uint64("end-height"),
 		Concurrency:                 c.Int64("concurrency"),
 		ReceiptTimeout:              c.Duration("receipt-timeout"),
+		TraceTimeout:                c.Duration("trace-timeout"),
 		Backfill:                    c.Int64("backfill-priority"),
 		BlocksCap:                   c.Int("blocks-ch-capacity"),
 		MaxFailures:                 c.Int("max-failures"),
@@ -164,6 +169,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		KafkaTopicReplicationFactor: c.Int("kafka-topic-replication-factor"),
 		KafkaTopicRetentionMs:       c.String("kafka-topic-retention-ms"),
 		KafkaTopicRetentionBytes:    c.String("kafka-topic-retention-bytes"),
+		KafkaTopicMessageMaxBytes:   c.String("kafka-topic-message-max-bytes"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),
 			Password:         c.String("kafka-sasl-password"),

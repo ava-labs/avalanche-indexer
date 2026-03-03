@@ -18,6 +18,7 @@ ON CLUSTER `%s`
 	input String,
 	type UInt8,
 	transaction_index UInt64,
-	success UInt8
+	success UInt8,
+	num_logs UInt32
 )
 ENGINE = Distributed(`%s`, `%s`, `%s_local`, sipHash64(blockchain_id))

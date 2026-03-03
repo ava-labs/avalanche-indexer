@@ -19,7 +19,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
-	confluentKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 func run(c *cli.Context) error {
@@ -126,9 +126,9 @@ func run(c *cli.Context) error {
 	// Create CorethProcessor with ClickHouse persistence and metrics
 	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
 
-	adminConfig := confluentKafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
+	adminConfig := ckafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
-	adminClient, err := confluentKafka.NewAdminClient(&adminConfig)
+	adminClient, err := ckafka.NewAdminClient(&adminConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka admin client: %w", err)
 	}
@@ -146,6 +146,9 @@ func run(c *cli.Context) error {
 	}
 	if cfg.KafkaTopicRetentionBytes != "" {
 		mainTopicConfig.Config["retention.bytes"] = cfg.KafkaTopicRetentionBytes
+	}
+	if cfg.KafkaTopicMessageMaxBytes != "" {
+		mainTopicConfig.Config["max.message.bytes"] = cfg.KafkaTopicMessageMaxBytes
 	}
 
 	err = kafka.EnsureTopic(ctx, adminClient, mainTopicConfig, sugar)
@@ -167,6 +170,9 @@ func run(c *cli.Context) error {
 		}
 		if cfg.KafkaDLQTopicRetentionBytes != "" {
 			dlqTopicConfig.Config["retention.bytes"] = cfg.KafkaDLQTopicRetentionBytes
+		}
+		if cfg.KafkaTopicMessageMaxBytes != "" {
+			dlqTopicConfig.Config["max.message.bytes"] = cfg.KafkaTopicMessageMaxBytes
 		}
 
 		err = kafka.EnsureTopic(ctx, adminClient, dlqTopicConfig, sugar)

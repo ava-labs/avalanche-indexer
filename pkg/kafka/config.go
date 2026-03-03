@@ -3,7 +3,7 @@ package kafka
 import (
 	"time"
 
-	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Default timeout values for Kafka consumer
@@ -68,7 +68,7 @@ func (c ConsumerConfig) WithDefaults() ConsumerConfig {
 // SASLConfig holds SASL authentication configuration
 type SASLConfig struct {
 	Username         string // SASL username
-	Password         string //nolint:gosec // G117: Password field required for Kafka SASL authentication
+	Password         string //nolint:gosec // runtime-provided credential required for Kafka SASL; not hardcoded
 	Mechanism        string // SASL mechanism: "SCRAM-SHA-256", "SCRAM-SHA-512", or "PLAIN"
 	SecurityProtocol string // Security protocol: "SASL_SSL" or "SASL_PLAINTEXT"
 }
@@ -79,7 +79,7 @@ func (s SASLConfig) IsEnabled() bool {
 }
 
 // ApplyToConfigMap applies SASL configuration to a Kafka ConfigMap
-func (s SASLConfig) ApplyToConfigMap(cfg *cKafka.ConfigMap) {
+func (s SASLConfig) ApplyToConfigMap(cfg *ckafka.ConfigMap) {
 	if !s.IsEnabled() {
 		return
 	}

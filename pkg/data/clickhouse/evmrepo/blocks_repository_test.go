@@ -78,10 +78,10 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 		parentBeaconBlockRootStr = string(beaconRootBytes[:])
 	}
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists + migrations during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
 		Return(nil)
 
@@ -120,6 +120,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			block.ExcessBlobGas,              // uint64
 			parentBeaconBlockRootStr,         // string or nil
 			block.MinDelayExcess,             // uint64
+			block.NumTxns,                    // uint32
 		).
 		Return(nil).
 		Once()
@@ -187,13 +188,12 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 		parentBeaconBlockRootStr = string(beaconRootBytes[:])
 	}
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists + migrations during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
-		Return(nil).
-		Times(2)
+		Return(nil)
 
 	// Expect WriteBlock call that fails
 	mockConn.
@@ -227,6 +227,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			block.ExcessBlobGas,
 			parentBeaconBlockRootStr,
 			block.MinDelayExcess,
+			block.NumTxns,
 		).
 		Return(execErr).
 		Once()
@@ -288,10 +289,10 @@ func TestRepository_DeleteBlocks_Success(t *testing.T) {
 
 	chainID := uint64(43114)
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists + migrations during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
 		Return(nil)
 
@@ -316,10 +317,10 @@ func TestRepository_DeleteBlocks_Error(t *testing.T) {
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	// Expect CreateTableIfNotExists call during initialization
+	// Expect CreateTableIfNotExists + migrations during initialization
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_blocks_local`") || containsSubstring(q, "`default`.`raw_blocks`"))
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
 		})).
 		Return(nil)
 
