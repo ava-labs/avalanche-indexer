@@ -16,6 +16,12 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"VERBOSE"},
 			Value:   false,
 		},
+		&cli.StringFlag{
+			Name:    "mode",
+			Usage:   "The mode to run the block fetcher in (blocks or traces). Default is blocks.",
+			EnvVars: []string{"MODE"},
+			Value:   blocksMode,
+		},
 		// Kafka configuration flags
 		&cli.StringFlag{
 			Name:     "bootstrap-servers",
@@ -306,6 +312,12 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
 			Value:   "raw_logs",
 		},
+		&cli.StringFlag{
+			Name:    "internal-transactions-table-name",
+			Usage:   "ClickHouse table name for internal transactions",
+			EnvVars: []string{"CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME"},
+			Value:   "internal_transactions",
+		},
 		// Metrics configuration flags
 		&cli.StringFlag{
 			Name:    "metrics-host",
@@ -485,6 +497,12 @@ func removeFlags() []cli.Flag {
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
 			Value:   "raw_logs",
+		},
+		&cli.StringFlag{
+			Name:    "internal-transactions-table-name",
+			Usage:   "ClickHouse table name for internal transactions",
+			EnvVars: []string{"CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME"},
+			Value:   "internal_transactions",
 		},
 	}
 }
