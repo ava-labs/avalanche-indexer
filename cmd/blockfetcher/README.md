@@ -9,7 +9,7 @@ Fetches blocks or debug traces from an RPC endpoint, processes them concurrently
 - **Backfill** of historical gaps within a bounded window
 - **Concurrency control** and backfill prioritization
 - **Automatic topic creation** with configurable partitions and replication
-- **Checkpoint persistence** to ClickHouse for recovery
+- **Checkpoint persistence** to ClickHouse or DynamoDB for recovery
 - **Gap watchdog** that warns if the gap grows beyond the threshold
 - **Prometheus metrics** for monitoring
 - **Graceful shutdown** with proper resource cleanup
@@ -35,16 +35,18 @@ Kafka Topic (blocks)
 
 ### Prerequisites
 
-1. **Start infrastructure services** (Kafka, ClickHouse):
+1. **Start infrastructure services** (Kafka and your checkpoint backend: ClickHouse or DynamoDB):
    ```bash
    docker compose up -d
    ```
 
 2. **Optionally set environment variables**:
    ```bash
+   export CHECKPOINT_BACKEND="clickhouse" # or dynamodb
    export CLICKHOUSE_HOSTS="localhost:9000"
    export CLICKHOUSE_USERNAME="default"
    export CLICKHOUSE_PASSWORD=""
+   export DYNAMODB_REGION="us-west-2"
    ...
    ```
 
@@ -72,6 +74,7 @@ bin/blockfetcher run \
   --max-failures 5 \
   --kafka-brokers localhost:9092 \
   --kafka-topic blocks \
+  --checkpoint-backend clickhouse \
   --kafka-topic-num-partitions 1 \
   --kafka-topic-replication-factor 1 \
   --clickhouse-cluster default \
@@ -133,9 +136,28 @@ bin/blockfetcher run \
   --kafka-security-protocol "SASL_SSL" \
   --kafka-topic-num-partitions 3 \
   --kafka-topic-replication-factor 3 \
+  --checkpoint-backend clickhouse \
   --clickhouse-cluster default \
   --clickhouse-database default \
   --verbose
+```
+
+### Run with DynamoDB checkpoints
+
+```bash
+bin/blockfetcher run \
+  --evm-chain-id 43114 \
+  --bc-id "11111111111111111111111111111111LpoYY" \
+  --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --client-type coreth \
+  --concurrency 16 \
+  --backfill-priority 4 \
+  --kafka-brokers localhost:9092 \
+  --kafka-topic blocks \
+  --checkpoint-backend dynamodb \
+  --dynamodb-region us-west-2 \
+  --checkpoint-table-name checkpoints \
+  --dynamodb-create-tables true
 ```
 
 Or using environment variables:
@@ -231,6 +253,10 @@ All flags have environment variable equivalents:
 - `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
 - `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
 - `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: checkpoints, ClickHouse table for checkpoints)
+- `--checkpoint-backend` → `CHECKPOINT_BACKEND` (default: clickhouse, options: clickhouse or dynamodb)
+- `--dynamodb-region` → `DYNAMODB_REGION` (default: us-west-2)
+- `--dynamodb-create-tables` → `DYNAMODB_CREATE_TABLES` (default: true)
+- `--dynamodb-endpoint-url` → `DYNAMODB_ENDPOINT_URL` (optional; useful with LocalStack)
 - `--checkpoint-interval` / `-i` → `CHECKPOINT_INTERVAL` (default: 1m, checkpoint write interval)
 - `--gap-watchdog-interval` / `-g` → `GAP_WATCHDOG_INTERVAL` (default: 15m, gap check interval)
 - `--gap-watchdog-max-gap` / `-G` → `GAP_WATCHDOG_MAX_GAP` (default: 100, max gap before warning)
@@ -264,7 +290,14 @@ All flags have environment variable equivalents:
 - Gracefully exits on `SIGTERM`/`SIGINT`.
 
 ### Delete Resources (checkpoints)
-As a clean up it might be needed to delete all checkpoints for specific chain. Use `remove` in this case:
+As a clean up it might be needed to delete checkpoints for a specific chain from the selected backend. Use `remove` in this case:
 ```bash
 ./bin/blockfetcher remove --evm-chain-id 43114
+
+# remove from DynamoDB table
+./bin/blockfetcher remove \
+  --checkpoint-backend dynamodb \
+  --dynamodb-region us-west-2 \
+  --checkpoint-table-name checkpoints \
+  --evm-chain-id 43114
 ```

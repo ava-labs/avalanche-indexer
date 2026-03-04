@@ -7,6 +7,7 @@ volumes:
   grafana-data:
   clickhouse-01-data:
   clickhouse-02-data:
+  localstack-data:
 
 services:
   # Kafka Broker with KRaft (no Zookeeper) - Official Apache Kafka
@@ -15,8 +16,8 @@ services:
     container_name: kafka
     hostname: kafka
     ports:
-      - "9092:9092"      # External client access
-      - "9094:9094"      # Controller port
+      - "9092:9092" # External client access
+      - "9094:9094" # Controller port
     environment:
       # KRaft settings
       KAFKA_NODE_ID: 1
@@ -24,7 +25,7 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
-      
+
       # Listener configuration
       KAFKA_LISTENERS: PLAINTEXT://:9093,CONTROLLER://:9094,EXTERNAL://:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9093,EXTERNAL://localhost:9092
@@ -36,7 +37,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-            
+
       # Performance tuning
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_LOG_SEGMENT_BYTES: 1073741824
@@ -52,7 +53,11 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9093 || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9093 || exit 1",
+        ]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -68,12 +73,12 @@ services:
     environment:
       # Dynamic config enabled for editing clusters in UI
       DYNAMIC_CONFIG_ENABLED: "true"
-      
+
       # Pre-configured local Kafka cluster
       KAFKA_CLUSTERS_0_NAME: local-kafka
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
       KAFKA_CLUSTERS_0_READONLY: "false"
-      
+
       # UI settings
       AUTH_TYPE: "DISABLED"
       SERVER_SERVLET_CONTEXT_PATH: /
@@ -83,7 +88,14 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://localhost:8080/actuator/health",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -192,5 +204,20 @@ services:
     depends_on:
       clickhouse-01:
         condition: service_healthy
+    networks:
+      - app-network
+
+  # LocalStack for local AWS services (DynamoDB)
+  localstack:
+    image: localstack/localstack:4.14.0
+    container_name: localstack
+    hostname: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: dynamodb
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - localstack-data:/var/lib/localstack
     networks:
       - app-network

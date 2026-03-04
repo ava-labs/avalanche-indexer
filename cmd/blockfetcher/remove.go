@@ -7,8 +7,6 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
@@ -25,24 +23,27 @@ func remove(c *cli.Context) error {
 		return errors.New("evm chain ID is required")
 	}
 
-	chCfg, err := buildClickHouseConfig(c)
+	checkpointCfg, err := buildCheckpointConfig(c, false)
 	if err != nil {
-		return fmt.Errorf("failed to build ClickHouse config: %w", err)
-	}
-	checkpointsTableName := c.String("checkpoint-table-name")
-
-	chClient, err := clickhouse.New(chCfg, sugar)
-	if err != nil {
-		return fmt.Errorf("failed to create ClickHouse client: %w", err)
-	}
-	defer chClient.Close()
-
-	repo, err := checkpoint.NewRepository(chClient, chCfg.Cluster, chCfg.Database, checkpointsTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create checkpoint repository: %w", err)
+		return err
 	}
 
-	err = repo.DeleteCheckpoints(ctx, evmChainID)
+	cfg := &Config{
+		ClickHouse:          checkpointCfg.ClickHouseConfig,
+		CheckpointBackend:   checkpointCfg.Backend,
+		CheckpointTableName: checkpointCfg.TableName,
+		DynamoDBRegion:      checkpointCfg.DynamoDBRegion,
+		DynamoDBCreateTable: checkpointCfg.DynamoDBCreate,
+		DynamoDBEndpointURL: checkpointCfg.DynamoDBEndpoint,
+	}
+
+	_, store, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
+	if err != nil {
+		return err
+	}
+	defer cleanupCheckpointStore()
+
+	err = store.DeleteCheckpoints(ctx, evmChainID)
 	if err != nil {
 		return fmt.Errorf("failed to delete checkpoints: %w", err)
 	}

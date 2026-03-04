@@ -14,8 +14,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
@@ -68,11 +66,15 @@ func run(c *cli.Context) error {
 		"environment", cfg.Environment,
 		"region", cfg.Region,
 		"cloudProvider", cfg.CloudProvider,
+		"checkpointBackend", cfg.CheckpointBackend,
 		"checkpointTableName", cfg.CheckpointTableName,
 		"checkpointInterval", cfg.CheckpointInterval,
 		"clickhouseCluster", cfg.ClickHouse.Cluster,
 		"clickhouseDatabase", cfg.ClickHouse.Database,
-		"clickhouseTableName", cfg.CheckpointTableName,
+		"checkpointTableName", cfg.CheckpointTableName,
+		"dynamoDBRegion", cfg.DynamoDBRegion,
+		"dynamoDBCreateTables", cfg.DynamoDBCreateTable,
+		"dynamoDBEndpointURL", cfg.DynamoDBEndpointURL,
 	)
 
 	var fetchStartHeight bool
@@ -258,22 +260,11 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("invalid mode: %s", cfg.Mode)
 	}
 
-	// Initialize ClickHouse client
-	chClient, err := clickhouse.New(cfg.ClickHouse, sugar)
+	chkpt, _, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
 	if err != nil {
-		return fmt.Errorf("failed to create ClickHouse client: %w", err)
+		return err
 	}
-	defer chClient.Close()
-
-	sugar.Info("ClickHouse client created successfully")
-
-	checkpointRepo, err := checkpoint.NewRepository(chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.CheckpointTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create checkpoint repository: %w", err)
-	}
-
-	// Cast to checkpointer.Checkpointer interface to use Read/Write/Initialize methods
-	chkpt := checkpointRepo.(checkpointer.Checkpointer)
+	defer cleanupCheckpointStore()
 
 	if fetchStartHeight {
 		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID)

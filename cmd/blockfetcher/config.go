@@ -20,6 +20,9 @@ const (
 	// maxBlockBufferSize is the maximum valid value for BlockBufferSize (uint8: 255)
 	maxBlockBufferSize = 255
 	messageMaxBytes    = 20971521 // 20MB
+	// Checkpoint backends
+	checkpointBackendClickHouse = "clickhouse"
+	checkpointBackendDynamoDB   = "dynamodb"
 )
 
 // validateRetentionValue validates a Kafka retention configuration value.
@@ -83,10 +86,16 @@ type Config struct {
 	ClickHouse clickhouse.Config
 
 	// Checkpoint settings
+	CheckpointBackend   string
 	CheckpointTableName string
 	CheckpointInterval  time.Duration
 	GapWatchdogInterval time.Duration
 	GapWatchdogMaxGap   uint64
+
+	// DynamoDB settings
+	DynamoDBRegion      string
+	DynamoDBCreateTable bool
+	DynamoDBEndpointURL string
 
 	// Metrics settings
 	MetricsHost   string
@@ -94,6 +103,15 @@ type Config struct {
 	Environment   string
 	Region        string
 	CloudProvider string
+}
+
+type checkpointConfig struct {
+	Backend          string
+	TableName        string
+	DynamoDBRegion   string
+	DynamoDBCreate   bool
+	DynamoDBEndpoint string
+	ClickHouseConfig clickhouse.Config
 }
 
 // MetricsAddr returns the formatted metrics address
@@ -130,9 +148,9 @@ func (c *Config) KafkaProducerConfig() *ckafka.ConfigMap {
 
 // buildConfig builds a Config from CLI context flags
 func buildConfig(c *cli.Context) (*Config, error) {
-	chCfg, err := buildClickHouseConfig(c)
+	checkpointCfg, err := buildCheckpointConfig(c, c.Bool("dynamodb-create-tables"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build ClickHouse config: %w", err)
+		return nil, err
 	}
 
 	// Validate retention configuration values
@@ -176,16 +194,48 @@ func buildConfig(c *cli.Context) (*Config, error) {
 			Mechanism:        c.String("kafka-sasl-mechanism"),
 			SecurityProtocol: c.String("kafka-security-protocol"),
 		},
-		ClickHouse:          chCfg,
-		CheckpointTableName: c.String("checkpoint-table-name"),
+		ClickHouse:          checkpointCfg.ClickHouseConfig,
+		CheckpointBackend:   checkpointCfg.Backend,
+		CheckpointTableName: checkpointCfg.TableName,
 		CheckpointInterval:  c.Duration("checkpoint-interval"),
 		GapWatchdogInterval: c.Duration("gap-watchdog-interval"),
 		GapWatchdogMaxGap:   c.Uint64("gap-watchdog-max-gap"),
+		DynamoDBRegion:      checkpointCfg.DynamoDBRegion,
+		DynamoDBCreateTable: checkpointCfg.DynamoDBCreate,
+		DynamoDBEndpointURL: checkpointCfg.DynamoDBEndpoint,
 		MetricsHost:         c.String("metrics-host"),
 		MetricsPort:         c.Int("metrics-port"),
 		Environment:         c.String("environment"),
 		Region:              c.String("region"),
 		CloudProvider:       c.String("cloud-provider"),
+	}, nil
+}
+
+func buildCheckpointConfig(c *cli.Context, dynamoDBCreateTable bool) (checkpointConfig, error) {
+	checkpointBackend := strings.ToLower(strings.TrimSpace(c.String("checkpoint-backend")))
+	switch checkpointBackend {
+	case checkpointBackendClickHouse, checkpointBackendDynamoDB:
+	default:
+		return checkpointConfig{}, fmt.Errorf("invalid checkpoint backend %q, must be one of [%s, %s]",
+			checkpointBackend, checkpointBackendClickHouse, checkpointBackendDynamoDB)
+	}
+
+	chCfg := clickhouse.Config{}
+	if checkpointBackend == checkpointBackendClickHouse {
+		var err error
+		chCfg, err = buildClickHouseConfig(c)
+		if err != nil {
+			return checkpointConfig{}, fmt.Errorf("failed to build ClickHouse config: %w", err)
+		}
+	}
+
+	return checkpointConfig{
+		Backend:          checkpointBackend,
+		TableName:        c.String("checkpoint-table-name"),
+		DynamoDBRegion:   c.String("dynamodb-region"),
+		DynamoDBCreate:   dynamoDBCreateTable,
+		DynamoDBEndpoint: c.String("dynamodb-endpoint-url"),
+		ClickHouseConfig: chCfg,
 	}, nil
 }
 

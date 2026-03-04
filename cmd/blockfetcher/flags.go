@@ -216,11 +216,34 @@ func runFlags() []cli.Flag {
 			Value:   "SASL_SSL",
 		},
 		&cli.StringFlag{
+			Name:    "checkpoint-backend",
+			Usage:   "Checkpoint storage backend (clickhouse or dynamodb)",
+			EnvVars: []string{"CHECKPOINT_BACKEND"},
+			Value:   checkpointBackendClickHouse,
+		},
+		&cli.StringFlag{
 			Name:    "checkpoint-table-name",
 			Aliases: []string{"T"},
 			Usage:   "The name of the table to write the checkpoint to",
 			EnvVars: []string{"CHECKPOINT_TABLE_NAME"},
 			Value:   "checkpoints",
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-region",
+			Usage:   "AWS region for DynamoDB checkpoint table",
+			EnvVars: []string{"DYNAMODB_REGION"},
+			Value:   "us-west-2",
+		},
+		&cli.BoolFlag{
+			Name:    "dynamodb-create-tables",
+			Usage:   "Create DynamoDB checkpoint table if it doesn't exist",
+			EnvVars: []string{"DYNAMODB_CREATE_TABLES"},
+			Value:   false,
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-endpoint-url",
+			Usage:   "Custom DynamoDB endpoint URL (e.g. LocalStack)",
+			EnvVars: []string{"DYNAMODB_ENDPOINT_URL"},
 		},
 		&cli.DurationFlag{
 			Name:    "checkpoint-interval",
@@ -364,11 +387,28 @@ func removeFlags() []cli.Flag {
 			Required: true,
 		},
 		&cli.StringFlag{
+			Name:    "checkpoint-backend",
+			Usage:   "Checkpoint storage backend to remove from (clickhouse or dynamodb)",
+			EnvVars: []string{"CHECKPOINT_BACKEND"},
+			Value:   checkpointBackendClickHouse,
+		},
+		&cli.StringFlag{
 			Name:    "checkpoint-table-name",
 			Aliases: []string{"T"},
 			Usage:   "The name of the table to write the checkpoint to",
 			EnvVars: []string{"CHECKPOINT_TABLE_NAME"},
 			Value:   "checkpoints",
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-region",
+			Usage:   "AWS region for DynamoDB checkpoint table",
+			EnvVars: []string{"DYNAMODB_REGION"},
+			Value:   "us-west-2",
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-endpoint-url",
+			Usage:   "Custom DynamoDB endpoint URL (e.g. LocalStack)",
+			EnvVars: []string{"DYNAMODB_ENDPOINT_URL"},
 		},
 		&cli.StringSliceFlag{
 			Name:    "clickhouse-hosts",
