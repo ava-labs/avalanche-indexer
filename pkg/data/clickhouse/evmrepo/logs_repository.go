@@ -50,7 +50,9 @@ func NewLogs(ctx context.Context, client clickhouse.Client, cluster, database, t
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the raw_logs table if it doesn't exist
+// CreateTableIfNotExists creates the raw_logs table if it doesn't exist,
+// then runs all numbered migrations from queries/migrations/blocks/ to ensure
+// the schema is up to date for existing tables.
 func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createLogsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {

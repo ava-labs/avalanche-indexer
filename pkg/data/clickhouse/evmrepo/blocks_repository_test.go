@@ -257,6 +257,7 @@ func createTestBlock() *BlockRow {
 		BlockNumber:           big.NewInt(1647),
 		Hash:                  hash,
 		ParentHash:            parentHash,
+		TimestampMs:           1604768510000,
 		BlockTime:             time.Unix(1604768510, 0).UTC(),
 		Miner:                 miner,
 		Difficulty:            big.NewInt(1),
