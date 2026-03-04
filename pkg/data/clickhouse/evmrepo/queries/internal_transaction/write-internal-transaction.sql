@@ -1,5 +1,5 @@
 INSERT INTO `%s`.`%s` (
-	blockchain_id, evm_chain_id, block_number, block_timestamp, transaction_hash,
+	blockchain_id, evm_chain_id, block_number, block_time, transaction_hash,
 	type, from_address, to_address, value, gas, gas_used, revert, error, revert_reason,
 	input, output, call_index
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
