@@ -1,12 +1,46 @@
 ## consumerindexer
 
-Consumes blocks from Kafka pipeline with concurrent processing, automatic offset management, and DLQ support.
+Consumes blockchain data from Kafka pipeline with concurrent processing, automatic offset management, and DLQ support.
 
 ### Features
+- **Two Operating Modes**: Blocks mode (default) and Traces mode for processing debug traces
 - **Concurrent Processing**: Configurable concurrency with semaphore-based throttling
 - **At-Least-Once Delivery**: Sliding window offset commits ensure no data loss
 - **Dead Letter Queue**: Failed messages automatically sent to DLQ topic
 - **Graceful Shutdown**: Waits for in-flight messages before terminating
+
+### Modes
+
+#### Blocks Mode (default)
+Processes EVM blocks and persists:
+- Raw blocks to `raw_blocks` table
+- Transactions to `raw_transactions` table
+- Event logs to `raw_logs` table
+
+#### Traces Mode
+Processes debug traces (internal transactions) and persists to `internal_transactions` table:
+- Flattens nested call traces into individual records
+- Captures CALL, DELEGATECALL, STATICCALL, CREATE operations
+- Tracks gas usage, reverts, and errors
+- Maintains hierarchical call indices (e.g., `call_0`, `call_0_0`, `call_0_0_1`)
+
+**Internal Transactions Schema:**
+- `blockchain_id` - Avalanche blockchain ID
+- `evm_chain_id` - EVM chain ID (UInt256)
+- `block_number` - Block number
+- `transaction_hash` - Parent transaction hash
+- `type` - Call type (CALL, DELEGATECALL, STATICCALL, CREATE, etc.)
+- `from` - Caller address
+- `to` - Callee address
+- `value` - Value transferred (wei as string)
+- `gas` - Gas limit provided
+- `gas_used` - Actual gas used
+- `revert` - Whether the call reverted
+- `error` - Error message if reverted
+- `revert_reason` - Revert reason data
+- `input` - Call input data
+- `output` - Call output data
+- `call_index` - Hierarchical index (e.g., `call_0_1_2`)
 
 ### Usage
 
@@ -14,8 +48,10 @@ Consumes blocks from Kafka pipeline with concurrent processing, automatic offset
 
 **Note:** The example below uses minimal Kafka configuration (1 partition, replication factor 1) suitable for **local development and testing** with a single-broker setup. Local Kafka (docker-compose) doesn't require SASL authentication.
 
+#### Blocks Mode (default)
 ```bash
 bin/consumerindexer run \
+  --mode blocks \
   --bootstrap-servers localhost:9092 \
   --group-id my-consumer-group \
   --topic blocks \
@@ -32,12 +68,34 @@ bin/consumerindexer run \
   --clickhouse-username default
 ```
 
+#### Traces Mode
+```bash
+bin/consumerindexer run \
+  --mode traces \
+  --bootstrap-servers localhost:9092 \
+  --group-id my-trace-consumer-group \
+  --topic traces \
+  --dlq-topic traces-dlq \
+  --publish-to-dlq \
+  --concurrency 10 \
+  --kafka-topic-num-partitions 1 \
+  --kafka-topic-replication-factor 1 \
+  --kafka-dlq-topic-num-partitions 1 \
+  --kafka-dlq-topic-replication-factor 1 \
+  --clickhouse-hosts localhost:9000 \
+  --clickhouse-cluster default \
+  --clickhouse-database default \
+  --clickhouse-username default \
+  --internal-transactions-table-name internal_transactions
+```
+
 ### Run with SASL Authentication (OCI Kafka, etc.)
 
 For authenticated Kafka clusters (e.g., Oracle Cloud Infrastructure Kafka):
 
 ```bash
 bin/consumerindexer run \
+  --mode blocks \
   --bootstrap-servers "your-kafka-broker.example.com:9092" \
   --group-id my-consumer-group \
   --topic blocks \
@@ -57,6 +115,8 @@ bin/consumerindexer run \
   --clickhouse-database default \
   --clickhouse-username default
 ```
+
+**Note:** Change `--mode` to `traces` and `--topic` to your traces topic when processing debug traces.
 
 Or using environment variables:
 
@@ -82,6 +142,10 @@ bin/consumerindexer run --verbose
 ### Flags
 
 All flags have environment variable equivalents:
+
+**Application flags:**
+- `--mode` → `MODE` (default: "blocks", options: "blocks" or "traces")
+- `--verbose` / `-v` → none (enable verbose application logging)
 
 **Kafka flags:**
 - `--bootstrap-servers` / `-b` → `KAFKA_BOOTSTRAP_SERVERS` (required)
@@ -110,7 +174,6 @@ All flags have environment variable equivalents:
 - `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
 - `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
 - `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
-- `--verbose` / `-v` → none (enable verbose application logging)
 
 **ClickHouse flags:**
 - `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000", comma-separated)
@@ -120,8 +183,12 @@ All flags have environment variable equivalents:
 - `--clickhouse-password` → `CLICKHOUSE_PASSWORD` (default: "")
 - `--clickhouse-debug` → `CLICKHOUSE_DEBUG` (default: false)
 - `--clickhouse-insecure-skip-verify` → `CLICKHOUSE_INSECURE_SKIP_VERIFY` (default: true)
-- `--raw-blocks-table-name` → `CLICKHOUSE_RAW_BLOCKS_TABLE_NAME` (default: "default.raw_blocks")
-- `--raw-transactions-table-name` → `CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME` (default: "default.raw_transactions")
+
+**Table name flags:**
+- `--raw-blocks-table-name` → `CLICKHOUSE_RAW_BLOCKS_TABLE_NAME` (default: "raw_blocks", used in blocks mode)
+- `--raw-transactions-table-name` → `CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME` (default: "raw_transactions", used in blocks mode)
+- `--raw-logs-table-name` → `CLICKHOUSE_RAW_LOGS_TABLE_NAME` (default: "raw_logs", used in blocks mode)
+- `--internal-transactions-table-name` → `CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME` (default: "internal_transactions", used in traces mode)
 
 Tables are automatically created if they don't exist. See `--help` for additional ClickHouse connection tuning parameters.
 
@@ -143,10 +210,12 @@ docker build -t indexer:latest .
 
 Run with environment variables (ENTRYPOINT selects binary by `APP`):
 
+**Blocks mode:**
 ```bash
 docker run --rm \
   --network avalanche-indexer_app-network \
   -e APP=consumerindexer \
+  -e MODE=blocks \
   -e KAFKA_BOOTSTRAP_SERVERS=kafka:9093 \
   -e KAFKA_GROUP_ID=my-consumer-group \
   -e KAFKA_TOPIC=blocks \
@@ -166,6 +235,27 @@ docker run --rm \
   -e ENVIRONMENT=production \
   -e REGION=us-east-1 \
   -e CLOUD_PROVIDER=aws \
+  indexer:latest run --verbose
+```
+
+**Traces mode:**
+```bash
+docker run --rm \
+  --network avalanche-indexer_app-network \
+  -e APP=consumerindexer \
+  -e MODE=traces \
+  -e KAFKA_BOOTSTRAP_SERVERS=kafka:9093 \
+  -e KAFKA_GROUP_ID=my-trace-consumer-group \
+  -e KAFKA_TOPIC=traces \
+  -e KAFKA_DLQ_TOPIC=traces-dlq \
+  -e KAFKA_PUBLISH_TO_DLQ=true \
+  -e KAFKA_CONCURRENCY=10 \
+  -e CLICKHOUSE_HOSTS=clickhouse:9000 \
+  -e CLICKHOUSE_USERNAME=default \
+  -e CLICKHOUSE_CLUSTER=default \
+  -e CLICKHOUSE_DATABASE=default \
+  -e METRICS_PORT=9090 \
+  -e CHAIN_ID=43114 \
   indexer:latest run --verbose
 ```
 
@@ -213,7 +303,13 @@ docker run --rm \
 - Returns non-zero exit code on fatal errors
 
 ### Delete Resources 
-As a clean up it might be needed to delete all blocks, transactions and logs for specific chain. Use `remove` in this case:
+As a clean up it might be needed to delete all blocks, transactions, logs, and internal transactions for a specific chain. Use `remove` in this case:
 ```bash
 ./bin/consumerindexer remove --evm-chain-id 43114
 ```
+
+This will delete data from all tables:
+- `raw_blocks`
+- `raw_transactions`
+- `raw_logs`
+- `internal_transactions`

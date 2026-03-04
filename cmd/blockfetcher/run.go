@@ -164,17 +164,18 @@ func run(c *cli.Context) error {
 	case tracesMode:
 		switch cfg.ClientType {
 		case "coreth":
-			client, err := corethRpc.DialContext(ctx, cfg.RPCURL)
+			rpc, err := corethRpc.DialContext(ctx, cfg.RPCURL)
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
-			defer client.Close()
+			defer rpc.Close()
+			cclient := corethClient.New(rpc)
 
-			w, err = worker.NewCorethTracesWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
+			w, err = worker.NewCorethTracesWorker(cclient, rpc, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
 			if err != nil {
 				return fmt.Errorf("failed to create traces worker: %w", err)
 			}
-			cclient := corethClient.New(client)
+
 			sub = subscriber.NewCoreth(sugar, cclient)
 
 			if fetchLatestHeight {
@@ -185,17 +186,17 @@ func run(c *cli.Context) error {
 				sugar.Infof("latest block height: %d", end)
 			}
 		case "subnet-evm":
-			client, err := subnetRpc.DialContext(ctx, cfg.RPCURL)
+			rpc, err := subnetRpc.DialContext(ctx, cfg.RPCURL)
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
-			defer client.Close()
+			defer rpc.Close()
+			sclient := subnetClient.NewClient(rpc)
 
-			w, err = worker.NewSubnetEVMTracesWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
+			w, err = worker.NewSubnetEVMTracesWorker(sclient, rpc, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
 			if err != nil {
 				return fmt.Errorf("failed to create traces worker: %w", err)
 			}
-			sclient := subnetClient.NewClient(client)
 			sub = subscriber.NewSubnetEVM(sugar, sclient)
 
 			if fetchLatestHeight {

@@ -22,6 +22,11 @@ import (
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
+const (
+	blocksMode = "blocks"
+	tracesMode = "traces"
+)
+
 func run(c *cli.Context) error {
 	// Build configuration from CLI flags
 	cfg, err := buildConfig(c)
@@ -35,7 +40,10 @@ func run(c *cli.Context) error {
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 
+	mode := cfg.Mode
+
 	sugar.Infow("config",
+		"mode", cfg.Mode,
 		"verbose", cfg.Verbose,
 		"bootstrapServers", cfg.BootstrapServers,
 		"groupID", cfg.GroupID,
@@ -64,6 +72,7 @@ func run(c *cli.Context) error {
 		"rawBlocksTableName", cfg.RawBlocksTableName,
 		"rawTransactionsTableName", cfg.RawTransactionsTableName,
 		"rawLogsTableName", cfg.RawLogsTableName,
+		"internalTransactionsTableName", cfg.InternalTransactionsTableName,
 		"publishToDLQ", cfg.PublishToDLQ,
 		"kafkaTopicNumPartitions", cfg.KafkaTopicNumPartitions,
 		"kafkaTopicReplicationFactor", cfg.KafkaTopicReplicationFactor,
@@ -104,27 +113,44 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	// Initialize repositories (tables are created automatically)
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create blocks repository: %w", err)
-	}
-	sugar.Info("Blocks table ready", "tableName", cfg.RawBlocksTableName)
+	// Create processor based on mode
+	var proc processor.Processor
+	switch mode {
+	case blocksMode:
+		// Initialize repositories for blocks mode (tables are created automatically)
+		blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
+		if err != nil {
+			return fmt.Errorf("failed to create blocks repository: %w", err)
+		}
+		sugar.Info("Blocks table ready", "tableName", cfg.RawBlocksTableName)
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create transactions repository: %w", err)
-	}
-	sugar.Info("Transactions table ready", "tableName", cfg.RawTransactionsTableName)
+		transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
+		if err != nil {
+			return fmt.Errorf("failed to create transactions repository: %w", err)
+		}
+		sugar.Info("Transactions table ready", "tableName", cfg.RawTransactionsTableName)
 
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create logs repository: %w", err)
-	}
-	sugar.Info("Logs table ready", "tableName", cfg.RawLogsTableName)
+		logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
+		if err != nil {
+			return fmt.Errorf("failed to create logs repository: %w", err)
+		}
+		sugar.Info("Logs table ready", "tableName", cfg.RawLogsTableName)
 
-	// Create CorethProcessor with ClickHouse persistence and metrics
-	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
+		// Create CorethProcessor with ClickHouse persistence and metrics
+		proc = processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
+	case tracesMode:
+		// Initialize internal transactions repository for traces
+		internalTransactionsRepo, err := evmrepo.NewInternalTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.InternalTransactionsTableName)
+		if err != nil {
+			return fmt.Errorf("failed to create internal transactions repository: %w", err)
+		}
+		sugar.Info("Internal transactions table ready", "tableName", cfg.InternalTransactionsTableName)
+
+		// Create CorethTracesProcessor with ClickHouse persistence and metrics
+		proc = processor.NewCorethTracesProcessor(sugar, internalTransactionsRepo, m)
+	default:
+		return fmt.Errorf("invalid mode: %s", mode)
+	}
 
 	adminConfig := ckafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)

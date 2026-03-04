@@ -17,10 +17,13 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
+	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
 
 type CorethTracesWorker struct {
-	client       *rpc.Client
+	client       *evmclient.Client
+	rpc          *rpc.Client
 	producer     *kafka.Producer
 	topic        string
 	evmChainID   *big.Int
@@ -31,7 +34,8 @@ type CorethTracesWorker struct {
 }
 
 func NewCorethTracesWorker(
-	client *rpc.Client,
+	client *evmclient.Client,
+	rpc *rpc.Client,
 	producer *kafka.Producer,
 	topic string,
 	evmChainID uint64,
@@ -46,6 +50,7 @@ func NewCorethTracesWorker(
 
 	return &CorethTracesWorker{
 		client:       client,
+		rpc:          rpc,
 		producer:     producer,
 		topic:        topic,
 		evmChainID:   new(big.Int).SetUint64(evmChainID),
@@ -59,13 +64,22 @@ func NewCorethTracesWorker(
 func (ctw *CorethTracesWorker) Process(ctx context.Context, height uint64) error {
 	ctw.log.Debugw("worker starting block processing", "height", height)
 
+	h := new(big.Int).SetUint64(height)
+	ctw.log.Debugw("calling eth_getBlockByNumber", "height", height)
+	block, err := ctw.client.BlockByNumber(ctx, h)
+	if err != nil {
+		return fmt.Errorf("get block failed %d: %w", height, err)
+	}
+
+	timestamp := block.Time()
+
 	traces, err := ctw.FetchBlockTraces(ctx, height)
 	if err != nil {
 		return fmt.Errorf("fetch block traces failed %d: %w", height, err)
 	}
 
 	ctw.log.Debugw("block traces fetched, serializing", "height", height, "traces", len(traces))
-	bytes, err := messages.MarshalEVMBlockTrace(height, traces, ctw.evmChainID, ctw.blockchainID)
+	bytes, err := messages.MarshalEVMBlockTrace(height, timestamp, traces, ctw.evmChainID, ctw.blockchainID)
 	if err != nil {
 		return fmt.Errorf("serialize block traces failed %d: %w", height, err)
 	}
@@ -109,7 +123,7 @@ func (ctw *CorethTracesWorker) FetchBlockTraces(ctx context.Context, height uint
 	}
 
 	var traces []json.RawMessage
-	err := ctw.client.CallContext(ctxTimeout, &traces, method, fmt.Sprintf("0x%x", height), traceConfig)
+	err := ctw.rpc.CallContext(ctxTimeout, &traces, method, fmt.Sprintf("0x%x", height), traceConfig)
 	rpcDuration := time.Since(start)
 
 	if ctw.metrics != nil {
