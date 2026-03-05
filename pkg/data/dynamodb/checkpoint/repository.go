@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
+
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
 )
 
 const (
@@ -43,6 +44,10 @@ type Repository interface {
 var (
 	_ Repository                = (*repository)(nil)
 	_ checkpointer.Checkpointer = (*repository)(nil)
+
+	// ErrTableNotFoundCreateDisabled is returned when the checkpoint table does
+	// not exist and auto-create is disabled.
+	ErrTableNotFoundCreateDisabled = errors.New("checkpoint table does not exist and auto-create is disabled")
 )
 
 type Config struct {
@@ -112,7 +117,7 @@ func (r *repository) Initialize(ctx context.Context) error {
 	}
 
 	if !r.createTables {
-		return fmt.Errorf("checkpoint table %s does not exist and auto-create is disabled", r.tableName)
+		return fmt.Errorf("checkpoint table %s does not exist and auto-create is disabled: %w", r.tableName, ErrTableNotFoundCreateDisabled)
 	}
 
 	if r.logger != nil {

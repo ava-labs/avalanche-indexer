@@ -8,6 +8,7 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+
 	chcheckpoint "github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	dyncheckpoint "github.com/ava-labs/avalanche-indexer/pkg/data/dynamodb/checkpoint"
 )

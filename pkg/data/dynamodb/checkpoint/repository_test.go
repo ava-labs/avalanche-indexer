@@ -3,6 +3,7 @@ package checkpoint
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -39,7 +40,7 @@ func (m *mockDynamoClient) DeleteItem(ctx context.Context, params *dynamodb.Dele
 	return m.deleteItemFn(ctx, params, optFns...)
 }
 
-func TestRepositoryInitialize_TableExists(t *testing.T) {
+func TestRepository_Initialize_TableExists(t *testing.T) {
 	repo := &repository{
 		tableName:    "checkpoints",
 		createTables: true,
@@ -52,16 +53,16 @@ func TestRepositoryInitialize_TableExists(t *testing.T) {
 				}, nil
 			},
 			createTableFn: func(context.Context, *dynamodb.CreateTableInput, ...func(*dynamodb.Options)) (*dynamodb.CreateTableOutput, error) {
-				t.Fatal("CreateTable should not be called")
+				require.FailNow(t, "CreateTable should not be called")
 				return nil, nil
 			},
 		},
 	}
 
-	require.NoError(t, repo.Initialize(context.Background()))
+	require.NoError(t, repo.Initialize(t.Context()))
 }
 
-func TestRepositoryInitialize_CreateTable(t *testing.T) {
+func TestRepository_Initialize_CreateTable(t *testing.T) {
 	describeCalls := 0
 	repo := &repository{
 		tableName:    "checkpoints",
@@ -84,10 +85,10 @@ func TestRepositoryInitialize_CreateTable(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, repo.Initialize(context.Background()))
+	require.NoError(t, repo.Initialize(t.Context()))
 }
 
-func TestRepositoryInitialize_NotFoundCreateDisabled(t *testing.T) {
+func TestRepository_Initialize_TableNotFoundCreateDisabled(t *testing.T) {
 	repo := &repository{
 		tableName:    "checkpoints",
 		createTables: false,
@@ -98,12 +99,11 @@ func TestRepositoryInitialize_NotFoundCreateDisabled(t *testing.T) {
 		},
 	}
 
-	err := repo.Initialize(context.Background())
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "auto-create is disabled")
+	err := repo.Initialize(t.Context())
+	require.ErrorIs(t, err, ErrTableNotFoundCreateDisabled)
 }
 
-func TestRepositoryWriteReadDelete(t *testing.T) {
+func TestRepository_Write_ReadDelete(t *testing.T) {
 	var writeInput *dynamodb.PutItemInput
 	repo := &repository{
 		tableName: "checkpoints",
@@ -119,7 +119,7 @@ func TestRepositoryWriteReadDelete(t *testing.T) {
 				return &dynamodb.PutItemOutput{}, nil
 			},
 			getItemFn: func(_ context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
-				require.Equal(t, aws.ToString(in.TableName), "checkpoints")
+				require.Equal(t, "checkpoints", aws.ToString(in.TableName))
 				return &dynamodb.GetItemOutput{
 					Item: map[string]types.AttributeValue{
 						chainIDAttr:           &types.AttributeValueMemberN{Value: "43114"},
@@ -133,20 +133,20 @@ func TestRepositoryWriteReadDelete(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, repo.Write(context.Background(), 43114, 123))
+	require.NoError(t, repo.Write(t.Context(), 43114, 123))
 	require.NotNil(t, writeInput)
 	require.Equal(t, "43114", writeInput.Item[chainIDAttr].(*types.AttributeValueMemberN).Value)
 	require.Equal(t, "123", writeInput.Item[lowestUnprocessedAttr].(*types.AttributeValueMemberN).Value)
 
-	lowest, exists, err := repo.Read(context.Background(), 43114)
+	lowest, exists, err := repo.Read(t.Context(), 43114)
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.Equal(t, uint64(123), lowest)
 
-	require.NoError(t, repo.DeleteCheckpoints(context.Background(), 43114))
+	require.NoError(t, repo.DeleteCheckpoints(t.Context(), 43114))
 }
 
-func TestRepositoryReadNoRows(t *testing.T) {
+func TestRepository_Read_NoRows(t *testing.T) {
 	repo := &repository{
 		tableName: "checkpoints",
 		client: &mockDynamoClient{
@@ -156,13 +156,13 @@ func TestRepositoryReadNoRows(t *testing.T) {
 		},
 	}
 
-	lowest, exists, err := repo.Read(context.Background(), 1)
+	lowest, exists, err := repo.Read(t.Context(), 1)
 	require.NoError(t, err)
 	require.False(t, exists)
 	require.Zero(t, lowest)
 }
 
-func TestRepositoryReadParseError(t *testing.T) {
+func TestRepository_Read_ParseError(t *testing.T) {
 	repo := &repository{
 		tableName: "checkpoints",
 		client: &mockDynamoClient{
@@ -176,21 +176,21 @@ func TestRepositoryReadParseError(t *testing.T) {
 		},
 	}
 
-	_, _, err := repo.Read(context.Background(), 1)
-	require.Error(t, err)
+	_, _, err := repo.Read(t.Context(), 1)
+	require.ErrorIs(t, err, strconv.ErrSyntax)
 }
 
-func TestRepositoryWriteError(t *testing.T) {
+func TestRepository_Write_Error(t *testing.T) {
+	writeErr := errors.New("failed to write checkpoint")
 	repo := &repository{
 		tableName: "checkpoints",
 		client: &mockDynamoClient{
 			putItemFn: func(context.Context, *dynamodb.PutItemInput, ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
-				return nil, errors.New("boom")
+				return nil, writeErr
 			},
 		},
 	}
 
-	err := repo.Write(context.Background(), 1, 2)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to write checkpoint")
+	err := repo.Write(t.Context(), 1, 2)
+	require.ErrorIs(t, err, writeErr)
 }
