@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ava-labs/subnet-evm/eth/tracers"
-	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 	"github.com/ava-labs/subnet-evm/rpc"
 	"go.uber.org/zap"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
+	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 )
 
 type SubnetEVMTracesWorker struct {

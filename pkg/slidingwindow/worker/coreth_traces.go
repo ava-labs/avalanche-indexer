@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ava-labs/coreth/eth/tracers"
-	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 )
 
 type CorethTracesWorker struct {
