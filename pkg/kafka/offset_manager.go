@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 

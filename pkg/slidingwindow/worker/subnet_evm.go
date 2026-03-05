@@ -13,8 +13,8 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
 	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
 )
 

@@ -16,7 +16,6 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
 

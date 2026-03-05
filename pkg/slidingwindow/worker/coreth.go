@@ -14,8 +14,8 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
 
