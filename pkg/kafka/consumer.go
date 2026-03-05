@@ -213,12 +213,23 @@ func (c *Consumer) Start(ctx context.Context) error {
 }
 
 // dispatch spawns a goroutine to process msg with concurrency control via semaphore.
-// Returns immediately after spawning (non-blocking). If context is cancelled during semaphore
-// acquisition, the message is dropped (will be reprocessed after rebalance).
-// On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
+// If all concurrency slots are occupied, the consumer partitions are paused to apply
+// backpressure (stop pre-fetching from brokers), then a blocking acquire waits for a
+// slot. Once acquired the partitions are resumed. This keeps librdkafka's internal
+// buffers bounded while the background heartbeat thread maintains group membership.
 func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
-	if err := c.sem.Acquire(ctx, 1); err != nil {
-		return
+	if !c.sem.TryAcquire(1) {
+		c.pauseConsumer()
+		if err := c.sem.Acquire(ctx, 1); err != nil {
+			c.resumeConsumer()
+			select {
+			case c.errCh <- err:
+			default:
+				c.log.Errorw("error channel full, dropping error", "error", err)
+			}
+			return
+		}
+		c.resumeConsumer()
 	}
 
 	c.wg.Add(1)
@@ -230,23 +241,24 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 		defer c.metrics.DecMessagesInFlight()
 
 		start := time.Now()
-		err := c.processor.Process(ctx, msg)
+		err := c.processWithRetry(ctx, msg)
 		if err == nil {
 			c.offsetManager.InsertOffsetWithRetry(ctx, msg)
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, nil, time.Since(start).Seconds())
 			return
 		}
 
-		c.log.Errorw("error processing message", "error", err, "partition", msg.TopicPartition.Partition, "offset", msg.TopicPartition.Offset)
-
 		if errors.Is(err, context.Canceled) {
-			c.log.Debugw("processing cancelled due to context cancellation",
-				"partition", msg.TopicPartition.Partition,
-				"offset", msg.TopicPartition.Offset,
-			)
+			c.log.Debugw("message processing cancelled", "error", err)
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
 			return
 		}
+
+		c.log.Errorw("message processing failed after retries",
+			"error", err,
+			"partition", msg.TopicPartition.Partition,
+			"offset", msg.TopicPartition.Offset,
+		)
 
 		if !c.cfg.PublishToDLQ {
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
@@ -278,6 +290,77 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 		c.offsetManager.InsertOffsetWithRetry(ctx, msg)
 		c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
 	}()
+}
+
+// processWithRetry attempts to process msg, retrying according to the
+// configured RetryPolicy. Returns nil on success, context.Canceled if the
+// context is cancelled, or the last processing error after retries are
+// exhausted. With InfiniteRetries the loop only exits on success or
+// context cancellation — the consumer stays stuck on the offset.
+func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) error {
+	err := c.processor.Process(ctx, msg)
+	if err == nil || errors.Is(err, context.Canceled) {
+		return err
+	}
+	c.metrics.RecordMessageRetry()
+
+	policy := c.cfg.Retry
+	for attempt := 0; policy.ShouldRetry(attempt); attempt++ {
+		backoff := policy.Backoff(attempt)
+		c.log.Warnw("retrying message processing",
+			"error", err,
+			"attempt", attempt+1,
+			"backoff", backoff,
+			"partition", msg.TopicPartition.Partition,
+			"offset", msg.TopicPartition.Offset,
+		)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		err = c.processor.Process(ctx, msg)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+	}
+
+	c.metrics.RecordMessageRetriesExhausted()
+	return err
+}
+
+// pauseConsumer pauses fetching on all currently assigned partitions and records
+// a backpressure metric. It is safe to call when no partitions are assigned.
+func (c *Consumer) pauseConsumer() {
+	partitions, err := c.consumer.Assignment()
+	if err != nil || len(partitions) == 0 {
+		return
+	}
+	if err := c.consumer.Pause(partitions); err != nil {
+		c.log.Warnw("failed to pause consumer partitions", "error", err)
+		return
+	}
+	c.metrics.RecordConsumerPause()
+	c.log.Debugw("consumer paused due to backpressure", "partitions", len(partitions))
+}
+
+// resumeConsumer resumes fetching on all currently assigned partitions.
+func (c *Consumer) resumeConsumer() {
+	partitions, err := c.consumer.Assignment()
+	if err != nil || len(partitions) == 0 {
+		return
+	}
+	if err := c.consumer.Resume(partitions); err != nil {
+		c.log.Warnw("failed to resume consumer partitions", "error", err)
+		return
+	}
+	c.metrics.RecordConsumerResume()
+	c.log.Debugw("consumer resumed after backpressure cleared", "partitions", len(partitions))
 }
 
 // publishToDLQ publishes msg to the configured DLQ topic, preserving original key and value.

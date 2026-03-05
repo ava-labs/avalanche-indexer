@@ -47,6 +47,32 @@ func TestLabels_toPrometheusLabels(t *testing.T) {
 			},
 		},
 		{
+			name: "all labels including role",
+			labels: Labels{
+				EVMChainID:    43114,
+				Environment:   "production",
+				Region:        "us-east-1",
+				CloudProvider: "aws",
+				Role:          "primary",
+			},
+			expected: prometheus.Labels{
+				"evm_chain_id":   "43114",
+				"environment":    "production",
+				"region":         "us-east-1",
+				"cloud_provider": "aws",
+				"role":           "primary",
+			},
+		},
+		{
+			name: "role only",
+			labels: Labels{
+				Role: "dlq",
+			},
+			expected: prometheus.Labels{
+				"role": "dlq",
+			},
+		},
+		{
 			name: "zero chain ID excluded",
 			labels: Labels{
 				EVMChainID:  0,
@@ -111,6 +137,48 @@ func TestNewWithLabels(t *testing.T) {
 			}
 			require.Equal(t, "43114", labelMap["evm_chain_id"])
 			require.Equal(t, "test", labelMap["environment"])
+		}
+	}
+}
+
+func TestNewWithLabels_DifferentRoles_SameRegistry(t *testing.T) {
+	reg := prometheus.NewRegistry()
+
+	primary, err := NewWithLabels(reg, Labels{
+		EVMChainID: 43114,
+		Role:       "primary",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, primary)
+
+	dlq, err := NewWithLabels(reg, Labels{
+		EVMChainID: 43114,
+		Role:       "dlq",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, dlq)
+
+	// Update each and verify both coexist on the same registry
+	primary.UpdateWindowMetrics(100, 200, 50)
+	dlq.UpdateWindowMetrics(10, 20, 5)
+
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "indexer_lowest" {
+			require.Len(t, mf.GetMetric(), 2, "expected two series for primary and dlq roles")
+
+			roles := make(map[string]float64)
+			for _, metric := range mf.GetMetric() {
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == "role" {
+						roles[label.GetValue()] = metric.GetGauge().GetValue()
+					}
+				}
+			}
+			require.Equal(t, float64(100), roles["primary"])
+			require.Equal(t, float64(10), roles["dlq"])
 		}
 	}
 }
@@ -967,6 +1035,39 @@ func TestMetrics_IncUnknownEventCount(t *testing.T) {
 	require.Equal(t, float64(3), testutil.ToFloat64(m.unknownEvents))
 }
 
+func TestMetrics_ConsumerPauseResume(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	require.Equal(t, float64(0), testutil.ToFloat64(m.consumerPauses))
+	require.Equal(t, float64(0), testutil.ToFloat64(m.consumerResumes))
+
+	m.RecordConsumerPause()
+	m.RecordConsumerPause()
+	require.Equal(t, float64(2), testutil.ToFloat64(m.consumerPauses))
+
+	m.RecordConsumerResume()
+	require.Equal(t, float64(1), testutil.ToFloat64(m.consumerResumes))
+}
+
+func TestMetrics_MessageRetries(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := New(reg)
+	require.NoError(t, err)
+
+	require.Equal(t, float64(0), testutil.ToFloat64(m.messageRetries))
+	require.Equal(t, float64(0), testutil.ToFloat64(m.messageRetriesExhaust))
+
+	m.RecordMessageRetry()
+	m.RecordMessageRetry()
+	m.RecordMessageRetry()
+	require.Equal(t, float64(3), testutil.ToFloat64(m.messageRetries))
+
+	m.RecordMessageRetriesExhausted()
+	require.Equal(t, float64(1), testutil.ToFloat64(m.messageRetriesExhaust))
+}
+
 func TestMetrics_ConsumerMethods_NilReceiver(t *testing.T) {
 	var m *Metrics
 
@@ -1024,5 +1125,21 @@ func TestMetrics_ConsumerMethods_NilReceiver(t *testing.T) {
 
 	require.NotPanics(t, func() {
 		m.AddLogsProcessed(10)
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordConsumerPause()
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordConsumerResume()
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordMessageRetry()
+	})
+
+	require.NotPanics(t, func() {
+		m.RecordMessageRetriesExhausted()
 	})
 }

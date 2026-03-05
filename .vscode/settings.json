@@ -17,6 +17,7 @@
     "librdkafka",
     "nolint",
     "roundrobin",
+    "SASL",
     "schemaregistry",
     "serde",
     "Warnf",
