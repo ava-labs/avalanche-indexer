@@ -34,8 +34,8 @@ var internalTransactionsMigrationsFS embed.FS
 // To add a new migration, drop a numbered .sql file into the appropriate
 // queries/migrations/<table>/ directory. No Go code changes required.
 //
-//	Example: queries/migrations/blocks/002_add_foo_local.sql
-//	         queries/migrations/blocks/002_add_foo_distributed.sql
+//	Example: queries/migrations/block/002_add_foo_local.sql
+//	         queries/migrations/block/002_add_foo_distributed.sql
 func RunMigrations(
 	ctx context.Context,
 	conn driver.Conn,

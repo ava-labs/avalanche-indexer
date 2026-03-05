@@ -51,7 +51,7 @@ func NewBlocks(ctx context.Context, client clickhouse.Client, cluster, database,
 }
 
 // CreateTableIfNotExists creates the raw_blocks table if it doesn't exist,
-// then runs all numbered migrations from queries/migrations/blocks/ to ensure
+// then runs all numbered migrations from queries/migrations/block/ to ensure
 // the schema is up to date for existing tables.
 func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createBlocksTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
