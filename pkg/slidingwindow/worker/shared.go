@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
 
 var (
@@ -16,6 +16,6 @@ var (
 )
 
 // observeProducedMessageSize records the size of a Kafka message produced by a worker.
-func observeProducedMessageSize(m *metricslib.Metrics, sizeBytes int) {
-	m.ObserveKafkaMessageSize(metricslib.DirectionProduced, sizeBytes)
+func observeProducedMessageSize(m *metrics.Metrics, sizeBytes int) {
+	m.ObserveKafkaMessageSize(metrics.DirectionProduced, sizeBytes)
 }

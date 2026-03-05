@@ -13,9 +13,9 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
-	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -33,7 +33,7 @@ type CorethProcessor struct {
 	blocksRepo evmrepo.Blocks
 	txsRepo    evmrepo.Transactions
 	logsRepo   evmrepo.Logs
-	metrics    *metricslib.Metrics
+	metrics    *metrics.Metrics
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
@@ -43,17 +43,17 @@ func NewCorethProcessor(
 	blocksRepo evmrepo.Blocks,
 	txsRepo evmrepo.Transactions,
 	logsRepo evmrepo.Logs,
-	metrics *metricslib.Metrics,
+	m *metrics.Metrics,
 ) *CorethProcessor {
-	if metrics == nil {
-		metrics = metricslib.NewNoOp()
+	if m == nil {
+		m = metrics.NewNoOp()
 	}
 	return &CorethProcessor{
 		log:        log,
 		blocksRepo: blocksRepo,
 		txsRepo:    txsRepo,
 		logsRepo:   logsRepo,
-		metrics:    metrics,
+		metrics:    m,
 	}
 }
 
@@ -439,7 +439,7 @@ func CorethLogToLogRow(
 }
 
 // recordClickHouseWrite records a ClickHouse write duration and status for a table.
-func recordClickHouseWrite(m *metricslib.Metrics, table string, err error, writeStart time.Time) {
+func recordClickHouseWrite(m *metrics.Metrics, table string, err error, writeStart time.Time) {
 	m.RecordClickHouseWrite(table, err, time.Since(writeStart).Seconds())
 }
 

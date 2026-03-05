@@ -15,7 +15,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 
-	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
 )
 
@@ -26,7 +26,7 @@ type CorethWorker struct {
 	evmChainID     *big.Int
 	blockchainID   *string
 	log            *zap.SugaredLogger
-	metrics        *metricslib.Metrics
+	metrics        *metrics.Metrics
 	receiptTimeout time.Duration // Timeout for fetching block receipts
 }
 
@@ -37,11 +37,11 @@ func NewCorethWorker(
 	evmChainID uint64,
 	blockchainID string,
 	log *zap.SugaredLogger,
-	metrics *metricslib.Metrics,
+	m *metrics.Metrics,
 	receiptTimeout time.Duration,
 ) (*CorethWorker, error) {
-	if metrics == nil {
-		metrics = metricslib.NewNoOp()
+	if m == nil {
+		m = metrics.NewNoOp()
 	}
 	RegisterCustomTypesOnce.Do(func() {
 		customtypes.Register()
@@ -54,7 +54,7 @@ func NewCorethWorker(
 		evmChainID:     new(big.Int).SetUint64(evmChainID),
 		blockchainID:   &blockchainID,
 		log:            log,
-		metrics:        metrics,
+		metrics:        m,
 		receiptTimeout: receiptTimeout,
 	}, nil
 }
