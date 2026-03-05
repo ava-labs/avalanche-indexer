@@ -96,7 +96,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 
 		writeStart := time.Now()
 		err = p.blocksRepo.WriteBlock(ctx, blockRow)
-		recordClickHouseWrite(p.metrics, clickhouse.TableRawBlocks, err, writeStart)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawBlocksTableName, err, writeStart)
 		if err != nil {
 			p.metrics.IncError("coreth_write_error")
 			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
@@ -312,7 +312,7 @@ func (p *CorethProcessor) processTransactions(
 
 		writeStart := time.Now()
 		err = p.txsRepo.WriteTransaction(ctx, txRow)
-		recordClickHouseWrite(p.metrics, clickhouse.TableRawTransactions, err, writeStart)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawTransactionsTableName, err, writeStart)
 		if err != nil {
 			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
 		}
@@ -360,7 +360,7 @@ func (p *CorethProcessor) processLogs(
 
 			writeStart := time.Now()
 			err = p.logsRepo.WriteLog(ctx, logRow)
-			recordClickHouseWrite(p.metrics, clickhouse.TableRawLogs, err, writeStart)
+			recordClickHouseWrite(p.metrics, clickhouse.DefaultRawLogsTableName, err, writeStart)
 			if err != nil {
 				return fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err)
 			}

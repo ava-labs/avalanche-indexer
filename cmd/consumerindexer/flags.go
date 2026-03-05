@@ -294,19 +294,19 @@ func runFlags() []cli.Flag {
 			Name:    "raw-blocks-table-name",
 			Usage:   "ClickHouse table name for raw blocks",
 			EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
-			Value:   clickhouse.TableRawBlocks,
+			Value:   clickhouse.DefaultRawBlocksTableName,
 		},
 		&cli.StringFlag{
 			Name:    "raw-transactions-table-name",
 			Usage:   "ClickHouse table name for raw transactions",
 			EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
-			Value:   clickhouse.TableRawTransactions,
+			Value:   clickhouse.DefaultRawTransactionsTableName,
 		},
 		&cli.StringFlag{
 			Name:    "raw-logs-table-name",
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
-			Value:   clickhouse.TableRawLogs,
+			Value:   clickhouse.DefaultRawLogsTableName,
 		},
 		// Metrics configuration flags
 		&cli.StringFlag{
@@ -474,19 +474,19 @@ func removeFlags() []cli.Flag {
 			Name:    "raw-blocks-table-name",
 			Usage:   "ClickHouse table name for raw blocks",
 			EnvVars: []string{"CLICKHOUSE_RAW_BLOCKS_TABLE_NAME"},
-			Value:   clickhouse.TableRawBlocks,
+			Value:   clickhouse.DefaultRawBlocksTableName,
 		},
 		&cli.StringFlag{
 			Name:    "raw-transactions-table-name",
 			Usage:   "ClickHouse table name for raw transactions",
 			EnvVars: []string{"CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME"},
-			Value:   clickhouse.TableRawTransactions,
+			Value:   clickhouse.DefaultRawTransactionsTableName,
 		},
 		&cli.StringFlag{
 			Name:    "raw-logs-table-name",
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
-			Value:   clickhouse.TableRawLogs,
+			Value:   clickhouse.DefaultRawLogsTableName,
 		},
 	}
 }

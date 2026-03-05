@@ -12,7 +12,7 @@ import (
 
 	"go.uber.org/zap"
 
-	metricslib "github.com/ava-labs/avalanche-indexer/pkg/metrics"
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -62,7 +62,7 @@ type OffsetManager struct {
 	mutex           sync.Mutex
 	dryRun          bool // skip interactions with Brokers for testing
 	log             *zap.SugaredLogger
-	metrics         *metricslib.Metrics // Prometheus metrics for offset tracking
+	metrics         *metrics.Metrics // Prometheus metrics for offset tracking
 }
 
 // Creates new OffsetManager. To begin the OffsetManager, Start() must be called.
@@ -73,10 +73,10 @@ func NewOffsetManager(
 	autoOffsetReset string,
 	dryRun bool,
 	log *zap.SugaredLogger,
-	metrics *metricslib.Metrics,
+	m *metrics.Metrics,
 ) *OffsetManager {
-	if metrics == nil {
-		metrics = metricslib.NewNoOp()
+	if m == nil {
+		m = metrics.NewNoOp()
 	}
 	om := &OffsetManager{
 		consumer:        consumer,
@@ -84,7 +84,7 @@ func NewOffsetManager(
 		partitionStates: make(map[int32]*offsetState),
 		dryRun:          dryRun,
 		log:             log,
-		metrics:         metrics,
+		metrics:         m,
 	}
 	go om.run(ctx, interval, dryRun)
 	if !dryRun {
@@ -357,7 +357,7 @@ func (om *OffsetManager) RebalanceCb(consumer *ckafka.Consumer, event ckafka.Eve
 }
 
 // runLagRecorder periodically queries broker watermarks and committed offsets to compute
-// consumer group lag on its own timer, independent of the offset commit loop.
+// consumer group lag on its own timer.
 func (om *OffsetManager) runLagRecorder(ctx context.Context) {
 	ticker := time.NewTicker(ConsumerGroupLagInterval)
 	defer ticker.Stop()

@@ -1,7 +1,7 @@
 package clickhouse
 
 const (
-	TableRawBlocks       = "raw_blocks"
-	TableRawTransactions = "raw_transactions"
-	TableRawLogs         = "raw_logs"
+	DefaultRawBlocksTableName       = "raw_blocks"
+	DefaultRawTransactionsTableName = "raw_transactions"
+	DefaultRawLogsTableName         = "raw_logs"
 )
