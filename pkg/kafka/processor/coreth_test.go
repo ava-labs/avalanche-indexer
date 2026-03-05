@@ -126,6 +126,7 @@ func TestCorehtLogToLogRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(1647), logRow.BlockNumber)
 	assert.Equal(t, log.BlockHash.Hex(), logRow.BlockHash)
 	assert.Equal(t, time.Unix(1604768510, 0).UTC(), logRow.BlockTime)
+	assert.Equal(t, uint64(1604768510000), logRow.TimestampMs)
 	assert.Equal(t, log.TxHash.Hex(), logRow.TxHash)
 	assert.Equal(t, uint32(0), logRow.TxIndex)
 	assert.Equal(t, log.Address.Hex(), logRow.Address)
@@ -240,6 +241,7 @@ func TestCorethBlockToBlockRow_Success(t *testing.T) {
 	assert.Equal(t, testBlockHash, blockRow.Hash)
 	assert.Equal(t, "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40", blockRow.ParentHash)
 	assert.Equal(t, time.Unix(1604768510, 0).UTC(), blockRow.BlockTime)
+	assert.Equal(t, uint64(1604768510000), blockRow.TimestampMs)
 	assert.Equal(t, uint64(1331), blockRow.Size)
 	assert.Equal(t, uint64(20006296), blockRow.GasLimit)
 	assert.Equal(t, uint64(183061), blockRow.GasUsed)
@@ -351,6 +353,7 @@ func TestCorethTransactionToTransactionRow_Success(t *testing.T) {
 	assert.Equal(t, uint64(1647), txRow.BlockNumber)
 	assert.Equal(t, testBlockHash, txRow.BlockHash)
 	assert.Equal(t, time.Unix(1604768510, 0).UTC(), txRow.BlockTime)
+	assert.Equal(t, uint64(1604768510000), txRow.TimestampMs)
 	assert.Equal(t, "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273", txRow.Hash)
 	assert.Equal(t, "0x4142434445464748494a4b4c4d4e4f5051525354", txRow.From)
 	require.NotNil(t, txRow.To)
@@ -861,6 +864,7 @@ func createTestBlock() *kafkamsg.EVMBlock {
 		Hash:             testBlockHash,
 		ParentHash:       "0x2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
 		Timestamp:        1604768510,
+		TimestampMs:      1604768510000,
 		Size:             1331,
 		GasLimit:         20006296,
 		GasUsed:          183061,

@@ -5,6 +5,7 @@ ON CLUSTER `%s`
 	evm_chain_id UInt256,
 	block_number UInt64,
 	block_timestamp DateTime64(3),
+	timestamp_ms UInt64,
 	transaction_hash FixedString(32),
 	type String,
 	from_address FixedString(20),

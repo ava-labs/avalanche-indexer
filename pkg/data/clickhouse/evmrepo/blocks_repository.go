@@ -64,7 +64,7 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 		return fmt.Errorf("failed to create blocks table: %w", err)
 	}
 
-	if err := RunMigrations(ctx, r.client.Conn(), blocksMigrationsFS, "queries/migrations/blocks", r.database, r.tableName, r.cluster); err != nil {
+	if err := RunMigrations(ctx, r.client.Conn(), blocksMigrationsFS, "queries/migrations/block", r.database, r.tableName, r.cluster); err != nil {
 		return fmt.Errorf("failed to run blocks migrations: %w", err)
 	}
 

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/subnet-evm/eth/tracers"
-	"github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
+	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 	"github.com/ava-labs/subnet-evm/rpc"
 	"go.uber.org/zap"
 
@@ -45,7 +45,7 @@ func NewSubnetEVMTracesWorker(
 	traceTimeout time.Duration,
 ) (*SubnetEVMTracesWorker, error) {
 	RegisterCustomTypesOnce.Do(func() {
-		customtypes.Register()
+		subnetevmCustomtypes.Register()
 	})
 
 	return &SubnetEVMTracesWorker{
@@ -79,7 +79,14 @@ func (stw *SubnetEVMTracesWorker) Process(ctx context.Context, height uint64) er
 	timestamp := block.Time()
 
 	stw.log.Debugw("block traces fetched, serializing", "height", height, "traces", len(traces))
-	bytes, err := messages.MarshalEVMBlockTrace(height, timestamp, traces, stw.evmChainID, stw.blockchainID)
+
+	var timestampMilliseconds uint64
+	extra := subnetevmCustomtypes.GetHeaderExtra(block.Header())
+	if extra.TimeMilliseconds != nil {
+		timestampMilliseconds = *extra.TimeMilliseconds
+	}
+
+	bytes, err := messages.MarshalEVMBlockTrace(height, timestamp, timestampMilliseconds, traces, stw.evmChainID, stw.blockchainID)
 	if err != nil {
 		return fmt.Errorf("serialize block traces failed %d: %w", height, err)
 	}

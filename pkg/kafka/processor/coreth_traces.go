@@ -101,6 +101,7 @@ func (p *CorethTracesProcessor) processTraces(
 				EVMChainID:      blockTrace.EVMChainID,
 				BlockNumber:     blockTrace.BlockNumber,
 				BlockTimestamp:  blockTrace.BlockTimestamp,
+				TimestampMs:     blockTrace.TimestampMs,
 				TransactionHash: txHash,
 				Type:            trace.Type,
 				From:            trace.From,

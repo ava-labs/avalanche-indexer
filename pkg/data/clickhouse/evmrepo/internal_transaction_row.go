@@ -12,6 +12,7 @@ type InternalTransactionRow struct {
 	EVMChainID      *big.Int // UInt256 in ClickHouse
 	BlockNumber     uint64
 	BlockTimestamp  uint64 // DateTime64(3) in ClickHouse
+	TimestampMs     uint64
 	TransactionHash string
 	Type            string
 	From            common.Address

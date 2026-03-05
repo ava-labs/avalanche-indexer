@@ -12,14 +12,17 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
-//go:embed queries/migrations/blocks/*.sql
+//go:embed queries/migrations/block/*.sql
 var blocksMigrationsFS embed.FS
 
-//go:embed queries/migrations/transactions/*.sql
+//go:embed queries/migrations/transaction/*.sql
 var transactionsMigrationsFS embed.FS
 
-//go:embed queries/migrations/logs/*.sql
+//go:embed queries/migrations/log/*.sql
 var logsMigrationsFS embed.FS
+
+//go:embed queries/migrations/internal_transaction/*.sql
+var internalTransactionsMigrationsFS embed.FS
 
 // RunMigrations reads all .sql files from the given embed.FS directory, sorts
 // them lexically, and executes each one against the ClickHouse connection.

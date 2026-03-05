@@ -242,6 +242,7 @@ type EVMBlockTrace struct {
 	BlockchainID   *string           `json:"blockchainId,omitempty"`
 	BlockNumber    uint64            `json:"blockNumber"`
 	BlockTimestamp uint64            `json:"blockTimestamp"`
+	TimestampMs    uint64            `json:"timestampMs"`
 	Traces         []json.RawMessage `json:"traces"`
 }
 
@@ -252,15 +253,17 @@ type evmBlockTraceJSON struct {
 	BlockchainID   *string           `json:"blockchainId,omitempty"`
 	BlockNumber    uint64            `json:"blockNumber"`
 	BlockTimestamp uint64            `json:"blockTimestamp"`
+	TimestampMs    uint64            `json:"timestampMs"`
 	Traces         []json.RawMessage `json:"traces"`
 }
 
-func MarshalEVMBlockTrace(blockNumber uint64, blockTimestamp uint64, traces []json.RawMessage, evmChainID *big.Int, blockchainID *string) ([]byte, error) {
+func MarshalEVMBlockTrace(blockNumber uint64, blockTimestamp uint64, timestampMs uint64, traces []json.RawMessage, evmChainID *big.Int, blockchainID *string) ([]byte, error) {
 	blockTrace := EVMBlockTrace{
 		EVMChainID:     evmChainID,
 		BlockchainID:   blockchainID,
 		BlockNumber:    blockNumber,
 		BlockTimestamp: blockTimestamp,
+		TimestampMs:    timestampMs,
 		Traces:         traces,
 	}
 	return json.Marshal(blockTrace)
@@ -274,6 +277,7 @@ func (b *EVMBlockTrace) MarshalJSON() ([]byte, error) {
 		BlockchainID:   b.BlockchainID,
 		BlockNumber:    b.BlockNumber,
 		BlockTimestamp: b.BlockTimestamp,
+		TimestampMs:    b.TimestampMs,
 		Traces:         b.Traces,
 	}
 
@@ -291,6 +295,7 @@ func (b *EVMBlockTrace) UnmarshalJSON(data []byte) error {
 	b.BlockchainID = alias.BlockchainID
 	b.BlockNumber = alias.BlockNumber
 	b.BlockTimestamp = alias.BlockTimestamp
+	b.TimestampMs = alias.TimestampMs
 	b.Traces = alias.Traces
 
 	var err error

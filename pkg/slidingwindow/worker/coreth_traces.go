@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/coreth/eth/tracers"
-	"github.com/ava-labs/coreth/plugin/evm/customtypes"
+	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
 	"github.com/ava-labs/coreth/rpc"
 	"go.uber.org/zap"
 
@@ -45,7 +45,7 @@ func NewCorethTracesWorker(
 	traceTimeout time.Duration,
 ) (*CorethTracesWorker, error) {
 	RegisterCustomTypesOnce.Do(func() {
-		customtypes.Register()
+		corethCustomtypes.Register()
 	})
 
 	return &CorethTracesWorker{
@@ -79,7 +79,14 @@ func (ctw *CorethTracesWorker) Process(ctx context.Context, height uint64) error
 	}
 
 	ctw.log.Debugw("block traces fetched, serializing", "height", height, "traces", len(traces))
-	bytes, err := messages.MarshalEVMBlockTrace(height, timestamp, traces, ctw.evmChainID, ctw.blockchainID)
+
+	var timestampMilliseconds uint64
+	extra := corethCustomtypes.GetHeaderExtra(block.Header())
+	if extra.TimeMilliseconds != nil {
+		timestampMilliseconds = *extra.TimeMilliseconds
+	}
+
+	bytes, err := messages.MarshalEVMBlockTrace(height, timestamp, timestampMilliseconds, traces, ctw.evmChainID, ctw.blockchainID)
 	if err != nil {
 		return fmt.Errorf("serialize block traces failed %d: %w", height, err)
 	}

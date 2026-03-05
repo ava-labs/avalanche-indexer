@@ -169,7 +169,8 @@ func TestSubnetEVMMarshalBlockTrace(t *testing.T) {
 	bcID := "test-blockchain-id-2"
 	blockTimestamp := uint64(1640000000)
 
-	bytes, err := messages.MarshalEVMBlockTrace(123, blockTimestamp, traces, evmChainID, &bcID)
+	timestampMs := blockTimestamp*1000 + 123
+	bytes, err := messages.MarshalEVMBlockTrace(123, blockTimestamp, timestampMs, traces, evmChainID, &bcID)
 	require.NoError(t, err)
 	require.NotEmpty(t, bytes)
 
@@ -178,6 +179,7 @@ func TestSubnetEVMMarshalBlockTrace(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(123), result.BlockNumber)
 	require.Equal(t, blockTimestamp, result.BlockTimestamp)
+	require.Equal(t, timestampMs, result.TimestampMs)
 	require.Equal(t, evmChainID, result.EVMChainID)
 	require.Equal(t, bcID, *result.BlockchainID)
 	require.Len(t, result.Traces, 1)
