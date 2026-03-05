@@ -10,9 +10,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
-	"golang.org/x/sync/errgroup"
-
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"

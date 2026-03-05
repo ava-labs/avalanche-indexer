@@ -302,7 +302,7 @@ func TestRetryPolicy_ShouldRetry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, len(tt.attempts), len(tt.wantResult), "test setup: attempts and wantResult must have same length")
+			require.Len(t, tt.wantResult, len(tt.attempts), "test setup: attempts and wantResult must have same length")
 			for i, attempt := range tt.attempts {
 				assert.Equal(t, tt.wantResult[i], tt.policy.ShouldRetry(attempt),
 					"ShouldRetry(%d)", attempt)

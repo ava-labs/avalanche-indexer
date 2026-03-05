@@ -8,13 +8,12 @@ import (
 	"testing"
 	"time"
 
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
@@ -100,9 +99,9 @@ func TestProcessWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 	proc := &mockProcessor{results: []error{nil}}
 	c, reg := newTestConsumer(t, proc, RetryPolicy{MaxRetries: 3})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 1, proc.CallCount())
 	assertRetryMetrics(t, reg, 0, 0)
 }
@@ -111,9 +110,9 @@ func TestProcessWithRetry_ContextCanceledOnFirstAttempt(t *testing.T) {
 	proc := &mockProcessor{results: []error{context.Canceled}}
 	c, reg := newTestConsumer(t, proc, RetryPolicy{MaxRetries: 3})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 1, proc.CallCount())
 	assertRetryMetrics(t, reg, 0, 0)
 }
@@ -126,9 +125,9 @@ func TestProcessWithRetry_FailThenSucceed(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 2, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -141,9 +140,9 @@ func TestProcessWithRetry_FailMultipleThenSucceed(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 4, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -156,9 +155,9 @@ func TestProcessWithRetry_AllRetriesExhausted(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.ErrorIs(t, err, errProcessing)
+	require.ErrorIs(t, err, errProcessing)
 	assert.Equal(t, 3, proc.CallCount()) // 1 initial + 2 retries
 	assertRetryMetrics(t, reg, 1, 1)
 }
@@ -167,9 +166,9 @@ func TestProcessWithRetry_NoRetriesConfigured(t *testing.T) {
 	proc := &mockProcessor{results: []error{errProcessing}}
 	c, reg := newTestConsumer(t, proc, RetryPolicy{MaxRetries: 0})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.ErrorIs(t, err, errProcessing)
+	require.ErrorIs(t, err, errProcessing)
 	assert.Equal(t, 1, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 1)
 }
@@ -182,7 +181,7 @@ func TestProcessWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
 		MaxDelay:   10 * time.Second,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
@@ -190,7 +189,7 @@ func TestProcessWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
 
 	err := c.processWithRetry(ctx, testMessage())
 
-	assert.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 1, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -203,9 +202,9 @@ func TestProcessWithRetry_ContextCancelledDuringRetryProcessing(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 2, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -215,18 +214,18 @@ func TestProcessWithRetry_InfiniteRetries_EventualSuccess(t *testing.T) {
 	for i := range failures {
 		failures[i] = errProcessing
 	}
-	results := append(failures, nil)
+	failures = append(failures, nil)
 
-	proc := &mockProcessor{results: results}
+	proc := &mockProcessor{results: failures}
 	c, reg := newTestConsumer(t, proc, RetryPolicy{
 		MaxRetries: InfiniteRetries,
 		BaseDelay:  1 * time.Millisecond,
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 11, proc.CallCount()) // 1 initial + 10 retries
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -239,9 +238,9 @@ func TestProcessWithRetry_SingleRetrySuccess(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 2, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -254,9 +253,9 @@ func TestProcessWithRetry_SingleRetryExhausted(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.ErrorIs(t, err, errProcessing)
+	require.ErrorIs(t, err, errProcessing)
 	assert.Equal(t, 2, proc.CallCount()) // 1 initial + 1 retry
 	assertRetryMetrics(t, reg, 1, 1)
 }
@@ -266,9 +265,9 @@ func TestProcessWithRetry_WrappedContextCanceled(t *testing.T) {
 	proc := &mockProcessor{results: []error{wrappedErr}}
 	c, reg := newTestConsumer(t, proc, RetryPolicy{MaxRetries: 3})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 1, proc.CallCount())
 	assertRetryMetrics(t, reg, 0, 0)
 }
@@ -282,9 +281,9 @@ func TestProcessWithRetry_WrappedContextCanceledOnRetry(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 2, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -297,9 +296,9 @@ func TestProcessWithRetry_DeadlineExceededIsRetried(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	err := c.processWithRetry(context.Background(), testMessage())
+	err := c.processWithRetry(t.Context(), testMessage())
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 2, proc.CallCount())
 	assertRetryMetrics(t, reg, 1, 0)
 }
@@ -325,9 +324,9 @@ func TestProcessWithRetry_AlwaysFails_ExactRetryCount(t *testing.T) {
 				MaxDelay:   5 * time.Millisecond,
 			})
 
-			err := c.processWithRetry(context.Background(), testMessage())
+			err := c.processWithRetry(t.Context(), testMessage())
 
-			assert.ErrorIs(t, err, errProcessing)
+			require.ErrorIs(t, err, errProcessing)
 			assert.Equal(t, tt.wantCalls, proc.CallCount())
 		})
 	}
@@ -346,7 +345,6 @@ func gatherMetricNames(t *testing.T, reg *prometheus.Registry) []string {
 	return names
 }
 
-// Verify that the registry actually contains the retry metrics we assert on.
 func TestProcessWithRetry_MetricsRegistered(t *testing.T) {
 	proc := &mockProcessor{results: []error{errProcessing}}
 	c, reg := newTestConsumer(t, proc, RetryPolicy{
@@ -355,7 +353,7 @@ func TestProcessWithRetry_MetricsRegistered(t *testing.T) {
 		MaxDelay:   5 * time.Millisecond,
 	})
 
-	_ = c.processWithRetry(context.Background(), testMessage())
+	_ = c.processWithRetry(t.Context(), testMessage())
 
 	families, err := reg.Gather()
 	require.NoError(t, err)
