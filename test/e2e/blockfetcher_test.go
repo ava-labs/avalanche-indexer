@@ -396,6 +396,7 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 		require.Equal(t, exp.StateRoot, got.StateRoot, "stateRoot %d", n)
 		require.Equal(t, exp.TransactionsRoot, got.TransactionsRoot, "txRoot %d", n)
 		require.Equal(t, exp.ReceiptsRoot, got.ReceiptsRoot, "receiptsRoot %d", n)
+		require.Equal(t, exp.TimestampMs, got.TimestampMs, "timestampMs %d", n)
 		// Optional fields (presence may vary across forks)
 		if exp.BaseFee != nil || got.BaseFee != nil {
 			require.NotNil(t, exp.BaseFee, "exp baseFee nil for %d", n)

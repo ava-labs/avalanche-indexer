@@ -38,13 +38,8 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 	topic2Bytes, err := utils.HexToBytes32(*log.Topic2)
 	require.NoError(t, err, "topic2 conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
-		})).
-		Return(nil).
-		Times(2)
+	// Expect CreateTableIfNotExists + migrations during initialization
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
 
 	// Convert topic bytes to string pointers (matching new return type)
 	topic0Str := string(topic0Bytes[:])
@@ -62,6 +57,7 @@ func TestLogsRepository_WriteLog_Success(t *testing.T) {
 			log.BlockNumber,           // uint64
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			log.BlockTime,             // time.Time
+			log.TimestampMs,           // uint64
 			string(txHashBytes[:]),    // string: 32-byte binary string
 			log.TxIndex,               // uint32
 			string(addressBytes[:]),   // string: 20-byte binary string
@@ -107,13 +103,8 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 	topic2Bytes, err := utils.HexToBytes32(*log.Topic2)
 	require.NoError(t, err, "topic2 conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
-		})).
-		Return(nil).
-		Times(2)
+	// Expect CreateTableIfNotExists + migrations during initialization
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
 
 	// Convert topic bytes to string pointers (matching new return type)
 	topic0Str := string(topic0Bytes[:])
@@ -128,6 +119,7 @@ func TestLogsRepository_WriteLog_Error(t *testing.T) {
 			log.BlockNumber,           // uint64
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			log.BlockTime,             // time.Time
+			log.TimestampMs,           // uint64
 			string(txHashBytes[:]),    // string: 32-byte binary string
 			log.TxIndex,               // uint32
 			string(addressBytes[:]),   // string: 20-byte binary string
@@ -171,13 +163,8 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 	addressBytes, err := utils.HexToBytes20(log.Address)
 	require.NoError(t, err, "address conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization (matches both local and distributed table creation)
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
-		})).
-		Return(nil).
-		Times(2)
+	// Expect CreateTableIfNotExists + migrations during initialization
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
 
 	// Expect WriteLog call
 	mockConn.
@@ -189,6 +176,7 @@ func TestLogsRepository_WriteLog_NilTopics(t *testing.T) {
 			log.BlockNumber,           // uint64
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			log.BlockTime,             // time.Time
+			log.TimestampMs,           // uint64
 			string(txHashBytes[:]),    // string: 32-byte binary string
 			log.TxIndex,               // uint32
 			string(addressBytes[:]),   // string: 20-byte binary string
@@ -217,13 +205,8 @@ func TestLogsRepository_DeleteLogs_Success(t *testing.T) {
 
 	chainID := uint64(43114)
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
-		})).
-		Return(nil).
-		Times(2)
+	// Expect CreateTableIfNotExists + migrations during initialization
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
 
 	// Expect DeleteLogs call
 	mockConn.
@@ -246,13 +229,8 @@ func TestLogsRepository_DeleteLogs_Error(t *testing.T) {
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`raw_logs_local`") || containsSubstring(q, "`default`.`raw_logs`"))
-		})).
-		Return(nil).
-		Times(2)
+	// Expect CreateTableIfNotExists + migrations during initialization
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
 
 	// Expect DeleteLogs call that fails
 	mockConn.
@@ -285,6 +263,7 @@ func createTestLog() *LogRow {
 		BlockNumber:  1647,
 		BlockHash:    blockHash,
 		BlockTime:    time.Unix(1604768510, 0).UTC(),
+		TimestampMs:  1604768510000,
 		TxHash:       txHash,
 		TxIndex:      0,
 		Address:      address,

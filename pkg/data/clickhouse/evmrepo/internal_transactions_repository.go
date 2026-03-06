@@ -50,7 +50,9 @@ func NewInternalTransactions(ctx context.Context, client clickhouse.Client, clus
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the internal_transactions table if it doesn't exist
+// CreateTableIfNotExists creates the internal_transactions table if it doesn't exist,
+// then runs all numbered migrations from queries/migrations/internal_transaction/ to ensure
+// the schema is up to date for existing tables.
 func (r *internalTransactions) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createInternalTransactionsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
@@ -61,6 +63,11 @@ func (r *internalTransactions) CreateTableIfNotExists(ctx context.Context) error
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
 		return fmt.Errorf("failed to create internal_transactions table: %w", err)
 	}
+
+	if err := RunMigrations(ctx, r.client.Conn(), internalTransactionsMigrationsFS, "queries/migrations/internal_transaction", r.database, r.tableName, r.cluster); err != nil {
+		return fmt.Errorf("failed to run internal transactions migrations: %w", err)
+	}
+
 	return nil
 }
 
@@ -93,6 +100,7 @@ func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx 
 		evmChainIDStr,
 		tx.BlockNumber,
 		tx.BlockTime,
+		tx.TimestampMs,
 		string(txHashBytes[:]),
 		tx.Type,
 		string(tx.From[:]),

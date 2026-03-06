@@ -1,0 +1,1 @@
+ALTER TABLE `%s`.`%s` ON CLUSTER `%s` ADD COLUMN IF NOT EXISTS timestamp_ms UInt64 DEFAULT 0

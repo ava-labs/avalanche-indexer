@@ -26,13 +26,8 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_Success(t *test
 	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
 	require.NoError(t, err, "txHash conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && (containsSubstring(q, "`internal_transactions_local`") || containsSubstring(q, "`default`.`internal_transactions`"))
-		})).
-		Return(nil).
-		Times(2)
+	// Expect CreateTableIfNotExists and migration calls during initialization
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	// Expect WriteInternalTransaction call
 	mockConn.
@@ -43,6 +38,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_Success(t *test
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
 			tx.BlockTime,           // time.Time: DateTime64(3)
+			tx.TimestampMs,         // uint64
 			string(txHashBytes[:]), // string: 32-byte binary string
 			tx.Type,
 			string(tx.From[:]), // string: 20-byte binary string
@@ -79,13 +75,8 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_Error(t *testin
 	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
 	require.NoError(t, err, "txHash conversion should succeed")
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	// Expect CreateTableIfNotExists and migration calls during initialization
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	// Expect WriteInternalTransaction call that fails
 	mockConn.
@@ -94,6 +85,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_Error(t *testin
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
@@ -130,13 +122,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_NilBlockchainID
 	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
 	require.NoError(t, err)
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	// Empty string should be used for nil BlockchainID
 	mockConn.
@@ -145,6 +131,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_NilBlockchainID
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
@@ -180,13 +167,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_NilEVMChainID(t
 	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
 	require.NoError(t, err)
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	// "0" should be used for nil EVMChainID
 	mockConn.
@@ -195,6 +176,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_NilEVMChainID(t
 			"0", // Default "0" for nil EVMChainID
 			tx.BlockNumber,
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
@@ -227,13 +209,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_InvalidTxHash(t
 	tx := createTestInternalTransaction()
 	tx.TransactionHash = "invalid_hash"
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
 	require.NoError(t, err)
@@ -256,13 +232,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_WithRevert(t *t
 	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
 	require.NoError(t, err)
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
@@ -270,6 +240,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_WithRevert(t *t
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
@@ -301,13 +272,7 @@ func TestInternalTransactionsRepository_DeleteInternalTransactions_Success(t *te
 
 	chainID := uint64(43114)
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	// Expect DeleteInternalTransactions call
 	mockConn.
@@ -330,13 +295,7 @@ func TestInternalTransactionsRepository_DeleteInternalTransactions_Error(t *test
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	// Expect DeleteInternalTransactions call that fails
 	mockConn.
@@ -357,20 +316,7 @@ func TestInternalTransactionsRepository_CreateTableIfNotExists_Success(t *testin
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
 
-	// Expect CreateTableIfNotExists calls for both local and distributed tables
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "`internal_transactions_local`")
-		})).
-		Return(nil).
-		Once()
-
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "`default`.`internal_transactions`")
-		})).
-		Return(nil).
-		Once()
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
 	require.NoError(t, err)
@@ -442,13 +388,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_ZeroAddresses(t
 	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
 	require.NoError(t, err)
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
@@ -456,6 +396,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_ZeroAddresses(t
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
@@ -494,13 +435,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_EmptyStrings(t 
 	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
 	require.NoError(t, err)
 
-	// Expect CreateTableIfNotExists call during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS")
-		})).
-		Return(nil).
-		Times(2)
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
 
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
@@ -508,6 +443,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_EmptyStrings(t 
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
@@ -540,6 +476,7 @@ func createTestInternalTransaction() *InternalTransactionRow {
 		EVMChainID:      big.NewInt(43113),
 		BlockNumber:     1647,
 		BlockTime:       time.Unix(1640000000, 0).UTC(),
+		TimestampMs:     1640000000000,
 		TransactionHash: testTxHash,
 		Type:            "CALL",
 		From:            common.HexToAddress(testFromAddress),
