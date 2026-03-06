@@ -177,7 +177,6 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_NilEVMChainID(t
 			tx.BlockNumber,
 			tx.BlockTime,
 			tx.TimestampMs,
-			tx.BlockTime,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
