@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ava-labs/libevm/common"
 	"github.com/stretchr/testify/assert"
@@ -36,7 +37,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_Success(t *test
 			*tx.BlockchainID,       // string: blockchain ID
 			tx.EVMChainID.String(), // string: UInt256
 			tx.BlockNumber,
-			tx.BlockTimestamp,      // uint64: DateTime64(3)
+			tx.BlockTime,           // time.Time: DateTime64(3)
 			tx.TimestampMs,         // uint64
 			string(txHashBytes[:]), // string: 32-byte binary string
 			tx.Type,
@@ -83,7 +84,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_Error(t *testin
 			*tx.BlockchainID,
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
-			tx.BlockTimestamp,
+			tx.BlockTime,
 			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
@@ -129,7 +130,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_NilBlockchainID
 			"", // Empty string for nil BlockchainID
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
-			tx.BlockTimestamp,
+			tx.BlockTime,
 			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
@@ -174,8 +175,9 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_NilEVMChainID(t
 			*tx.BlockchainID,
 			"0", // Default "0" for nil EVMChainID
 			tx.BlockNumber,
-			tx.BlockTimestamp,
+			tx.BlockTime,
 			tx.TimestampMs,
+			tx.BlockTime,
 			string(txHashBytes[:]),
 			tx.Type,
 			string(tx.From[:]),
@@ -238,7 +240,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_WithRevert(t *t
 			*tx.BlockchainID,
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
-			tx.BlockTimestamp,
+			tx.BlockTime,
 			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
@@ -394,7 +396,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_ZeroAddresses(t
 			*tx.BlockchainID,
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
-			tx.BlockTimestamp,
+			tx.BlockTime,
 			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
@@ -441,7 +443,7 @@ func TestInternalTransactionsRepository_WriteInternalTransaction_EmptyStrings(t 
 			*tx.BlockchainID,
 			tx.EVMChainID.String(),
 			tx.BlockNumber,
-			tx.BlockTimestamp,
+			tx.BlockTime,
 			tx.TimestampMs,
 			string(txHashBytes[:]),
 			tx.Type,
@@ -474,7 +476,7 @@ func createTestInternalTransaction() *InternalTransactionRow {
 		BlockchainID:    &blockchainID,
 		EVMChainID:      big.NewInt(43113),
 		BlockNumber:     1647,
-		BlockTimestamp:  1640000000,
+		BlockTime:       time.Unix(1640000000, 0).UTC(),
 		TimestampMs:     1640000000000,
 		TransactionHash: testTxHash,
 		Type:            "CALL",
