@@ -6,6 +6,6 @@ ON CLUSTER `%s`
 	lowest_unprocessed_block UInt64,
 	timestamp Int64
 )
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
-ORDER BY (chain_id, mode) VERSION timestamp
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}', timestamp)
+ORDER BY (chain_id, mode)
 SETTINGS index_granularity = 8192

@@ -12,6 +12,9 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 )
 
+const blocksMode = "blocks"
+const tracesMode = "traces"
+
 type mockCheckpointer struct {
 	mock.Mock
 }
@@ -39,7 +42,7 @@ func TestStart_WritesAndCancels(t *testing.T) {
 
 	called := make(chan struct{}, 1)
 	checkpointer.
-		On("Write", mock.Anything, uint64(43114), "blocks", uint64(5)).
+		On("Write", mock.Anything, uint64(43114), blocksMode, uint64(5)).
 		Run(func(_ mock.Arguments) {
 			select {
 			case called <- struct{}{}:
@@ -60,7 +63,7 @@ func TestStart_WritesAndCancels(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Start(ctx, state, checkpointer, cfg, 43114, "blocks")
+		done <- Start(ctx, state, checkpointer, cfg, 43114, blocksMode)
 	}()
 
 	select {
@@ -87,7 +90,7 @@ func TestStart_ErrorPropagates(t *testing.T) {
 	checkpointer := &mockCheckpointer{}
 	writeErr := errors.New("write failed")
 	checkpointer.
-		On("Write", mock.Anything, uint64(43114), "traces", uint64(1)).
+		On("Write", mock.Anything, uint64(43114), tracesMode, uint64(1)).
 		Return(writeErr).
 		Times(4) // initial try + 3 retries
 
@@ -100,7 +103,7 @@ func TestStart_ErrorPropagates(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	gotErr := Start(ctx, state, checkpointer, cfg, 43114, "traces")
+	gotErr := Start(ctx, state, checkpointer, cfg, 43114, tracesMode)
 	require.ErrorIs(t, gotErr, writeErr)
 	checkpointer.AssertExpectations(t)
 }
@@ -117,7 +120,7 @@ func TestStart_ImmediateCancel(t *testing.T) {
 	cfg := DefaultConfig()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	err = Start(ctx, state, checkpointer, cfg, 43114, "blocks")
+	err = Start(ctx, state, checkpointer, cfg, 43114, blocksMode)
 	require.NoError(t, err, "immediate cancellation should return nil")
 	checkpointer.AssertExpectations(t)
 }
@@ -131,7 +134,7 @@ func TestStart_CancelDuringRetry(t *testing.T) {
 	writeErr := errors.New("write failed")
 	writeCalled := make(chan struct{}, 1)
 	checkpointer.
-		On("Write", mock.Anything, uint64(43114), "blocks", uint64(1)).
+		On("Write", mock.Anything, uint64(43114), blocksMode, uint64(1)).
 		Run(func(_ mock.Arguments) {
 			select {
 			case writeCalled <- struct{}{}:
@@ -152,7 +155,7 @@ func TestStart_CancelDuringRetry(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Start(ctx, state, checkpointer, cfg, 43114, "blocks")
+		done <- Start(ctx, state, checkpointer, cfg, 43114, blocksMode)
 	}()
 
 	// Wait for first write attempt, then cancel during retry backoff

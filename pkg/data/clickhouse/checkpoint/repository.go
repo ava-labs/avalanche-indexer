@@ -77,7 +77,7 @@ func (r *repository) Initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to create checkpoints table: %w", err)
 	}
 
-	if err := RunMigrations(ctx, r.client.Conn(), r.database, r.tableName, r.cluster); err != nil {
+	if err := clickhouse.RunMigrations(ctx, r.client.Conn(), migrationsFS, "queries/migrations", r.database, r.tableName, r.cluster); err != nil {
 		return fmt.Errorf("failed to run checkpoint migrations: %w", err)
 	}
 

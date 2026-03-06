@@ -64,7 +64,7 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 		return fmt.Errorf("failed to create transactions table: %w", err)
 	}
 
-	if err := RunMigrations(ctx, r.client.Conn(), transactionsMigrationsFS, "queries/migrations/transaction", r.database, r.tableName, r.cluster); err != nil {
+	if err := clickhouse.RunMigrations(ctx, r.client.Conn(), transactionsMigrationsFS, "queries/migrations/transaction", r.database, r.tableName, r.cluster); err != nil {
 		return fmt.Errorf("failed to run transactions migrations: %w", err)
 	}
 
