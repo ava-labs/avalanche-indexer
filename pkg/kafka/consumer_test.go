@@ -8,14 +8,15 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var errProcessing = errors.New("processing failed")
