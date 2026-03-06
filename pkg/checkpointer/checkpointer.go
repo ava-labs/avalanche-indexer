@@ -9,21 +9,22 @@ import (
 )
 
 // Checkpointer abstracts checkpoint persistence across different data stores. Checkpoints track
-// the lowest unprocessed block height for a given chain, enabling recovery and resumption of
+// the lowest unprocessed block height for a given chain and mode, enabling recovery and resumption of
 // indexing after restarts or failures.
 type Checkpointer interface {
 	// Initialize ensures the underlying storage is ready (creates tables, schemas, etc.). This
 	// should be idempotent and safe to call multiple times.
 	Initialize(ctx context.Context) error
 
-	// Write atomically persists a checkpoint. The EVM chain ID should be included in the key or
-	// row in the data store. The timestamp used should be the current Unix timestamp in seconds.
-	Write(ctx context.Context, evmChainID uint64, lowestUnprocessed uint64) error
+	// Write atomically persists a checkpoint. The mode parameter distinguishes between different
+	// processing modes (e.g., "blocks", "traces") for the same chain. The timestamp used should
+	// be the current Unix timestamp in seconds.
+	Write(ctx context.Context, evmChainID uint64, mode string, lowestUnprocessed uint64) error
 
-	// Read retrieves the latest checkpoint for a chain. Returns the lowestUnprocessed block height
-	// and whether a checkpoint exists. If no checkpoint exists, exists will be false and
+	// Read retrieves the latest checkpoint for a given chain and mode. Returns the lowestUnprocessed
+	// block height and whether a checkpoint exists. If no checkpoint exists, exists will be false and
 	// lowestUnprocessed will be 0.
-	Read(ctx context.Context, evmChainID uint64) (lowestUnprocessed uint64, exists bool, err error)
+	Read(ctx context.Context, evmChainID uint64, mode string) (lowestUnprocessed uint64, exists bool, err error)
 }
 
 // Start periodically persists the sliding window state to durable storage.
@@ -36,6 +37,7 @@ func Start(
 	checkpointer Checkpointer,
 	cfg Config,
 	evmChainID uint64,
+	mode string,
 ) error {
 	t := time.NewTicker(cfg.Interval)
 	defer t.Stop()
@@ -57,7 +59,7 @@ func Start(
 				}
 
 				writeCtx, cancel := context.WithTimeout(ctx, cfg.WriteTimeout)
-				lastErr = checkpointer.Write(writeCtx, evmChainID, lowest)
+				lastErr = checkpointer.Write(writeCtx, evmChainID, mode, lowest)
 				cancel()
 
 				// Write succeeded

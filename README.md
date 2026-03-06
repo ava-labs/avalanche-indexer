@@ -183,9 +183,11 @@ Select `default` in ClickHouse Server tab (on the left).
 
 checkpoint records can be added manually:
 ```
-INSERT INTO default.checkpoints (chain_id, lowest_unprocessed_block, timestamp) 
-VALUES (43114, 48662238, 1767903034)
+INSERT INTO default.checkpoints (chain_id, mode, lowest_unprocessed_block, timestamp) 
+VALUES (43114, 'blocks', 48662238, 1767903034)
 ```
+
+**Note:** Checkpoints include a `mode` field ('blocks' or 'traces') to allow running both modes in parallel for the same chain without conflicts.
 
 Start ingestion from checkpoint:
 ```
