@@ -80,20 +80,23 @@ func NewConsumer(
 		return nil, fmt.Errorf("failed to create kafka consumer: %w", err)
 	}
 
-	dlqProducerConfig := ckafka.ConfigMap{
-		"bootstrap.servers":      cfg.BootstrapServers,
-		"acks":                   "all", // All brokers must acknowledge the message
-		"linger.ms":              5,     // Batch messages for 5ms
-		"batch.size":             16384, // 16KB batch size
-		"compression.type":       "lz4", // Fast compression
-		"message.max.bytes":      cfg.MessageMaxBytes,
-		"enable.idempotence":     true,
-		"go.logs.channel.enable": cfg.EnableLogs,
-	}
-	cfg.SASL.ApplyToConfigMap(&dlqProducerConfig)
-	dlqProducer, err := NewProducer(ctx, &dlqProducerConfig, log)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
+	var dlqProducer *Producer
+	if cfg.PublishToDLQ {
+		dlqProducerConfig := ckafka.ConfigMap{
+			"bootstrap.servers":      cfg.BootstrapServers,
+			"acks":                   "all", // All brokers must acknowledge the message
+			"linger.ms":              5,     // Batch messages for 5ms
+			"batch.size":             16384, // 16KB batch size
+			"compression.type":       "lz4", // Fast compression
+			"message.max.bytes":      cfg.MessageMaxBytes,
+			"enable.idempotence":     true,
+			"go.logs.channel.enable": cfg.EnableLogs,
+		}
+		cfg.SASL.ApplyToConfigMap(&dlqProducerConfig)
+		dlqProducer, err = NewProducer(ctx, &dlqProducerConfig, log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kafka producer: %w", err)
+		}
 	}
 
 	offsetManager := NewOffsetManager(
@@ -153,6 +156,11 @@ func (c *Consumer) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to subscribe to topics: %w", err)
 	}
 
+	var dlqProducerErrs <-chan error
+	if c.dlqProducer != nil {
+		dlqProducerErrs = c.dlqProducer.Errors()
+	}
+
 	c.log.Info("consumer subscribed to topic, starting to poll for messages...")
 	run := true
 	for run {
@@ -161,7 +169,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 			c.log.Info("context done, shutting down consumer...")
 			run = false
 			continue
-		case err := <-c.dlqProducer.Errors():
+		case err := <-dlqProducerErrs:
 			c.log.Errorw("fatal error from DLQ producer, shutting down consumer", "error", err)
 			run = false
 			continue
@@ -223,6 +231,9 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 		if err := c.sem.Acquire(ctx, 1); err != nil {
 			c.resumeConsumer()
 			select {
+			case <-ctx.Done():
+				c.log.Debugw("message processing context cancelled or deadline exceeded, dropping error", "error", err)
+				return
 			case c.errCh <- err:
 			default:
 				c.log.Errorw("error channel full, dropping error", "error", err)
@@ -302,10 +313,11 @@ func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) er
 	if err == nil || errors.Is(err, context.Canceled) {
 		return err
 	}
-	c.metrics.RecordMessageRetry()
 
 	policy := c.cfg.Retry
 	for attempt := 0; policy.ShouldRetry(attempt); attempt++ {
+		c.metrics.RecordMessageRetry()
+
 		backoff := policy.Backoff(attempt)
 		c.log.Warnw("retrying message processing",
 			"error", err,
@@ -322,15 +334,16 @@ func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) er
 		}
 
 		err = c.processor.Process(ctx, msg)
-		if err == nil {
-			return nil
-		}
-		if errors.Is(err, context.Canceled) {
+
+		if err == nil || errors.Is(err, context.Canceled) {
 			return err
 		}
 	}
 
-	c.metrics.RecordMessageRetriesExhausted()
+	if c.cfg.Retry.MaxRetries != 0 {
+		c.metrics.RecordMessageRetriesExhausted()
+	}
+
 	return err
 }
 
@@ -406,7 +419,9 @@ func (c *Consumer) close() error {
 
 	close(c.doneCh)
 	<-c.logsDone
-	c.dlqProducer.Close(*c.cfg.FlushTimeout)
+	if c.dlqProducer != nil {
+		c.dlqProducer.Close(*c.cfg.FlushTimeout)
+	}
 	return c.consumer.Close()
 }
 

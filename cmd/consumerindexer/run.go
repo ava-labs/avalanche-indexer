@@ -229,6 +229,14 @@ func run(c *cli.Context) error {
 			return fmt.Errorf("failed to create DLQ processor: %w", err)
 		}
 
+		if cfg.DLQTopic == "" {
+			return fmt.Errorf("DLQ topic empty, cannot create DLQ consumer")
+		}
+
+		if cfg.DLQConsumerGroupID == "" || cfg.GroupID == cfg.DLQConsumerGroupID {
+			return fmt.Errorf("DLQ consumer group ID empty or same as primary group ID, cannot create DLQ consumer")
+		}
+
 		dlqConsumerConfig := kafka.ConsumerConfig{
 			Topic:                       cfg.DLQTopic,
 			Concurrency:                 cfg.DLQConsumerConcurrency,
@@ -260,14 +268,13 @@ func run(c *cli.Context) error {
 			"concurrency", cfg.DLQConsumerConcurrency,
 		)
 
-		// The DLQ consumer runs outside the errgroup so its failures don't
-		// cascade to the primary consumer. It retries forever with backoff
-		// and only stops when the parent context is cancelled.
-		go func() {
+		g.Go(func() error {
 			if err := dlqConsumer.Start(gctx); err != nil {
 				dlqLog.Errorw("DLQ consumer stopped with error", "error", err)
+				return err
 			}
-		}()
+			return nil
+		})
 	}
 
 	// Consumer goroutine - blocks until shutdown or error
@@ -298,6 +305,7 @@ func run(c *cli.Context) error {
 	sugar.Info("shutting down metrics server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	if shutdownErr := metricsServer.Shutdown(shutdownCtx); shutdownErr != nil {
 		sugar.Warnw("metrics server shutdown error", "error", shutdownErr)
 	}

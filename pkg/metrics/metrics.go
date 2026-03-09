@@ -350,7 +350,7 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Namespace: Namespace,
 			Subsystem: Consumer,
 			Name:      "message_retries_exhausted_total",
-			Help:      "Total messages that exhausted all retry attempt in the consumer",
+			Help:      "Total number of messages that exhausted all retry attempts in the consumer",
 		}),
 
 		// DLQ production metrics
