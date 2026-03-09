@@ -9,7 +9,7 @@ Fetches blocks or debug traces from an RPC endpoint, processes them concurrently
 - **Backfill** of historical gaps within a bounded window
 - **Concurrency control** and backfill prioritization
 - **Automatic topic creation** with configurable partitions and replication
-- **Checkpoint persistence** to ClickHouse for recovery
+- **Checkpoint persistence** to ClickHouse for recovery (mode-specific to allow parallel execution)
 - **Gap watchdog** that warns if the gap grows beyond the threshold
 - **Prometheus metrics** for monitoring
 - **Graceful shutdown** with proper resource cleanup
@@ -214,7 +214,7 @@ All flags have environment variable equivalents:
 **Optional flags:**
 - `--mode` → `MODE` (default: blocks, operation mode: "blocks" or "traces")
 - `--client-type` / `-ct` → `CLIENT_TYPE` (default: coreth, client type: "coreth" or "subnet-evm")
-- `--start-height` / `-s` → `START_HEIGHT` (default: 0, fetches from checkpoint if 0)
+- `--start-height` / `-s` → `START_HEIGHT` (default: 0, fetches from mode-specific checkpoint if 0)
 - `--end-height` / `-e` → `END_HEIGHT` (optional; if unset the latest is used)
 - `--receipt-timeout` / `-rt` → `RECEIPT_TIMEOUT` (default: 10s, timeout for transaction receipt fetches)
 - `--trace-timeout` / `-tt` → `TRACE_TIMEOUT` (default: 360s, timeout for debug trace fetches)
@@ -268,3 +268,5 @@ As a clean up it might be needed to delete all checkpoints for specific chain. U
 ```bash
 ./bin/blockfetcher remove --evm-chain-id 43114
 ```
+
+**Note:** Checkpoints are mode-specific, meaning blocks and traces modes maintain separate checkpoints for the same chain. This allows you to run both modes in parallel without checkpoint conflicts. Each mode tracks its own progress independently.

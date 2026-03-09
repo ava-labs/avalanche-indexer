@@ -64,7 +64,7 @@ func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 		return fmt.Errorf("failed to create logs table: %w", err)
 	}
 
-	if err := RunMigrations(ctx, r.client.Conn(), logsMigrationsFS, "queries/migrations/log", r.database, r.tableName, r.cluster); err != nil {
+	if err := clickhouse.RunMigrations(ctx, r.client.Conn(), logsMigrationsFS, "queries/migrations/log", r.database, r.tableName, r.cluster); err != nil {
 		return fmt.Errorf("failed to run logs migrations: %w", err)
 	}
 
