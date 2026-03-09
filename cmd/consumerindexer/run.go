@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -221,20 +222,20 @@ func run(c *cli.Context) error {
 		dlqLabels.Role = metrics.RoleDLQConsumer
 		dlqMetrics, err := metrics.NewWithLabels(registry, dlqLabels)
 		if err != nil {
-			return fmt.Errorf("failed to create DLQ metrics: %w", err)
+			return errors.New("failed to create DLQ metrics: " + err.Error())
 		}
 
 		dlqProc, err := newProcessor(ctx, mode, dlqLog, chClient, cfg, dlqMetrics)
 		if err != nil {
-			return fmt.Errorf("failed to create DLQ processor: %w", err)
+			return errors.New("failed to create DLQ processor: " + err.Error())
 		}
 
 		if cfg.DLQTopic == "" {
-			return fmt.Errorf("DLQ topic empty, cannot create DLQ consumer")
+			return errors.New("DLQ topic empty, cannot create DLQ consumer")
 		}
 
 		if cfg.DLQConsumerGroupID == "" || cfg.GroupID == cfg.DLQConsumerGroupID {
-			return fmt.Errorf("DLQ consumer group ID empty or same as primary group ID, cannot create DLQ consumer")
+			return errors.New("DLQ consumer group ID empty or same as primary group ID, cannot create DLQ consumer")
 		}
 
 		dlqConsumerConfig := kafka.ConsumerConfig{
