@@ -222,6 +222,7 @@ func produceTestMessages(t *testing.T, brokers, topic string, count int) {
 		require.Nil(t, m.TopicPartition.Error, "Delivery failed")
 	}
 
+	producer.Flush(5000)
 	t.Logf("Produced %d messages to topic %s", count, topic)
 }
 
