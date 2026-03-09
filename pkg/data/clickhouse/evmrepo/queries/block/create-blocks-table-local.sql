@@ -7,6 +7,7 @@ ON CLUSTER `%s`
 	hash FixedString(32),
 	parent_hash FixedString(32),
 	block_time DateTime64(3, 'UTC'),
+	timestamp_ms UInt64,
 	miner FixedString(20),
 	difficulty UInt256,
 	total_difficulty UInt256,

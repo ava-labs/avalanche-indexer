@@ -51,7 +51,7 @@ func NewBlocks(ctx context.Context, client clickhouse.Client, cluster, database,
 }
 
 // CreateTableIfNotExists creates the raw_blocks table if it doesn't exist,
-// then runs all numbered migrations from queries/migrations/blocks/ to ensure
+// then runs all numbered migrations from queries/migrations/block/ to ensure
 // the schema is up to date for existing tables.
 func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createBlocksTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
@@ -64,7 +64,7 @@ func (r *blocks) CreateTableIfNotExists(ctx context.Context) error {
 		return fmt.Errorf("failed to create blocks table: %w", err)
 	}
 
-	if err := RunMigrations(ctx, r.client.Conn(), blocksMigrationsFS, "queries/migrations/blocks", r.database, r.tableName, r.cluster); err != nil {
+	if err := RunMigrations(ctx, r.client.Conn(), blocksMigrationsFS, "queries/migrations/block", r.database, r.tableName, r.cluster); err != nil {
 		return fmt.Errorf("failed to run blocks migrations: %w", err)
 	}
 
@@ -200,6 +200,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		string(hashBytes[:]),
 		string(parentHashBytes[:]),
 		block.BlockTime,
+		block.TimestampMs,
 		string(minerBytes[:]),
 		difficultyStr,
 		totalDifficultyStr,

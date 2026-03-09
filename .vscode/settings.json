@@ -20,6 +20,7 @@
     "SASL",
     "schemaregistry",
     "serde",
+    "subnetevm",
     "Warnf",
     "Warnw"
   ]

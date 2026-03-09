@@ -291,13 +291,15 @@ func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messa
 
 		bcID := blockchainID
 		evmID := new(big.Int).SetUint64(evmChainID)
+		now := uint64(time.Now().Unix())
 		block := messages.EVMBlock{
 			EVMChainID:       evmID,
 			BlockchainID:     &bcID,
 			Hash:             common.HexToHash(fmt.Sprintf("0x%064d", blockNum)).Hex(),
 			ParentHash:       common.HexToHash(fmt.Sprintf("0x%064d", blockNum-1)).Hex(),
 			Number:           new(big.Int).SetUint64(blockNum),
-			Timestamp:        uint64(time.Now().Unix()),
+			Timestamp:        now,
+			TimestampMs:      now * 1000,
 			Nonce:            0,
 			Difficulty:       big.NewInt(1),
 			GasLimit:         8000000,
@@ -419,18 +421,20 @@ func verifyBlocksInClickHouse(t *testing.T, ctx context.Context, client clickhou
 
 	// Verify specific block data
 	for _, expectedBlock := range expectedBlocks {
-		query := fmt.Sprintf("SELECT lower(concat('0x', hex(hash))) as hash, block_number, gas_used FROM %s WHERE block_number = %d",
+		query := fmt.Sprintf("SELECT lower(concat('0x', hex(hash))) as hash, block_number, gas_used, timestamp_ms FROM %s WHERE block_number = %d",
 			tableName, expectedBlock.Number.Uint64())
 
 		var hash string
 		var blockNumber uint64
 		var gasUsed uint64
+		var timestampMs uint64
 
-		err := client.Conn().QueryRow(ctx, query).Scan(&hash, &blockNumber, &gasUsed)
+		err := client.Conn().QueryRow(ctx, query).Scan(&hash, &blockNumber, &gasUsed, &timestampMs)
 		require.NoError(t, err, "block %d not found", expectedBlock.Number.Uint64())
 		require.Equal(t, expectedBlock.Hash, hash, "hash mismatch for block %d", blockNumber)
 		require.Equal(t, expectedBlock.Number.Uint64(), blockNumber, "block_number mismatch")
 		require.Equal(t, expectedBlock.GasUsed, gasUsed, "gas_used mismatch for block %d", blockNumber)
+		require.Equal(t, expectedBlock.TimestampMs, timestampMs, "timestamp_ms mismatch for block %d", blockNumber)
 	}
 }
 
@@ -982,13 +986,15 @@ func createTestBlocksStartingFrom(evmChainID uint64, blockchainID string, startN
 
 		bcID := blockchainID
 		evmID := new(big.Int).SetUint64(evmChainID)
+		now := uint64(time.Now().Unix())
 		block := messages.EVMBlock{
 			EVMChainID:       evmID,
 			BlockchainID:     &bcID,
 			Hash:             common.HexToHash(fmt.Sprintf("0x%064d", blockNum)).Hex(),
 			ParentHash:       common.HexToHash(fmt.Sprintf("0x%064d", blockNum-1)).Hex(),
 			Number:           new(big.Int).SetUint64(blockNum),
-			Timestamp:        uint64(time.Now().Unix()),
+			Timestamp:        now,
+			TimestampMs:      now * 1000,
 			Nonce:            0,
 			Difficulty:       big.NewInt(1),
 			GasLimit:         8000000,
@@ -1037,13 +1043,15 @@ func createTestBlocksWithTransactions(evmChainID uint64, blockchainID string, bl
 
 		bcID := blockchainID
 		evmID := new(big.Int).SetUint64(evmChainID)
+		now := uint64(time.Now().Unix())
 		block := messages.EVMBlock{
 			EVMChainID:       evmID,
 			BlockchainID:     &bcID,
 			Hash:             common.HexToHash(fmt.Sprintf("0x%064d", blockNum)).Hex(),
 			ParentHash:       common.HexToHash(fmt.Sprintf("0x%064d", blockNum-1)).Hex(),
 			Number:           new(big.Int).SetUint64(blockNum),
-			Timestamp:        uint64(time.Now().Unix()),
+			Timestamp:        now,
+			TimestampMs:      now * 1000,
 			Nonce:            0,
 			Difficulty:       big.NewInt(1),
 			GasLimit:         8000000,

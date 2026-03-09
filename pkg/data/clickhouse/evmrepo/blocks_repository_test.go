@@ -2,7 +2,9 @@ package evmrepo
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,11 +81,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 	}
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_blocks_local", "raw_blocks")
 
 	// Expect WriteBlock call
 	mockConn.
@@ -97,6 +95,7 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			string(hashBytes[:]),             // string: 32-byte binary string
 			string(parentHashBytes[:]),       // string: 32-byte binary string
 			block.BlockTime,                  // time.Time
+			block.TimestampMs,                // uint64
 			string(minerBytes[:]),            // string: 20-byte binary string
 			block.Difficulty.String(),        // string: "1" (UInt256)
 			block.TotalDifficulty.String(),   // string: "1000" (UInt256)
@@ -189,11 +188,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 	}
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_blocks_local", "raw_blocks")
 
 	// Expect WriteBlock call that fails
 	mockConn.
@@ -204,6 +199,7 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			string(hashBytes[:]),
 			string(parentHashBytes[:]),
 			block.BlockTime,
+			block.TimestampMs,
 			string(minerBytes[:]),
 			block.Difficulty.String(),
 			block.TotalDifficulty.String(),
@@ -255,6 +251,7 @@ func createTestBlock() *BlockRow {
 		BlockNumber:           big.NewInt(1647),
 		Hash:                  hash,
 		ParentHash:            parentHash,
+		TimestampMs:           1604768510000,
 		BlockTime:             time.Unix(1604768510, 0).UTC(),
 		Miner:                 miner,
 		Difficulty:            big.NewInt(1),
@@ -290,11 +287,7 @@ func TestRepository_DeleteBlocks_Success(t *testing.T) {
 	chainID := uint64(43114)
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_blocks_local", "raw_blocks")
 
 	// Expect DeleteBlocks call
 	mockConn.
@@ -318,11 +311,7 @@ func TestRepository_DeleteBlocks_Error(t *testing.T) {
 	deleteErr := errors.New("delete failed")
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_blocks_local") || containsSubstring(q, "`default`.`raw_blocks`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_blocks_local", "raw_blocks")
 
 	// Expect DeleteBlocks call that fails
 	mockConn.
@@ -349,4 +338,36 @@ func containsSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// expectTableInit registers mock expectations for table initialization:
+//   - one required call for the local CREATE TABLE (Once)
+//   - one required call for the distributed CREATE TABLE (Once)
+//   - a permissive matcher for ALTER TABLE migration calls (any count)
+//
+// Uses strings.HasPrefix to unambiguously distinguish local from distributed
+// CREATE TABLE statements (the distributed query also references the local
+// table name in its ENGINE clause, so substring matching alone is insufficient).
+func expectTableInit(mockConn *testutils.MockConn, localTable, distributedTable string) {
+	const database = "default"
+	localPrefix := fmt.Sprintf("CREATE TABLE IF NOT EXISTS `%s`.`%s`", database, localTable)
+	distributedPrefix := fmt.Sprintf("CREATE TABLE IF NOT EXISTS `%s`.`%s`", database, distributedTable)
+
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return strings.HasPrefix(q, localPrefix)
+		})).
+		Return(nil).
+		Once()
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return strings.HasPrefix(q, distributedPrefix)
+		})).
+		Return(nil).
+		Once()
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return strings.HasPrefix(q, "ALTER TABLE")
+		})).
+		Return(nil)
 }

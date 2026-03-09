@@ -6,6 +6,7 @@ ON CLUSTER `%s`
 	block_number UInt64,
 	block_hash FixedString(32),
 	block_time DateTime64(3, 'UTC'),
+	timestamp_ms UInt64,
 	tx_hash FixedString(32),
 	tx_index UInt32,
 	address FixedString(20),

@@ -141,14 +141,17 @@ func TestCorethTracesProcessor_Process_Success_WithRepo(t *testing.T) {
 	assert.Equal(t, "call_0", capturedTxs[0].CallIndex)
 	assert.Equal(t, "CALL", capturedTxs[0].Type)
 	assert.Equal(t, "0x55565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f7071", capturedTxs[0].TransactionHash)
+	assert.Equal(t, uint64(1640000000000), capturedTxs[0].TimestampMs)
 
 	// Verify first child
 	assert.Equal(t, "call_0_0", capturedTxs[1].CallIndex)
 	assert.Equal(t, "CALL", capturedTxs[1].Type)
+	assert.Equal(t, uint64(1640000000000), capturedTxs[1].TimestampMs)
 
 	// Verify second child
 	assert.Equal(t, "call_0_1", capturedTxs[2].CallIndex)
 	assert.Equal(t, "DELEGATECALL", capturedTxs[2].Type)
+	assert.Equal(t, uint64(1640000000000), capturedTxs[2].TimestampMs)
 }
 
 func TestCorethTracesProcessor_Process_RepoError(t *testing.T) {
@@ -278,6 +281,7 @@ func createTestBlockTrace() *kafkamsg.EVMBlockTrace {
 		EVMChainID:     big.NewInt(43113),
 		BlockNumber:    1647,
 		BlockTimestamp: 1640000000,
+		TimestampMs:    1640000000000,
 		BlockchainID:   &blockchainID,
 		Traces:         []json.RawMessage{traceBytes},
 	}
@@ -321,6 +325,7 @@ func createTestBlockTraceWithMultipleTransactions() *kafkamsg.EVMBlockTrace {
 		EVMChainID:     big.NewInt(43113),
 		BlockNumber:    1648,
 		BlockTimestamp: 1640000001,
+		TimestampMs:    1640000001000,
 		BlockchainID:   &blockchainID,
 		Traces:         []json.RawMessage{trace1Bytes, trace2Bytes},
 	}

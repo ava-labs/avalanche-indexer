@@ -12,11 +12,17 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
-//go:embed queries/migrations/blocks/*.sql
+//go:embed queries/migrations/block/*.sql
 var blocksMigrationsFS embed.FS
 
-//go:embed queries/migrations/transactions/*.sql
+//go:embed queries/migrations/transaction/*.sql
 var transactionsMigrationsFS embed.FS
+
+//go:embed queries/migrations/log/*.sql
+var logsMigrationsFS embed.FS
+
+//go:embed queries/migrations/internal_transaction/*.sql
+var internalTransactionsMigrationsFS embed.FS
 
 // RunMigrations reads all .sql files from the given embed.FS directory, sorts
 // them lexically, and executes each one against the ClickHouse connection.
@@ -28,8 +34,8 @@ var transactionsMigrationsFS embed.FS
 // To add a new migration, drop a numbered .sql file into the appropriate
 // queries/migrations/<table>/ directory. No Go code changes required.
 //
-//	Example: queries/migrations/blocks/002_add_foo_local.sql
-//	         queries/migrations/blocks/002_add_foo_distributed.sql
+//	Example: queries/migrations/block/002_add_foo_local.sql
+//	         queries/migrations/block/002_add_foo_distributed.sql
 func RunMigrations(
 	ctx context.Context,
 	conn driver.Conn,
