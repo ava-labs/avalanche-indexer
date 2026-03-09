@@ -12,8 +12,10 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 )
 
-const blocksMode = "blocks"
-const tracesMode = "traces"
+const (
+	blocksMode = "blocks"
+	tracesMode = "traces"
+)
 
 type mockCheckpointer struct {
 	mock.Mock
