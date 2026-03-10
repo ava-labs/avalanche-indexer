@@ -125,8 +125,10 @@ func TestNewWithLabels(t *testing.T) {
 	require.NotEmpty(t, metricFamilies)
 
 	// Find the lowest metric and verify labels
+	found := false
 	for _, mf := range metricFamilies {
 		if mf.GetName() == "indexer_lowest" {
+			found = true
 			require.NotEmpty(t, mf.GetMetric())
 			metric := mf.GetMetric()[0]
 
@@ -139,6 +141,7 @@ func TestNewWithLabels(t *testing.T) {
 			require.Equal(t, "test", labelMap["environment"])
 		}
 	}
+	require.True(t, found, "indexer_lowest metric family not found")
 }
 
 func TestNewWithLabels_DifferentRoles_SameRegistry(t *testing.T) {
@@ -165,8 +168,10 @@ func TestNewWithLabels_DifferentRoles_SameRegistry(t *testing.T) {
 	metricFamilies, err := reg.Gather()
 	require.NoError(t, err)
 
+	found := false
 	for _, mf := range metricFamilies {
 		if mf.GetName() == "indexer_lowest" {
+			found = true
 			require.Len(t, mf.GetMetric(), 2, "expected two series for primary and dlq roles")
 
 			roles := make(map[string]float64)
@@ -181,6 +186,7 @@ func TestNewWithLabels_DifferentRoles_SameRegistry(t *testing.T) {
 			require.Equal(t, float64(10), roles["dlq"])
 		}
 	}
+	require.True(t, found, "indexer_lowest metric family not found")
 }
 
 func TestNew_RegistrationError(t *testing.T) {
