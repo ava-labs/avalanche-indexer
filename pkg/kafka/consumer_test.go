@@ -145,7 +145,7 @@ func TestProcessWithRetry_FailMultipleThenSucceed(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 4, proc.CallCount())
-	assertRetryMetrics(t, reg, 1, 0)
+	assertRetryMetrics(t, reg, 3, 0)
 }
 
 func TestProcessWithRetry_AllRetriesExhausted(t *testing.T) {
@@ -160,7 +160,7 @@ func TestProcessWithRetry_AllRetriesExhausted(t *testing.T) {
 
 	require.ErrorIs(t, err, errProcessing)
 	assert.Equal(t, 3, proc.CallCount()) // 1 initial + 2 retries
-	assertRetryMetrics(t, reg, 1, 1)
+	assertRetryMetrics(t, reg, 2, 1)
 }
 
 func TestProcessWithRetry_NoRetriesConfigured(t *testing.T) {
@@ -171,7 +171,7 @@ func TestProcessWithRetry_NoRetriesConfigured(t *testing.T) {
 
 	require.ErrorIs(t, err, errProcessing)
 	assert.Equal(t, 1, proc.CallCount())
-	assertRetryMetrics(t, reg, 1, 1)
+	assertRetryMetrics(t, reg, 0, 0)
 }
 
 func TestProcessWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
@@ -228,7 +228,7 @@ func TestProcessWithRetry_InfiniteRetries_EventualSuccess(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 11, proc.CallCount()) // 1 initial + 10 retries
-	assertRetryMetrics(t, reg, 1, 0)
+	assertRetryMetrics(t, reg, 10, 0)
 }
 
 func TestProcessWithRetry_SingleRetrySuccess(t *testing.T) {
