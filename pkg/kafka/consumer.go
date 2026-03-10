@@ -239,14 +239,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 		c.pauseConsumer()
 		if err := c.sem.Acquire(ctx, 1); err != nil {
 			c.resumeConsumer()
-			select {
-			case <-ctx.Done():
-				c.log.Debugw("message processing context cancelled or deadline exceeded, dropping error", "error", err)
-				return
-			case c.errCh <- err:
-			default:
-				c.log.Errorw("error channel full, dropping error", "error", err)
-			}
+			c.log.Errorw("failed to acquire semaphore probably due to context cancellation or deadline exceeded, skipping message", "error", err)
 			return
 		}
 		c.resumeConsumer()
