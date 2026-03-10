@@ -194,10 +194,9 @@ func runFlags() []cli.Flag {
 			Value:   false,
 		},
 		&cli.StringFlag{
-			Name:     "dlq-consumer-group-id",
-			Usage:    "Kafka consumer group ID for the DLQ consumer",
-			EnvVars:  []string{"KAFKA_DLQ_CONSUMER_GROUP_ID"},
-			Required: true,
+			Name:    "dlq-consumer-group-id",
+			Usage:   "Kafka consumer group ID for the DLQ consumer",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_GROUP_ID"},
 		},
 		&cli.Int64Flag{
 			Name:    "dlq-consumer-concurrency",
@@ -222,12 +221,6 @@ func runFlags() []cli.Flag {
 			Usage:   "Kafka max poll interval for the internal DLQ confluent kafka consumer",
 			EnvVars: []string{"KAFKA_DLQ_CONSUMER_MAX_POLL_INTERVAL"},
 			Value:   3400 * time.Second,
-		},
-		&cli.DurationFlag{
-			Name:    "dlq-consumer-flush-timeout",
-			Usage:   "Kafka DLQ producer flush timeout for the DLQ consumer on shutdown",
-			EnvVars: []string{"KAFKA_DLQ_CONSUMER_FLUSH_TIMEOUT"},
-			Value:   15 * time.Second,
 		},
 		&cli.DurationFlag{
 			Name:    "dlq-consumer-goroutine-wait-timeout",

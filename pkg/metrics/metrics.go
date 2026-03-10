@@ -31,7 +31,7 @@ type Labels struct {
 	Environment   string // Deployment environment (e.g., "production", "staging", "development")
 	Region        string // Cloud region (e.g., "us-east-1", "eu-west-1")
 	CloudProvider string // Cloud provider (e.g., "aws", "oci", "gcp")
-	Role          string // Consumer role (e.g., "primary", "dlq") to differentiate metric sets on the same registry
+	Role          string // Consumer role (e.g., "primary_consumer", "dlq_consumer") to differentiate metric sets on the same registry
 }
 
 // toPrometheusLabels converts Labels to prometheus.Labels map.

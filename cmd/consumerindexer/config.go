@@ -93,7 +93,6 @@ type Config struct {
 	DLQConsumerOffsetCommitInterval time.Duration
 	DLQConsumerSessionTimeout       time.Duration
 	DLQConsumerMaxPollInterval      time.Duration
-	DLQConsumerFlushTimeout         time.Duration
 	DLQConsumerGoroutineWaitTimeout time.Duration
 	DLQConsumerPollInterval         time.Duration
 
@@ -181,7 +180,6 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		DLQConsumerOffsetCommitInterval: c.Duration("dlq-consumer-offset-commit-interval"),
 		DLQConsumerSessionTimeout:       c.Duration("dlq-consumer-session-timeout"),
 		DLQConsumerMaxPollInterval:      c.Duration("dlq-consumer-max-poll-interval"),
-		DLQConsumerFlushTimeout:         c.Duration("dlq-consumer-flush-timeout"),
 		DLQConsumerGoroutineWaitTimeout: c.Duration("dlq-consumer-goroutine-wait-timeout"),
 		DLQConsumerPollInterval:         c.Duration("dlq-consumer-poll-interval"),
 		KafkaSASL: kafka.SASLConfig{

@@ -222,12 +222,12 @@ func run(c *cli.Context) error {
 		dlqLabels.Role = metrics.RoleDLQConsumer
 		dlqMetrics, err := metrics.NewWithLabels(registry, dlqLabels)
 		if err != nil {
-			return errors.New("failed to create DLQ metrics: " + err.Error())
+			return fmt.Errorf("failed to create DLQ metrics: %w", err)
 		}
 
 		dlqProc, err := newProcessor(ctx, mode, dlqLog, chClient, cfg, dlqMetrics)
 		if err != nil {
-			return errors.New("failed to create DLQ processor: " + err.Error())
+			return fmt.Errorf("failed to create DLQ processor: %w", err)
 		}
 
 		if cfg.DLQTopic == "" {
@@ -249,7 +249,7 @@ func run(c *cli.Context) error {
 			OffsetManagerCommitInterval: cfg.DLQConsumerOffsetCommitInterval,
 			SessionTimeout:              &cfg.DLQConsumerSessionTimeout,
 			MaxPollInterval:             &cfg.DLQConsumerMaxPollInterval,
-			FlushTimeout:                &cfg.DLQConsumerFlushTimeout,
+			FlushTimeout:                new(time.Duration),
 			GoroutineWaitTimeout:        &cfg.DLQConsumerGoroutineWaitTimeout,
 			PollInterval:                &cfg.DLQConsumerPollInterval,
 			SASL:                        cfg.KafkaSASL,
