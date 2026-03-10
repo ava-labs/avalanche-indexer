@@ -84,7 +84,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	if latest > safetyMargin {
 		startHeight = latest - safetyMargin
 	}
-	err = chkpt.Write(ctx, evmChainID, startHeight)
+	err = chkpt.Write(ctx, evmChainID, "blocks", startHeight)
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Ensure Kafka topic exists ----
@@ -179,7 +179,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	g.Go(func() error {
 		cfg := checkpointer.DefaultConfig()
 		cfg.Interval = checkpointInterval
-		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID, "blocks")
 	})
 	g.Go(func() error { return indexerConsumer.Start(gctx) })
 

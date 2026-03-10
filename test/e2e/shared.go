@@ -57,7 +57,7 @@ func verifyCheckpointLowestCorrect(t *testing.T, ctx context.Context, repo check
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		lowest, exists, err := repo.Read(ctx, chainID)
+		lowest, exists, err := repo.Read(ctx, chainID, "blocks")
 		if err == nil && exists && lowest >= expected {
 			return
 		}

@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS `%s`.`%s`
 ON CLUSTER `%s`
 (
 	chain_id UInt64,
+	mode String,
 	lowest_unprocessed_block UInt64,
 	timestamp Int64
 )

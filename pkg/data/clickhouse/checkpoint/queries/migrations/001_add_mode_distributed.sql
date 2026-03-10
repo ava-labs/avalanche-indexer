@@ -1,0 +1,1 @@
+ALTER TABLE `%s`.`%s` ON CLUSTER `%s` ADD COLUMN IF NOT EXISTS mode String DEFAULT 'blocks'

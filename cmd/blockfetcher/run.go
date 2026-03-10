@@ -277,16 +277,16 @@ func run(c *cli.Context) error {
 	chkpt := checkpointRepo.(checkpointer.Checkpointer)
 
 	if fetchStartHeight {
-		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID)
+		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID, cfg.Mode)
 		if err != nil {
 			return fmt.Errorf("failed to read checkpoint: %w", err)
 		}
 		if !exists {
-			sugar.Infof("checkpoint not found, will start from block height 0")
+			sugar.Infof("checkpoint not found for mode %s, will start from block height 0", cfg.Mode)
 			start = 0
 		} else {
 			start = lowestUnprocessed
-			sugar.Infof("checkpoint found, lowest unprocessed block: %d", start)
+			sugar.Infof("checkpoint found for mode %s, lowest unprocessed block: %d", cfg.Mode, start)
 		}
 	}
 
@@ -344,7 +344,7 @@ func run(c *cli.Context) error {
 			MaxRetries:   3,
 			RetryBackoff: 300 * time.Millisecond,
 		}
-		return checkpointer.Start(gctx, s, chkpt, checkpointCfg, cfg.EVMChainID)
+		return checkpointer.Start(gctx, s, chkpt, checkpointCfg, cfg.EVMChainID, cfg.Mode)
 	})
 
 	go slidingwindow.StartGapWatchdog(gctx, sugar, s, cfg.GapWatchdogInterval, cfg.GapWatchdogMaxGap)

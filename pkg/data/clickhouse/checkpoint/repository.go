@@ -62,7 +62,8 @@ func NewRepository(
 // Initialize ensures the checkpoints table exists in ClickHouse.
 // Implements checkpointer.Checkpointer interface.
 // Schema:
-//   - chain_id: UInt64 (primary key)
+//   - chain_id: UInt64 (part of composite primary key)
+//   - mode: String (part of composite primary key, e.g., "blocks" or "traces")
 //   - lowest_unprocessed_block: UInt64
 //   - timestamp: Int64 (used by ReplacingMergeTree for deduplication)
 func (r *repository) Initialize(ctx context.Context) error {
@@ -76,6 +77,10 @@ func (r *repository) Initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to create checkpoints table: %w", err)
 	}
 
+	if err := clickhouse.RunMigrations(ctx, r.client.Conn(), migrationsFS, "queries/migrations", r.database, r.tableName, r.cluster); err != nil {
+		return fmt.Errorf("failed to run checkpoint migrations: %w", err)
+	}
+
 	return nil
 }
 
@@ -84,33 +89,36 @@ func (r *repository) Initialize(ctx context.Context) error {
 func (r *repository) Write(
 	ctx context.Context,
 	evmChainID uint64,
+	mode string,
 	lowestUnprocessed uint64,
 ) error {
 	checkpoint := &Checkpoint{
 		ChainID:   evmChainID,
+		Mode:      mode,
 		Lowest:    lowestUnprocessed,
 		Timestamp: time.Now().Unix(),
 	}
 	query := fmt.Sprintf(writeCheckpointQuery, r.database, r.tableName)
 	err := r.client.Conn().
-		Exec(ctx, query, checkpoint.ChainID, checkpoint.Lowest, checkpoint.Timestamp)
+		Exec(ctx, query, checkpoint.ChainID, checkpoint.Mode, checkpoint.Lowest, checkpoint.Timestamp)
 	if err != nil {
 		return fmt.Errorf("failed to write checkpoint: %w", err)
 	}
 	return nil
 }
 
-// Read retrieves the latest checkpoint for given EVM chain ID.
+// Read retrieves the latest checkpoint for given EVM chain ID and mode.
 // Implements checkpointer.Checkpointer interface.
 func (r *repository) Read(
 	ctx context.Context,
 	evmChainID uint64,
+	mode string,
 ) (lowestUnprocessed uint64, exists bool, err error) {
 	var checkpoint Checkpoint
 	query := fmt.Sprintf(readCheckpointQuery, r.database, r.tableName)
 	err = r.client.Conn().
-		QueryRow(ctx, query, evmChainID).
-		Scan(&checkpoint.ChainID, &checkpoint.Lowest, &checkpoint.Timestamp)
+		QueryRow(ctx, query, evmChainID, mode).
+		Scan(&checkpoint.ChainID, &checkpoint.Mode, &checkpoint.Lowest, &checkpoint.Timestamp)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, false, nil
