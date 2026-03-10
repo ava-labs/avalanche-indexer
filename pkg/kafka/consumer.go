@@ -329,10 +329,12 @@ func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) er
 			"offset", msg.TopicPartition.Offset,
 		)
 
+		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
-		case <-time.After(backoff):
+		case <-timer.C:
 		}
 
 		err = c.processor.Process(ctx, msg)
