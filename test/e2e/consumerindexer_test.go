@@ -34,7 +34,8 @@ const (
 	txHashMultiplierLarge = 1000
 
 	// oneEtherInWei represents 1 ETH in wei (10^18)
-	oneEtherInWei = 1000000000000000000
+	oneEtherInWei        = 1000000000000000000
+	producerFlushTimeout = 5000
 )
 
 // durationPtr returns a pointer to a time.Duration.
