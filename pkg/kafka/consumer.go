@@ -162,6 +162,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 
 	c.log.Info("consumer subscribed to topic, starting to poll for messages...")
+	var startErr error
 	run := true
 	for run {
 		select {
@@ -171,10 +172,12 @@ func (c *Consumer) Start(ctx context.Context) error {
 			continue
 		case err := <-dlqProducerErrs:
 			c.log.Errorw("fatal error from DLQ producer, shutting down consumer", "error", err)
+			startErr = err
 			run = false
 			continue
 		case err := <-c.errCh:
 			c.log.Errorw("error from consumer, shutting down consumer", "error", err)
+			startErr = err
 			run = false
 			continue
 		default:
@@ -198,6 +201,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 				if msg.IsFatal() {
 					c.metrics.RecordKafkaError(true)
 					c.log.Errorw("fatal kafka error", "error", msg)
+					startErr = msg
 					run = false
 					continue
 				}
@@ -211,13 +215,18 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 
 	c.log.Info("consumer shutting down...")
-	err := c.close()
-	if err != nil {
-		c.log.Errorw("failed to close consumer", "error", err)
+	closeErr := c.close()
+	if closeErr != nil {
+		c.log.Errorw("failed to close consumer", "error", closeErr)
 	}
 
 	c.log.Info("consumer shutdown complete")
-	return err
+
+	// Return the start error if it occurred, otherwise return the close error.
+	if startErr != nil {
+		return startErr
+	}
+	return closeErr
 }
 
 // dispatch spawns a goroutine to process msg with concurrency control via semaphore.
@@ -319,7 +328,7 @@ func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) er
 		c.metrics.RecordMessageRetry()
 
 		backoff := policy.Backoff(attempt)
-		c.log.Warnw("retrying message processing",
+		c.log.Errorw("retrying message processing",
 			"error", err,
 			"attempt", attempt+1,
 			"backoff", backoff,
