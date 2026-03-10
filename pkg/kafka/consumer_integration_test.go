@@ -27,6 +27,7 @@ const (
 	consumerDLQTopic     = "test-consumer-dlq"
 	consumerTestTimeout  = 120 * time.Second
 	consumerFlushTimeout = 10 * time.Second
+	producerFlushTimeout = 5000
 )
 
 type testProcessor struct {
@@ -222,6 +223,8 @@ func produceTestMessages(t *testing.T, brokers, topic string, count int) {
 		require.Nil(t, m.TopicPartition.Error, "Delivery failed")
 	}
 
+	pending := producer.Flush(producerFlushTimeout)
+	require.Equal(t, 0, pending, "failed to flush producer")
 	t.Logf("Produced %d messages to topic %s", count, topic)
 }
 

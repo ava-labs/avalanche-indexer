@@ -34,7 +34,8 @@ const (
 	txHashMultiplierLarge = 1000
 
 	// oneEtherInWei represents 1 ETH in wei (10^18)
-	oneEtherInWei = 1000000000000000000
+	oneEtherInWei        = 1000000000000000000
+	producerFlushTimeout = 5000
 )
 
 // durationPtr returns a pointer to a time.Duration.
@@ -359,7 +360,8 @@ func produceBlocksToKafka(t *testing.T, brokers, topic string, blocks []messages
 		require.Nil(t, m.TopicPartition.Error, "delivery failed")
 	}
 
-	producer.Flush(5000)
+	pending := producer.Flush(5000)
+	require.Equal(t, 0, pending, "failed to flush producer")
 	t.Logf("Produced %d blocks to Kafka topic %s", len(blocks), topic)
 }
 
@@ -392,7 +394,8 @@ func produceInvalidMessage(t *testing.T, brokers, topic string) {
 	m := e.(*ckafka.Message)
 	require.Nil(t, m.TopicPartition.Error)
 
-	producer.Flush(5000)
+	pending := producer.Flush(producerFlushTimeout)
+	require.Equal(t, 0, pending, "failed to flush producer")
 	t.Log("Produced invalid message to Kafka")
 }
 

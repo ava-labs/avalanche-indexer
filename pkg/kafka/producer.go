@@ -129,18 +129,18 @@ func (q *Producer) Close(timeout time.Duration) {
 		q.log.Info("closing kafka producer")
 		defer close(q.errCh)
 
+		// Flush the producer queue.
+		pending := q.producer.Flush(int(timeout.Milliseconds()))
+		if pending > 0 {
+			q.log.Warnf("flush incomplete, messages will be lost. pending: %d", pending)
+		}
+
 		// Signal the monitor or logs goroutines to stop.
 		close(q.closedCh)
 
 		// Wait for the monitor or logs goroutines to stop.
 		<-q.eventsDone
 		<-q.logsDone
-
-		// Flush the producer queue.
-		pending := q.producer.Flush(int(timeout.Milliseconds()))
-		if pending > 0 {
-			q.log.Warnf("flush incomplete, messages will be lost. pending: %d", pending)
-		}
 
 		q.producer.Close()
 		q.log.Info("kafka producer closed")
