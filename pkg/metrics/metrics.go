@@ -31,7 +31,9 @@ const (
 	Receipts      = "receipts"
 	Consumer      = "consumer"
 
-	subsystemProducer = "producer"
+	subsystemProducer   = "producer"
+	RolePrimaryConsumer = "primary_consumer"
+	RoleDLQConsumer     = "dlq_consumer"
 )
 
 // Labels holds constant labels applied to all metrics.
@@ -41,6 +43,7 @@ type Labels struct {
 	Environment   string // Deployment environment (e.g., "production", "staging", "development")
 	Region        string // Cloud region (e.g., "us-east-1", "eu-west-1")
 	CloudProvider string // Cloud provider (e.g., "aws", "oci", "gcp")
+	Role          string // Consumer role (e.g., "primary_consumer", "dlq_consumer") to differentiate metric sets on the same registry
 }
 
 // toPrometheusLabels converts Labels to prometheus.Labels map.
@@ -58,6 +61,9 @@ func (l Labels) toPrometheusLabels() prometheus.Labels {
 	}
 	if l.CloudProvider != "" {
 		labels["cloud_provider"] = l.CloudProvider
+	}
+	if l.Role != "" {
+		labels["role"] = l.Role
 	}
 	return labels
 }
@@ -128,6 +134,14 @@ type Metrics struct {
 	messagesProcessed         *prometheus.CounterVec   // by partition, status
 	messageProcessingDuration *prometheus.HistogramVec // by partition, status
 	messagesInFlight          prometheus.Gauge
+
+	// Consumer backpressure metrics
+	consumerPauses  prometheus.Counter
+	consumerResumes prometheus.Counter
+
+	// Consumer retry metrics
+	messageRetries        prometheus.Counter // total retry attempts
+	messageRetriesExhaust prometheus.Counter // retries exhausted (all attempts failed)
 
 	// DLQ production metrics
 	dlqMessageProduced    *prometheus.CounterVec   // by status
@@ -414,6 +428,32 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Help:      "Number of messages currently being processed",
 		}),
 
+		consumerPauses: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "pauses_total",
+			Help:      "Total number of times the consumer was paused due to backpressure (semaphore full)",
+		}),
+		consumerResumes: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "resumes_total",
+			Help:      "Total number of times the consumer was resumed after backpressure cleared",
+		}),
+
+		messageRetries: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "message_retries_total",
+			Help:      "Total number of message processing retry attempts in the consumer",
+		}),
+		messageRetriesExhaust: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: Consumer,
+			Name:      "message_retries_exhausted_total",
+			Help:      "Total number of messages that exhausted all retry attempts in the consumer",
+		}),
+
 		// DLQ production metrics
 		dlqMessageProduced: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace,
@@ -485,6 +525,10 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		reg.Register(m.messagesProcessed),
 		reg.Register(m.messageProcessingDuration),
 		reg.Register(m.messagesInFlight),
+		reg.Register(m.consumerPauses),
+		reg.Register(m.consumerResumes),
+		reg.Register(m.messageRetries),
+		reg.Register(m.messageRetriesExhaust),
 		reg.Register(m.dlqMessageProduced),
 		reg.Register(m.dlqProductionDuration),
 		reg.Register(m.kafkaErrors),
@@ -723,6 +767,39 @@ func (m *Metrics) DecMessagesInFlight() {
 		return
 	}
 	m.messagesInFlight.Dec()
+}
+
+// RecordConsumerPause increments the pause counter when backpressure triggers a consumer pause.
+func (m *Metrics) RecordConsumerPause() {
+	if m == nil {
+		return
+	}
+	m.consumerPauses.Inc()
+}
+
+// RecordConsumerResume increments the resume counter when the consumer resumes after backpressure clears.
+func (m *Metrics) RecordConsumerResume() {
+	if m == nil {
+		return
+	}
+	m.consumerResumes.Inc()
+}
+
+// RecordMessageRetry increments the retry attempt counter.
+func (m *Metrics) RecordMessageRetry() {
+	if m == nil {
+		return
+	}
+	m.messageRetries.Inc()
+}
+
+// RecordMessageRetriesExhausted increments the counter for messages that
+// exhausted all retry attempts without succeeding.
+func (m *Metrics) RecordMessageRetriesExhausted() {
+	if m == nil {
+		return
+	}
+	m.messageRetriesExhaust.Inc()
 }
 
 // RecordDLQProduction records a DLQ publish attempt with duration.

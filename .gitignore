@@ -6,3 +6,5 @@ coverage.out
 /blockfetcher
 /consumerindexer
 .gocache/
+*.out
+*.html

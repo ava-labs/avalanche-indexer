@@ -18,6 +18,12 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"VERBOSE"},
 			Value:   false,
 		},
+		&cli.StringFlag{
+			Name:    "mode",
+			Usage:   "The mode to run the block fetcher in (blocks or traces). Default is blocks.",
+			EnvVars: []string{"MODE"},
+			Value:   blocksMode,
+		},
 		// Kafka configuration flags
 		&cli.StringFlag{
 			Name:     "bootstrap-servers",
@@ -182,6 +188,54 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"KAFKA_PUBLISH_TO_DLQ"},
 			Value:   false,
 		},
+		// DLQ consumer flags
+		&cli.BoolFlag{
+			Name:    "enable-dlq-consumer",
+			Usage:   "Enable a secondary consumer that reprocesses messages from the DLQ topic",
+			EnvVars: []string{"ENABLE_DLQ_CONSUMER"},
+			Value:   false,
+		},
+		&cli.StringFlag{
+			Name:    "dlq-consumer-group-id",
+			Usage:   "Kafka consumer group ID for the DLQ consumer",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_GROUP_ID"},
+		},
+		&cli.Int64Flag{
+			Name:    "dlq-consumer-concurrency",
+			Usage:   "Concurrent message processors for the DLQ consumer (keep low; DLQ retries indefinitely)",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_CONCURRENCY"},
+			Value:   1,
+		},
+		&cli.DurationFlag{
+			Name:    "dlq-consumer-offset-commit-interval",
+			Usage:   "Interval for committing offsets in the DLQ consumer",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_OFFSET_COMMIT_INTERVAL"},
+			Value:   10 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:    "dlq-consumer-session-timeout",
+			Usage:   "Kafka session timeout for the DLQ consumer",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_SESSION_TIMEOUT"},
+			Value:   240 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:    "dlq-consumer-max-poll-interval",
+			Usage:   "Kafka max poll interval for the internal DLQ confluent kafka consumer",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_MAX_POLL_INTERVAL"},
+			Value:   3400 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:    "dlq-consumer-goroutine-wait-timeout",
+			Usage:   "Timeout for waiting in-flight goroutines on shutdown for the DLQ consumer",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_GOROUTINE_WAIT_TIMEOUT"},
+			Value:   30 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:    "dlq-consumer-poll-interval",
+			Usage:   "Poll interval for the DLQ Kafka consumer",
+			EnvVars: []string{"KAFKA_DLQ_CONSUMER_POLL_INTERVAL"},
+			Value:   100 * time.Millisecond,
+		},
 		// ClickHouse configuration flags
 		&cli.StringSliceFlag{
 			Name:    "clickhouse-hosts",
@@ -307,6 +361,12 @@ func runFlags() []cli.Flag {
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
 			Value:   clickhouse.DefaultRawLogsTableName,
+		},
+		&cli.StringFlag{
+			Name:    "internal-transactions-table-name",
+			Usage:   "ClickHouse table name for internal transactions",
+			EnvVars: []string{"CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME"},
+			Value:   "internal_transactions",
 		},
 		// Metrics configuration flags
 		&cli.StringFlag{
@@ -487,6 +547,12 @@ func removeFlags() []cli.Flag {
 			Usage:   "ClickHouse table name for raw logs",
 			EnvVars: []string{"CLICKHOUSE_RAW_LOGS_TABLE_NAME"},
 			Value:   clickhouse.DefaultRawLogsTableName,
+		},
+		&cli.StringFlag{
+			Name:    "internal-transactions-table-name",
+			Usage:   "ClickHouse table name for internal transactions",
+			EnvVars: []string{"CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME"},
+			Value:   "internal_transactions",
 		},
 	}
 }

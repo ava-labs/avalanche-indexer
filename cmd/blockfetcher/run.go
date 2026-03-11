@@ -164,17 +164,18 @@ func run(c *cli.Context) error {
 	case tracesMode:
 		switch cfg.ClientType {
 		case "coreth":
-			client, err := corethRpc.DialContext(ctx, cfg.RPCURL)
+			rpc, err := corethRpc.DialContext(ctx, cfg.RPCURL)
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
-			defer client.Close()
+			defer rpc.Close()
+			cclient := corethClient.New(rpc)
 
-			w, err = worker.NewCorethTracesWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
+			w, err = worker.NewCorethTracesWorker(cclient, rpc, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
 			if err != nil {
 				return fmt.Errorf("failed to create traces worker: %w", err)
 			}
-			cclient := corethClient.New(client)
+
 			sub = subscriber.NewCoreth(sugar, cclient)
 
 			if fetchLatestHeight {
@@ -185,17 +186,17 @@ func run(c *cli.Context) error {
 				sugar.Infof("latest block height: %d", end)
 			}
 		case "subnet-evm":
-			client, err := subnetRpc.DialContext(ctx, cfg.RPCURL)
+			rpc, err := subnetRpc.DialContext(ctx, cfg.RPCURL)
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
-			defer client.Close()
+			defer rpc.Close()
+			sclient := subnetClient.NewClient(rpc)
 
-			w, err = worker.NewSubnetEVMTracesWorker(client, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
+			w, err = worker.NewSubnetEVMTracesWorker(sclient, rpc, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
 			if err != nil {
 				return fmt.Errorf("failed to create traces worker: %w", err)
 			}
-			sclient := subnetClient.NewClient(client)
 			sub = subscriber.NewSubnetEVM(sugar, sclient)
 
 			if fetchLatestHeight {
@@ -276,16 +277,16 @@ func run(c *cli.Context) error {
 	chkpt := checkpointRepo.(checkpointer.Checkpointer)
 
 	if fetchStartHeight {
-		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID)
+		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID, cfg.Mode)
 		if err != nil {
 			return fmt.Errorf("failed to read checkpoint: %w", err)
 		}
 		if !exists {
-			sugar.Infof("checkpoint not found, will start from block height 0")
+			sugar.Infof("checkpoint not found for mode %s, will start from block height 0", cfg.Mode)
 			start = 0
 		} else {
 			start = lowestUnprocessed
-			sugar.Infof("checkpoint found, lowest unprocessed block: %d", start)
+			sugar.Infof("checkpoint found for mode %s, lowest unprocessed block: %d", cfg.Mode, start)
 		}
 	}
 
@@ -343,7 +344,7 @@ func run(c *cli.Context) error {
 			MaxRetries:   3,
 			RetryBackoff: 300 * time.Millisecond,
 		}
-		return checkpointer.Start(gctx, s, chkpt, checkpointCfg, cfg.EVMChainID)
+		return checkpointer.Start(gctx, s, chkpt, checkpointCfg, cfg.EVMChainID, cfg.Mode)
 	})
 
 	go slidingwindow.StartGapWatchdog(gctx, sugar, s, cfg.GapWatchdogInterval, cfg.GapWatchdogMaxGap)

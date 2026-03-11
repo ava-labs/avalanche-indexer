@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
@@ -20,6 +22,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+)
+
+const (
+	blocksMode = "blocks"
+	tracesMode = "traces"
 )
 
 func run(c *cli.Context) error {
@@ -35,7 +42,10 @@ func run(c *cli.Context) error {
 	}
 	defer sugar.Desugar().Sync() //nolint:errcheck // best-effort flush; ignore sync errors
 
+	mode := cfg.Mode
+
 	sugar.Infow("config",
+		"mode", cfg.Mode,
 		"verbose", cfg.Verbose,
 		"bootstrapServers", cfg.BootstrapServers,
 		"groupID", cfg.GroupID,
@@ -64,6 +74,7 @@ func run(c *cli.Context) error {
 		"rawBlocksTableName", cfg.RawBlocksTableName,
 		"rawTransactionsTableName", cfg.RawTransactionsTableName,
 		"rawLogsTableName", cfg.RawLogsTableName,
+		"internalTransactionsTableName", cfg.InternalTransactionsTableName,
 		"publishToDLQ", cfg.PublishToDLQ,
 		"kafkaTopicNumPartitions", cfg.KafkaTopicNumPartitions,
 		"kafkaTopicReplicationFactor", cfg.KafkaTopicReplicationFactor,
@@ -71,14 +82,18 @@ func run(c *cli.Context) error {
 		"kafkaDLQTopicReplicationFactor", cfg.KafkaDLQTopicReplicationFactor,
 	)
 
-	// Initialize Prometheus metrics with labels for multi-instance filtering
+	// Initialize Prometheus metrics with labels for multi-instance filtering.
+	// The primary consumer and DLQ consumer each get their own metrics instance
+	// differentiated by the "role" label so they can coexist on the same registry.
 	registry := prometheus.NewRegistry()
-	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+	baseLabels := metrics.Labels{
 		EVMChainID:    cfg.ChainID,
 		Environment:   cfg.Environment,
 		Region:        cfg.Region,
 		CloudProvider: cfg.CloudProvider,
-	})
+		Role:          metrics.RolePrimaryConsumer,
+	}
+	m, err := metrics.NewWithLabels(registry, baseLabels)
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
@@ -104,27 +119,14 @@ func run(c *cli.Context) error {
 
 	sugar.Info("ClickHouse client created successfully")
 
-	// Initialize repositories (tables are created automatically)
-	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create blocks repository: %w", err)
-	}
-	sugar.Info("Blocks table ready", "tableName", cfg.RawBlocksTableName)
+	// Named loggers for primary and DLQ consumers
+	primaryLog := sugar.Named("primary_consumer")
+	dlqLog := sugar.Named("dlq_consumer")
 
-	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
+	proc, err := newProcessor(ctx, mode, primaryLog, chClient, cfg, m)
 	if err != nil {
-		return fmt.Errorf("failed to create transactions repository: %w", err)
+		return fmt.Errorf("failed to create processor: %w", err)
 	}
-	sugar.Info("Transactions table ready", "tableName", cfg.RawTransactionsTableName)
-
-	logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
-	if err != nil {
-		return fmt.Errorf("failed to create logs repository: %w", err)
-	}
-	sugar.Info("Logs table ready", "tableName", cfg.RawLogsTableName)
-
-	// Create CorethProcessor with ClickHouse persistence and metrics
-	proc := processor.NewCorethProcessor(sugar, blocksRepo, transactionsRepo, logsRepo, m)
 
 	adminConfig := ckafka.ConfigMap{"bootstrap.servers": cfg.BootstrapServers}
 	cfg.KafkaSASL.ApplyToConfigMap(&adminConfig)
@@ -200,8 +202,8 @@ func run(c *cli.Context) error {
 		SASL:                        cfg.KafkaSASL,
 	}
 
-	// Create consumer
-	consumer, err := kafka.NewConsumer(ctx, sugar, consumerCfg, proc, m)
+	// Create primary consumer with named logger
+	consumer, err := kafka.NewConsumer(ctx, primaryLog, consumerCfg, proc, m)
 	if err != nil {
 		return fmt.Errorf("failed to create consumer: %w", err)
 	}
@@ -214,6 +216,26 @@ func run(c *cli.Context) error {
 
 	// Run consumer and metrics server error handling concurrently using errgroup
 	g, gctx := errgroup.WithContext(ctx)
+
+	if cfg.EnableDLQConsumer {
+		dlqConsumer, err := newDLQConsumer(ctx, cfg, baseLabels, registry, mode, dlqLog, chClient)
+		if err != nil {
+			return fmt.Errorf("failed to create DLQ consumer: %w", err)
+		}
+		sugar.Infow("DLQ consumer created, starting consumption",
+			"topic", cfg.DLQTopic,
+			"groupID", cfg.DLQConsumerGroupID,
+			"concurrency", cfg.DLQConsumerConcurrency,
+		)
+
+		g.Go(func() error {
+			if err := dlqConsumer.Start(gctx); err != nil {
+				dlqLog.Errorw("DLQ consumer stopped with error", "error", err)
+				return err
+			}
+			return nil
+		})
+	}
 
 	// Consumer goroutine - blocks until shutdown or error
 	g.Go(func() error {
@@ -243,10 +265,107 @@ func run(c *cli.Context) error {
 	sugar.Info("shutting down metrics server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	if shutdownErr := metricsServer.Shutdown(shutdownCtx); shutdownErr != nil {
 		sugar.Warnw("metrics server shutdown error", "error", shutdownErr)
 	}
 
 	sugar.Info("shutdown complete")
 	return err
+}
+
+// newProcessor creates a processor.Processor for the given mode, wired with
+// the provided logger, ClickHouse client, config, and metrics. Both the
+// primary and DLQ consumers use this to avoid duplicating the repository
+// and processor initialization logic.
+func newProcessor(
+	ctx context.Context,
+	mode string,
+	log *zap.SugaredLogger,
+	chClient clickhouse.Client,
+	cfg *Config,
+	m *metrics.Metrics,
+) (processor.Processor, error) {
+	switch mode {
+	case blocksMode:
+		blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
+		if err != nil {
+			return nil, fmt.Errorf("blocks repository: %w", err)
+		}
+		transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
+		if err != nil {
+			return nil, fmt.Errorf("transactions repository: %w", err)
+		}
+		logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
+		if err != nil {
+			return nil, fmt.Errorf("logs repository: %w", err)
+		}
+		return processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, m), nil
+	case tracesMode:
+		internalTxRepo, err := evmrepo.NewInternalTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.InternalTransactionsTableName)
+		if err != nil {
+			return nil, fmt.Errorf("internal transactions repository: %w", err)
+		}
+		return processor.NewCorethTracesProcessor(log, internalTxRepo, m), nil
+	default:
+		return nil, fmt.Errorf("invalid mode: %s", mode)
+	}
+}
+
+// newDLQConsumer validates DLQ-specific configuration and creates a Consumer
+// that subscribes to the DLQ topic with infinite-retry semantics. It never
+// publishes failures to a secondary DLQ (no cascading failure loop).
+func newDLQConsumer(
+	ctx context.Context,
+	cfg *Config,
+	baseLabels metrics.Labels,
+	registry *prometheus.Registry,
+	mode string,
+	log *zap.SugaredLogger,
+	chClient clickhouse.Client,
+) (*kafka.Consumer, error) {
+	if cfg.DLQTopic == "" {
+		return nil, errors.New("DLQ topic must be set when DLQ consumer is enabled")
+	}
+	if cfg.DLQConsumerGroupID == "" {
+		return nil, errors.New("DLQ consumer group ID must be set when DLQ consumer is enabled")
+	}
+	if cfg.GroupID == cfg.DLQConsumerGroupID {
+		return nil, errors.New("DLQ consumer group ID must differ from the primary consumer group ID")
+	}
+
+	dlqLabels := baseLabels
+	dlqLabels.Role = metrics.RoleDLQConsumer
+	dlqMetrics, err := metrics.NewWithLabels(registry, dlqLabels)
+	if err != nil {
+		return nil, fmt.Errorf("DLQ metrics: %w", err)
+	}
+
+	dlqProc, err := newProcessor(ctx, mode, log, chClient, cfg, dlqMetrics)
+	if err != nil {
+		return nil, fmt.Errorf("DLQ processor: %w", err)
+	}
+
+	dlqCfg := kafka.ConsumerConfig{
+		Topic:                       cfg.DLQTopic,
+		Concurrency:                 cfg.DLQConsumerConcurrency,
+		PublishToDLQ:                false,
+		BootstrapServers:            cfg.BootstrapServers,
+		GroupID:                     cfg.DLQConsumerGroupID,
+		AutoOffsetReset:             cfg.AutoOffsetReset,
+		EnableLogs:                  cfg.EnableKafkaLogs,
+		OffsetManagerCommitInterval: cfg.DLQConsumerOffsetCommitInterval,
+		SessionTimeout:              &cfg.DLQConsumerSessionTimeout,
+		MaxPollInterval:             &cfg.DLQConsumerMaxPollInterval,
+		GoroutineWaitTimeout:        &cfg.DLQConsumerGoroutineWaitTimeout,
+		PollInterval:                &cfg.DLQConsumerPollInterval,
+		SASL:                        cfg.KafkaSASL,
+		Retry: kafka.RetryPolicy{
+			MaxRetries: kafka.InfiniteRetries,
+			BaseDelay:  1 * time.Second,
+			MaxDelay:   5 * time.Minute,
+		},
+	}
+
+	return kafka.NewConsumer(ctx, log, dlqCfg, dlqProc, dlqMetrics)
 }

@@ -12,6 +12,7 @@ type LogRow struct {
 	BlockNumber  uint64
 	BlockHash    string // Hex string, stored as FixedString(32)
 	BlockTime    time.Time
+	TimestampMs  uint64
 	TxHash       string // Hex string, stored as FixedString(32)
 	TxIndex      uint32
 	Address      string  // Hex string, stored as FixedString(20)

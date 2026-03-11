@@ -28,6 +28,7 @@ func remove(c *cli.Context) error {
 	rawBlocksTableName := c.String("raw-blocks-table-name")
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
 	rawLogsTableName := c.String("raw-logs-table-name")
+	internalTransactionsTableName := c.String("internal-transactions-table-name")
 
 	chCfg, err := buildClickHouseConfig(c)
 	if err != nil {
@@ -51,6 +52,10 @@ func remove(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create logs repository: %w", err)
 	}
+	internalTransactionsRepo, err := evmrepo.NewInternalTransactions(ctx, chClient, chCfg.Cluster, chCfg.Database, internalTransactionsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create internal transactions repository: %w", err)
+	}
 
 	err = rawBlocksRepo.DeleteBlocks(ctx, evmChainID)
 	if err != nil {
@@ -67,7 +72,12 @@ func remove(c *cli.Context) error {
 		return fmt.Errorf("failed to delete logs: %w", err)
 	}
 
-	sugar.Infof("blocks, transactions, and logs successfully removed for chain ID %d", evmChainID)
+	err = internalTransactionsRepo.DeleteInternalTransactions(ctx, evmChainID)
+	if err != nil {
+		return fmt.Errorf("failed to delete internal transactions: %w", err)
+	}
+
+	sugar.Infof("blocks, transactions, logs, and internal transactions successfully removed for chain ID %d", evmChainID)
 
 	return nil
 }

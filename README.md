@@ -74,6 +74,8 @@ See each service’s README for its full flag/env reference.
 ### Services
 - `blockfetcher` — fetches blocks from a Coreth-compatible RPC and processes them via a sliding window.
   - See `cmd/blockfetcher/README.md`
+- `consumerindexer` — consumes and indexes blockchain data from Kafka (blocks or traces mode).
+  - See `cmd/consumerindexer/README.md`
 
 ---
 
@@ -181,9 +183,11 @@ Select `default` in ClickHouse Server tab (on the left).
 
 checkpoint records can be added manually:
 ```
-INSERT INTO default.checkpoints (chain_id, lowest_unprocessed_block, timestamp) 
-VALUES (43114, 48662238, 1767903034)
+INSERT INTO default.checkpoints (chain_id, mode, lowest_unprocessed_block, timestamp) 
+VALUES (43114, 'blocks', 48662238, 1767903034)
 ```
+
+**Note:** Checkpoints include a `mode` field ('blocks' or 'traces') to allow running both modes in parallel for the same chain without conflicts.
 
 Start ingestion from checkpoint:
 ```
