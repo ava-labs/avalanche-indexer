@@ -19,5 +19,5 @@ ON CLUSTER `%s`
 	removed Bool
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
-ORDER BY (blockchain_id, block_time, tx_hash, log_index)
+ORDER BY (blockchain_id, tx_hash, log_index)
 SETTINGS index_granularity = 8192
