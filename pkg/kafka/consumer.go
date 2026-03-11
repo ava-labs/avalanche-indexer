@@ -162,7 +162,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 
 	c.log.Info("consumer subscribed to topic, starting to poll for messages...")
-	var startErr error
+	var loopErr error
 	run := true
 	for run {
 		select {
@@ -170,14 +170,14 @@ func (c *Consumer) Start(ctx context.Context) error {
 			c.log.Info("context done, shutting down consumer...")
 			run = false
 			continue
-		case err := <-dlqProducerErrs:
-			c.log.Errorw("fatal error from DLQ producer, shutting down consumer", "error", err)
-			startErr = err
+		case dlqErr := <-dlqProducerErrs:
+			c.log.Errorw("fatal error from DLQ producer, shutting down consumer", "error", dlqErr)
+			loopErr = dlqErr
 			run = false
 			continue
-		case err := <-c.errCh:
-			c.log.Errorw("error from consumer, shutting down consumer", "error", err)
-			startErr = err
+		case procErr := <-c.errCh:
+			c.log.Errorw("error from message processing, shutting down consumer", "error", procErr)
+			loopErr = procErr
 			run = false
 			continue
 		default:
@@ -201,7 +201,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 				if msg.IsFatal() {
 					c.metrics.RecordKafkaError(true)
 					c.log.Errorw("fatal kafka error", "error", msg)
-					startErr = msg
+					loopErr = msg
 					run = false
 					continue
 				}
@@ -222,9 +222,8 @@ func (c *Consumer) Start(ctx context.Context) error {
 
 	c.log.Info("consumer shutdown complete")
 
-	// Return the start error if it occurred, otherwise return the close error.
-	if startErr != nil {
-		return startErr
+	if loopErr != nil {
+		return loopErr
 	}
 	return closeErr
 }
