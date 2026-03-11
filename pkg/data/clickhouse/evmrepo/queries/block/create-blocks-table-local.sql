@@ -34,5 +34,5 @@ ON CLUSTER `%s`
 	num_txns UInt32
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
-ORDER BY (blockchain_id, block_time, block_number)
+ORDER BY (blockchain_id, block_number)
 SETTINGS index_granularity = 8192
