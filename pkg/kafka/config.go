@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"math"
 	"time"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -14,7 +15,49 @@ const (
 	DefaultGoroutineWaitTimeout = 30 * time.Second
 	DefaultPollInterval         = 100 * time.Millisecond
 	DefaultMessageMaxBytes      = 20971521 // 20MB
+
+	DefaultRetryBaseDelay = 500 * time.Millisecond
+	DefaultRetryMaxDelay  = 2 * time.Second
 )
+
+// InfiniteRetries signals that the consumer should retry failed messages
+// indefinitely until they succeed or the context is cancelled.
+const InfiniteRetries = -1
+
+// RetryPolicy controls how the consumer retries failed messages before
+// escalating to DLQ publication or error propagation.
+//
+//   - MaxRetries = 0  : no retries (default for primary consumers)
+//   - MaxRetries > 0  : retry up to N times, then escalate
+//   - MaxRetries = -1 : retry forever (suited for DLQ consumers)
+type RetryPolicy struct {
+	MaxRetries int           // -1 = infinite, 0 = disabled, >0 = count
+	BaseDelay  time.Duration // initial backoff sleep
+	MaxDelay   time.Duration // upper bound on exponential backoff
+}
+
+// Backoff returns the sleep duration for the given zero-based attempt,
+// clamped to MaxDelay. Uses 2^attempt * BaseDelay with a cap.
+func (r RetryPolicy) Backoff(attempt int) time.Duration {
+	if r.BaseDelay <= 0 {
+		return 0
+	}
+	shift := math.Min(float64(attempt), 30) // avoid overflow
+	delay := time.Duration(float64(r.BaseDelay) * math.Pow(2, shift))
+	if delay > r.MaxDelay {
+		return r.MaxDelay
+	}
+	return delay
+}
+
+// ShouldRetry reports whether another attempt is allowed for the given
+// zero-based attempt number (i.e. attempt 0 is the first retry).
+func (r RetryPolicy) ShouldRetry(attempt int) bool {
+	if r.MaxRetries == InfiniteRetries {
+		return true
+	}
+	return attempt < r.MaxRetries
+}
 
 // ConsumerConfig holds the configuration for a Kafka consumer
 type ConsumerConfig struct {
@@ -34,6 +77,7 @@ type ConsumerConfig struct {
 	PublishToDLQ                bool           // If true, failed messages are published to DLQ
 	SASL                        SASLConfig     // SASL authentication configuration
 	MessageMaxBytes             int            // Maximum message size in bytes
+	Retry                       RetryPolicy    // Retry policy for failed message processing
 }
 
 // WithDefaults returns a copy of the config with default values filled in for any nil pointer fields.
@@ -61,6 +105,12 @@ func (c ConsumerConfig) WithDefaults() ConsumerConfig {
 	}
 	if c.MessageMaxBytes == 0 {
 		c.MessageMaxBytes = DefaultMessageMaxBytes
+	}
+	if c.Retry.BaseDelay == 0 {
+		c.Retry.BaseDelay = DefaultRetryBaseDelay
+	}
+	if c.Retry.MaxDelay == 0 {
+		c.Retry.MaxDelay = DefaultRetryMaxDelay
 	}
 	return c
 }
