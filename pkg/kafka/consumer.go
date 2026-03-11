@@ -60,6 +60,9 @@ func NewConsumer(
 	proc processor.Processor,
 	m *metrics.Metrics,
 ) (*Consumer, error) {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	// Apply defaults to config
 	cfg = cfg.WithDefaults()
 
@@ -234,6 +237,10 @@ func (c *Consumer) Start(ctx context.Context) error {
 // slot. Once acquired the partitions are resumed. This keeps librdkafka's internal
 // buffers bounded while the background heartbeat thread maintains group membership.
 func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
+	if msg != nil {
+		observeConsumedMessageSize(c.metrics, len(msg.Value))
+	}
+
 	if !c.sem.TryAcquire(1) {
 		c.pauseConsumer()
 		if err := c.sem.Acquire(ctx, 1); err != nil {
@@ -495,4 +502,9 @@ func (c *Consumer) printKafkaLogs(ctx context.Context) {
 			c.log.Debugf("consumer level: %d tag: %s message: %s ", log.Level, log.Tag, log.Message)
 		}
 	}
+}
+
+// observeConsumedMessageSize records the size of a Kafka message consumed.
+func observeConsumedMessageSize(m *metrics.Metrics, sizeBytes int) {
+	m.ObserveKafkaMessageSize(metrics.DirectionConsumed, sizeBytes)
 }

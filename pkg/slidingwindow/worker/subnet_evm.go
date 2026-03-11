@@ -36,9 +36,12 @@ func NewSubnetEVMWorker(
 	evmChainID uint64,
 	blockchainID string,
 	log *zap.SugaredLogger,
-	metrics *metrics.Metrics,
+	m *metrics.Metrics,
 	receiptTimeout time.Duration,
 ) (*SubnetEVMWorker, error) {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	RegisterCustomTypesOnce.Do(func() {
 		customtypes.Register()
 	})
@@ -50,13 +53,14 @@ func NewSubnetEVMWorker(
 		evmChainID:     new(big.Int).SetUint64(evmChainID),
 		blockchainID:   &blockchainID,
 		log:            log,
-		metrics:        metrics,
+		metrics:        m,
 		receiptTimeout: receiptTimeout,
 	}, nil
 }
 
 func (cw *SubnetEVMWorker) Process(ctx context.Context, height uint64) error {
 	cw.log.Debugw("worker starting block processing", "height", height)
+	processStart := time.Now()
 
 	evmBlock, err := cw.GetBlock(ctx, height)
 	if err != nil {
@@ -70,16 +74,20 @@ func (cw *SubnetEVMWorker) Process(ctx context.Context, height uint64) error {
 	}
 
 	cw.log.Debugw("block serialized, producing to kafka", "height", height, "bytes", len(bytes))
+	observeProducedMessageSize(cw.metrics, len(bytes))
 	produceStart := time.Now()
 	err = cw.producer.Produce(ctx, kafka.Msg{
 		Topic: cw.topic,
 		Value: bytes,
 		Key:   []byte(evmBlock.Number.String()),
 	})
+	produceDuration := time.Since(produceStart)
+	cw.metrics.RecordProducerResult(err, produceDuration.Seconds())
 	if err != nil {
 		return fmt.Errorf("produce block failed %d: %w", height, err)
 	}
-	cw.log.Debugw("kafka produce completed", "height", height, "duration_ms", time.Since(produceStart).Milliseconds())
+	cw.metrics.ObserveBlockToPublishDuration(time.Since(processStart).Seconds())
+	cw.log.Debugw("kafka produce completed", "height", height, "duration_ms", produceDuration.Milliseconds())
 
 	cw.log.Debugw("processed block",
 		"height", evmBlock.Number.Uint64(),
@@ -96,19 +104,15 @@ func (cw *SubnetEVMWorker) GetBlock(ctx context.Context, height uint64) (*messag
 	const method = "eth_getBlockByNumber"
 	start := time.Now()
 
-	if cw.metrics != nil {
-		cw.metrics.IncRPCInFlight()
-		defer cw.metrics.DecRPCInFlight()
-	}
+	cw.metrics.IncRPCInFlight()
+	defer cw.metrics.DecRPCInFlight()
 
 	h := new(big.Int).SetUint64(height)
 	cw.log.Debugw("calling eth_getBlockByNumber", "height", height)
 	block, err := cw.client.BlockByNumber(ctx, h)
 	rpcDuration := time.Since(start)
 
-	if cw.metrics != nil {
-		cw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
-	}
+	cw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
 
 	if err != nil {
 		cw.log.Warnw("eth_getBlockByNumber failed", "height", height, "error", err, "duration_ms", rpcDuration.Milliseconds())
@@ -137,10 +141,8 @@ func (cw *SubnetEVMWorker) GetBlock(ctx context.Context, height uint64) (*messag
 // FetchBlockReceipts fetches the receipts for the given transactions and block number.
 func (cw *SubnetEVMWorker) FetchBlockReceipts(ctx context.Context, transactions []*messages.EVMTransaction, blockNumber int64) error {
 	start := time.Now()
-	if cw.metrics != nil {
-		cw.metrics.IncReceiptFetchInFlight()
-		defer cw.metrics.DecReceiptFetchInFlight()
-	}
+	cw.metrics.IncReceiptFetchInFlight()
+	defer cw.metrics.DecReceiptFetchInFlight()
 
 	cw.log.Debugw("calling BlockReceipts", "block", blockNumber, "timeout", cw.receiptTimeout)
 	ctxTimeout, cancel := context.WithTimeout(ctx, cw.receiptTimeout)
@@ -153,9 +155,7 @@ func (cw *SubnetEVMWorker) FetchBlockReceipts(ctx context.Context, transactions 
 
 	if err != nil {
 		cw.log.Warnw("BlockReceipts failed", "block", blockNumber, "error", err, "duration_ms", receiptDuration.Milliseconds())
-		if cw.metrics != nil {
-			cw.metrics.RecordReceiptFetch(err, receiptDuration.Seconds(), 0)
-		}
+		cw.metrics.RecordReceiptFetch(err, receiptDuration.Seconds(), 0)
 		return fmt.Errorf("%w for block %d: %w", ErrReceiptFetchFailed, blockNumber, err)
 	}
 
@@ -165,9 +165,7 @@ func (cw *SubnetEVMWorker) FetchBlockReceipts(ctx context.Context, transactions 
 		err := fmt.Errorf("%w for block %d: got %d receipts, expected %d transactions",
 			ErrReceiptCountMismatch, blockNumber, len(r), len(transactions))
 		cw.log.Warnw("receipt count mismatch", "block", blockNumber, "receipts", len(r), "transactions", len(transactions))
-		if cw.metrics != nil {
-			cw.metrics.RecordReceiptFetch(err, receiptDuration.Seconds(), 0)
-		}
+		cw.metrics.RecordReceiptFetch(err, receiptDuration.Seconds(), 0)
 		return err
 	}
 
@@ -177,8 +175,6 @@ func (cw *SubnetEVMWorker) FetchBlockReceipts(ctx context.Context, transactions 
 		logCount += len(receipt.Logs)
 	}
 
-	if cw.metrics != nil {
-		cw.metrics.RecordReceiptFetch(nil, time.Since(start).Seconds(), logCount)
-	}
+	cw.metrics.RecordReceiptFetch(nil, time.Since(start).Seconds(), logCount)
 	return nil
 }

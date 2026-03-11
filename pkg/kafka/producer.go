@@ -93,7 +93,6 @@ func NewProducer(ctx context.Context, conf *ckafka.ConfigMap, log *zap.SugaredLo
 // Callers should design for possible duplicate delivery when retrying.
 func (q *Producer) Produce(ctx context.Context, msg Msg) error {
 	deliveryCh := make(chan ckafka.Event, 1)
-	defer close(deliveryCh)
 
 	kMsg := &ckafka.Message{
 		TopicPartition: ckafka.TopicPartition{
