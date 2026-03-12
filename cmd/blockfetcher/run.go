@@ -72,9 +72,8 @@ func run(c *cli.Context) error {
 		"clickhouseCluster", cfg.ClickHouse.Cluster,
 		"clickhouseDatabase", cfg.ClickHouse.Database,
 		"checkpointTableName", cfg.CheckpointTableName,
-		"dynamoDBRegion", cfg.DynamoDBRegion,
-		"dynamoDBCreateTables", cfg.DynamoDBCreateTable,
-		"dynamoDBEndpointURL", cfg.DynamoDBEndpointURL,
+		"dynamoDBRegion", cfg.DynamoDB.Region,
+		"dynamoDBEndpointURL", cfg.DynamoDB.EndpointURL,
 	)
 
 	var fetchStartHeight bool

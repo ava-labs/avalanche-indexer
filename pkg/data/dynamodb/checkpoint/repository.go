@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,8 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
-
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
 )
 
 const (
@@ -48,36 +45,15 @@ type repository struct {
 
 // NewRepository builds a DynamoDB-backed checkpoint repository and ensures
 // its table exists/ready based on config.
-func NewRepository(ctx context.Context, cfg Config) (checkpointer.Checkpointer, error) {
-	if strings.TrimSpace(cfg.Region) == "" {
-		return nil, errors.New("dynamodb region is required")
-	}
-	if strings.TrimSpace(cfg.TableName) == "" {
-		return nil, errors.New("dynamodb checkpoint table name is required")
-	}
-
-	loadOptions := []func(*awscfg.LoadOptions) error{
-		awscfg.WithRegion(cfg.Region),
-	}
-
-	awsCfg, err := awscfg.LoadDefaultConfig(ctx, loadOptions...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
+func NewRepository(client *dynamodb.Client, tableName string, log *zap.SugaredLogger) (checkpointer.Checkpointer, error) {
 
 	repo := &repository{
-		client: dynamodb.NewFromConfig(awsCfg, func(o *dynamodb.Options) {
-			if cfg.EndpointURL != "" {
-				o.BaseEndpoint = aws.String(cfg.EndpointURL)
-			}
-		}),
-		tableName: cfg.TableName,
-		logger:    cfg.Logger,
+		client:    client,
+		tableName: tableName,
+		logger:    log,
 	}
 
-	initCtx, cancel := context.WithTimeout(ctx, defaultInitializeTimeout)
-	defer cancel()
-	if err := repo.Initialize(initCtx); err != nil {
+	if err := repo.Initialize(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil

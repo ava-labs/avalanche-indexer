@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/dynamodb"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -85,17 +86,15 @@ type Config struct {
 	// ClickHouse settings
 	ClickHouse clickhouse.Config
 
+	// DynamoDB settings
+	DynamoDB dynamodb.Config
+
 	// Checkpoint settings
 	CheckpointBackend   string
 	CheckpointTableName string
 	CheckpointInterval  time.Duration
 	GapWatchdogInterval time.Duration
 	GapWatchdogMaxGap   uint64
-
-	// DynamoDB settings
-	DynamoDBRegion      string
-	DynamoDBCreateTable bool
-	DynamoDBEndpointURL string
 
 	// Metrics settings
 	MetricsHost   string
@@ -108,9 +107,7 @@ type Config struct {
 type checkpointConfig struct {
 	Backend          string
 	TableName        string
-	DynamoDBRegion   string
-	DynamoDBCreate   bool
-	DynamoDBEndpoint string
+	DynamoDBConfig   dynamodb.Config
 	ClickHouseConfig clickhouse.Config
 }
 
@@ -195,14 +192,12 @@ func buildConfig(c *cli.Context) (*Config, error) {
 			SecurityProtocol: c.String("kafka-security-protocol"),
 		},
 		ClickHouse:          checkpointCfg.ClickHouseConfig,
+		DynamoDB:            checkpointCfg.DynamoDBConfig,
 		CheckpointBackend:   checkpointCfg.Backend,
 		CheckpointTableName: checkpointCfg.TableName,
 		CheckpointInterval:  c.Duration("checkpoint-interval"),
 		GapWatchdogInterval: c.Duration("gap-watchdog-interval"),
 		GapWatchdogMaxGap:   c.Uint64("gap-watchdog-max-gap"),
-		DynamoDBRegion:      checkpointCfg.DynamoDBRegion,
-		DynamoDBCreateTable: checkpointCfg.DynamoDBCreate,
-		DynamoDBEndpointURL: checkpointCfg.DynamoDBEndpoint,
 		MetricsHost:         c.String("metrics-host"),
 		MetricsPort:         c.Int("metrics-port"),
 		Environment:         c.String("environment"),
@@ -230,11 +225,14 @@ func buildCheckpointConfig(c *cli.Context, dynamoDBCreateTable bool) (checkpoint
 	}
 
 	return checkpointConfig{
-		Backend:          checkpointBackend,
-		TableName:        c.String("checkpoint-table-name"),
-		DynamoDBRegion:   c.String("dynamodb-region"),
-		DynamoDBCreate:   dynamoDBCreateTable,
-		DynamoDBEndpoint: c.String("dynamodb-endpoint-url"),
+		Backend:   checkpointBackend,
+		TableName: c.String("checkpoint-table-name"),
+		DynamoDBConfig: dynamodb.Config{
+			Region:          c.String("dynamodb-region"),
+			EndpointURL:     c.String("dynamodb-endpoint-url"),
+			AccessKeyID:     c.String("dynamodb-access-key-id"),
+			SecretAccessKey: c.String("dynamodb-secret-access-key"),
+		},
 		ClickHouseConfig: chCfg,
 	}, nil
 }

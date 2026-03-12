@@ -11,6 +11,7 @@ import (
 
 	chcheckpoint "github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	ddbcheckpoint "github.com/ava-labs/avalanche-indexer/pkg/data/dynamodb/checkpoint"
+	ddbClient "github.com/ava-labs/avalanche-indexer/pkg/dynamodb"
 )
 
 func newCheckpointStore(
@@ -55,12 +56,12 @@ func newDynamoCheckpointStore(
 	cfg *Config,
 	log *zap.SugaredLogger,
 ) (checkpointer.Checkpointer, func(), error) {
-	repo, err := ddbcheckpoint.NewRepository(ctx, ddbcheckpoint.Config{
-		Region:      cfg.DynamoDBRegion,
-		TableName:   cfg.CheckpointTableName,
-		EndpointURL: cfg.DynamoDBEndpointURL,
-		Logger:      log,
-	})
+	ddbClient, err := ddbClient.New(cfg.DynamoDB, log)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create DynamoDB client: %w", err)
+	}
+
+	repo, err := ddbcheckpoint.NewRepository(ddbClient, cfg.CheckpointTableName, log)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create DynamoDB checkpoint repository: %w", err)
 	}

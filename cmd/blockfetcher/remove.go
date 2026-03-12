@@ -37,9 +37,7 @@ func remove(c *cli.Context) error {
 		ClickHouse:          checkpointCfg.ClickHouseConfig,
 		CheckpointBackend:   checkpointCfg.Backend,
 		CheckpointTableName: checkpointCfg.TableName,
-		DynamoDBRegion:      checkpointCfg.DynamoDBRegion,
-		DynamoDBCreateTable: checkpointCfg.DynamoDBCreate,
-		DynamoDBEndpointURL: checkpointCfg.DynamoDBEndpoint,
+		DynamoDB:            checkpointCfg.DynamoDBConfig,
 	}
 
 	store, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
