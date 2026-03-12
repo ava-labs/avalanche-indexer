@@ -161,7 +161,6 @@ bin/blockfetcher run \
   --checkpoint-backend dynamodb \
   --dynamodb-region us-west-2 \
   --checkpoint-table-name checkpoints \
-  --dynamodb-create-tables true
 ```
 
 Or using environment variables:
@@ -262,8 +261,8 @@ All flags have environment variable equivalents:
 - `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: checkpoints, ClickHouse table for checkpoints)
 - `--checkpoint-backend` → `CHECKPOINT_BACKEND` (default: clickhouse, options: clickhouse or dynamodb)
 - `--dynamodb-region` → `DYNAMODB_REGION` (default: us-west-2)
-- `--dynamodb-create-tables` → `DYNAMODB_CREATE_TABLES` (default: true)
 - `--dynamodb-endpoint-url` → `DYNAMODB_ENDPOINT_URL` (optional; useful with LocalStack)
+- `--dynamodb-``
 - `--checkpoint-interval` / `-i` → `CHECKPOINT_INTERVAL` (default: 1m, checkpoint write interval)
 - `--gap-watchdog-interval` / `-g` → `GAP_WATCHDOG_INTERVAL` (default: 15m, gap check interval)
 - `--gap-watchdog-max-gap` / `-G` → `GAP_WATCHDOG_MAX_GAP` (default: 100, max gap before warning)

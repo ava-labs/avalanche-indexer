@@ -234,16 +234,23 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"DYNAMODB_REGION"},
 			Value:   "us-west-2",
 		},
-		&cli.BoolFlag{
-			Name:    "dynamodb-create-tables",
-			Usage:   "Create DynamoDB checkpoint table if it doesn't exist",
-			EnvVars: []string{"DYNAMODB_CREATE_TABLES"},
-			Value:   false,
-		},
 		&cli.StringFlag{
 			Name:    "dynamodb-endpoint-url",
 			Usage:   "Custom DynamoDB endpoint URL (e.g. LocalStack)",
 			EnvVars: []string{"DYNAMODB_ENDPOINT_URL"},
+			Value:   "",
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-access-key-id",
+			Usage:   "Custom DynamoDB access key ID",
+			EnvVars: []string{"DYNAMODB_ACCESS_KEY_ID"},
+			Value:   "",
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-secret-access-key",
+			Usage:   "Custom DynamoDB secret access key",
+			EnvVars: []string{"DYNAMODB_SECRET_ACCESS_KEY"},
+			Value:   "",
 		},
 		&cli.DurationFlag{
 			Name:    "checkpoint-interval",
@@ -387,6 +394,12 @@ func removeFlags() []cli.Flag {
 			Required: true,
 		},
 		&cli.StringFlag{
+			Name:    "mode",
+			Usage:   "The mode (blocks or traces) to remove checkpoints for",
+			EnvVars: []string{"MODE"},
+			Value:   blocksMode,
+		},
+		&cli.StringFlag{
 			Name:    "checkpoint-backend",
 			Usage:   "Checkpoint storage backend to remove from (clickhouse or dynamodb)",
 			EnvVars: []string{"CHECKPOINT_BACKEND"},
@@ -409,6 +422,19 @@ func removeFlags() []cli.Flag {
 			Name:    "dynamodb-endpoint-url",
 			Usage:   "Custom DynamoDB endpoint URL (e.g. LocalStack)",
 			EnvVars: []string{"DYNAMODB_ENDPOINT_URL"},
+			Value:   "",
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-access-key-id",
+			Usage:   "Custom DynamoDB access key ID",
+			EnvVars: []string{"DYNAMODB_ACCESS_KEY_ID"},
+			Value:   "",
+		},
+		&cli.StringFlag{
+			Name:    "dynamodb-secret-access-key",
+			Usage:   "Custom DynamoDB secret access key",
+			EnvVars: []string{"DYNAMODB_SECRET_ACCESS_KEY"},
+			Value:   "",
 		},
 		&cli.StringSliceFlag{
 			Name:    "clickhouse-hosts",

@@ -70,11 +70,19 @@ func (r *repository) Initialize(ctx context.Context) error {
 					AttributeName: aws.String(chainIDAttr),
 					KeyType:       types.KeyTypeHash,
 				},
+				{
+					AttributeName: aws.String(modeAttr),
+					KeyType:       types.KeyTypeRange,
+				},
 			},
 			AttributeDefinitions: []types.AttributeDefinition{
 				{
 					AttributeName: aws.String(chainIDAttr),
 					AttributeType: types.ScalarAttributeTypeN,
+				},
+				{
+					AttributeName: aws.String(modeAttr),
+					AttributeType: types.ScalarAttributeTypeS,
 				},
 			},
 			BillingMode: types.BillingModePayPerRequest,

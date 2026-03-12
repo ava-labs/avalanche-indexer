@@ -145,7 +145,7 @@ func (c *Config) KafkaProducerConfig() *ckafka.ConfigMap {
 
 // buildConfig builds a Config from CLI context flags
 func buildConfig(c *cli.Context) (*Config, error) {
-	checkpointCfg, err := buildCheckpointConfig(c, c.Bool("dynamodb-create-tables"))
+	checkpointCfg, err := buildCheckpointConfig(c)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 	}, nil
 }
 
-func buildCheckpointConfig(c *cli.Context, dynamoDBCreateTable bool) (checkpointConfig, error) {
+func buildCheckpointConfig(c *cli.Context) (checkpointConfig, error) {
 	checkpointBackend := strings.ToLower(strings.TrimSpace(c.String("checkpoint-backend")))
 	chCfg := clickhouse.Config{}
 	ddbCfg := dynamodb.Config{}

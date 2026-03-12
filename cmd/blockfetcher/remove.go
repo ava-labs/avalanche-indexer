@@ -28,7 +28,7 @@ func remove(c *cli.Context) error {
 		return errors.New("mode is required")
 	}
 
-	checkpointCfg, err := buildCheckpointConfig(c, false)
+	checkpointCfg, err := buildCheckpointConfig(c)
 	if err != nil {
 		return err
 	}
