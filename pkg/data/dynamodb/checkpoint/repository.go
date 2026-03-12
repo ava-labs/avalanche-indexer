@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	defaultInitializeTimeout = 30 * time.Second
-	defaultDescribeInterval  = 1 * time.Second
-
 	chainIDAttr           = "chain_id"
 	modeAttr              = "mode"
 	lowestUnprocessedAttr = "lowest_unprocessed_block"
@@ -32,10 +29,6 @@ type dynamoAPI interface {
 	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
 }
-
-var (
-	_ checkpointer.Checkpointer = (*repository)(nil)
-)
 
 type repository struct {
 	client    dynamoAPI
@@ -63,67 +56,46 @@ func (r *repository) Initialize(ctx context.Context) error {
 	_, err := r.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
 		TableName: aws.String(r.tableName),
 	})
-	if err == nil {
-		return r.waitForTableActive(ctx)
-	}
 
 	var notFound *types.ResourceNotFoundException
-	if !errors.As(err, &notFound) {
+	if errors.As(err, &notFound) {
+		if r.logger != nil {
+			r.logger.Infow("creating DynamoDB checkpoint table", "tableName", r.tableName)
+		}
+
+		_, err = r.client.CreateTable(ctx, &dynamodb.CreateTableInput{
+			TableName: aws.String(r.tableName),
+			KeySchema: []types.KeySchemaElement{
+				{
+					AttributeName: aws.String(chainIDAttr),
+					KeyType:       types.KeyTypeHash,
+				},
+			},
+			AttributeDefinitions: []types.AttributeDefinition{
+				{
+					AttributeName: aws.String(chainIDAttr),
+					AttributeType: types.ScalarAttributeTypeN,
+				},
+			},
+			BillingMode: types.BillingModePayPerRequest,
+		})
+
+		var riue *types.ResourceInUseException
+		if err != nil && !errors.As(err, &riue) {
+			return fmt.Errorf("failed to create checkpoint table %s: %w", r.tableName, err)
+		}
+	} else if err != nil {
 		return fmt.Errorf("failed to describe checkpoint table %s: %w", r.tableName, err)
 	}
 
-	if r.logger != nil {
-		r.logger.Infow("creating DynamoDB checkpoint table", "tableName", r.tableName)
-	}
-
-	_, err = r.client.CreateTable(ctx, &dynamodb.CreateTableInput{
+	waiter := dynamodb.NewTableExistsWaiter(r.client)
+	if err := waiter.Wait(ctx, &dynamodb.DescribeTableInput{
 		TableName: aws.String(r.tableName),
-		KeySchema: []types.KeySchemaElement{
-			{
-				AttributeName: aws.String(chainIDAttr),
-				KeyType:       types.KeyTypeHash,
-			},
-		},
-		AttributeDefinitions: []types.AttributeDefinition{
-			{
-				AttributeName: aws.String(chainIDAttr),
-				AttributeType: types.ScalarAttributeTypeN,
-			},
-		},
-		BillingMode: types.BillingModePayPerRequest,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create checkpoint table %s: %w", r.tableName, err)
+	}, 30*time.Second); err != nil {
+		return fmt.Errorf("timed out waiting for checkpoint table %s: %w", r.tableName, err)
 	}
 
-	if err := r.waitForTableActive(ctx); err != nil {
-		return err
-	}
 	return nil
-}
-
-func (r *repository) waitForTableActive(ctx context.Context) error {
-	ticker := time.NewTicker(defaultDescribeInterval)
-	defer ticker.Stop()
-
-	for {
-		out, err := r.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
-			TableName: aws.String(r.tableName),
-		})
-		if err == nil && out.Table != nil && out.Table.TableStatus == types.TableStatusActive {
-			return nil
-		}
-
-		if err != nil && r.logger != nil {
-			r.logger.Warnw("error describing checkpoint table, retrying", "tableName", r.tableName, "error", err)
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for checkpoint table %s to become active: %w", r.tableName, ctx.Err())
-		case <-ticker.C:
-		}
-	}
 }
 
 func (r *repository) Write(ctx context.Context, evmChainID uint64, mode string, lowestUnprocessed uint64) error {
