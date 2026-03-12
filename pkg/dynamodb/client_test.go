@@ -25,8 +25,7 @@ func TestNew_InvalidConfig_EmptyRegion(t *testing.T) {
 
 	client, err := New(cfg, testLogger(t))
 
-	require.Error(t, err)
-	assert.Equal(t, "dynamodb region is required", err.Error())
+	require.ErrorIs(t, err, errRegionRequired)
 	assert.Nil(t, client)
 }
 
@@ -37,8 +36,7 @@ func TestNew_InvalidConfig_WhitespaceRegion(t *testing.T) {
 
 	client, err := New(cfg, testLogger(t))
 
-	require.Error(t, err)
-	assert.Equal(t, "dynamodb region is required", err.Error())
+	require.ErrorIs(t, err, errRegionRequired)
 	assert.Nil(t, client)
 }
 

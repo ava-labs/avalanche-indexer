@@ -218,10 +218,7 @@ func buildCheckpointConfig(c *cli.Context) (checkpointConfig, error) {
 			return checkpointConfig{}, fmt.Errorf("failed to build ClickHouse config: %w", err)
 		}
 	case checkpointBackendDynamoDB:
-		ddbCfg, err = buildDynamoDBConfig(c)
-		if err != nil {
-			return checkpointConfig{}, fmt.Errorf("failed to build DynamoDB config: %w", err)
-		}
+		ddbCfg = buildDynamoDBConfig(c)
 	default:
 		return checkpointConfig{}, fmt.Errorf("invalid checkpoint backend %q, must be one of [%s, %s]",
 			checkpointBackend, checkpointBackendClickHouse, checkpointBackendDynamoDB)
@@ -276,13 +273,13 @@ func buildClickHouseConfig(c *cli.Context) (clickhouse.Config, error) {
 	}, nil
 }
 
-func buildDynamoDBConfig(c *cli.Context) (dynamodb.Config, error) {
+func buildDynamoDBConfig(c *cli.Context) dynamodb.Config {
 	return dynamodb.Config{
 		Region:          c.String("dynamodb-region"),
 		EndpointURL:     c.String("dynamodb-endpoint-url"),
 		AccessKeyID:     c.String("dynamodb-access-key-id"),
 		SecretAccessKey: c.String("dynamodb-secret-access-key"),
-	}, nil
+	}
 }
 
 // validateBlockBufferSize validates that the block buffer size is within uint8 range (0-255)

@@ -49,7 +49,7 @@ func newClickHouseCheckpointStore(
 }
 
 func newDynamoCheckpointStore(
-	ctx context.Context,
+	_ context.Context,
 	cfg *Config,
 	log *zap.SugaredLogger,
 ) (checkpointer.Checkpointer, error) {

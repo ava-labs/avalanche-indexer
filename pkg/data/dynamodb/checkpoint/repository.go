@@ -39,7 +39,6 @@ type repository struct {
 // NewRepository builds a DynamoDB-backed checkpoint repository and ensures
 // its table exists/ready based on config.
 func NewRepository(client *dynamodb.Client, tableName string, log *zap.SugaredLogger) (checkpointer.Checkpointer, error) {
-
 	repo := &repository{
 		client:    client,
 		tableName: tableName,
@@ -165,6 +164,8 @@ func (r *repository) Delete(ctx context.Context, chainID uint64, mode string) er
 }
 
 // Close does nothing for DynamoDB as DDB API is RESTful
+//
+//nolint:revive // receiver name should not be an underscore
 func (r *repository) Close() error {
 	return nil
 }
