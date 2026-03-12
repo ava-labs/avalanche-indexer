@@ -36,8 +36,8 @@ const (
 	// oneEtherInWei represents 1 ETH in wei (10^18)
 	oneEtherInWei = 1000000000000000000
 
-	RoleDLQConsumer      = "dlq"
-	RolePrimaryConsumer  = "primary"
+	RoleDLQConsumer     = metrics.RoleDLQConsumer
+	RolePrimaryConsumer = metrics.RolePrimaryConsumer
 	producerFlushTimeout = 5000
 )
 
@@ -1304,33 +1304,27 @@ func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
 		return dlqConsumer.Start(gctx)
 	})
 
-	// Wait for processing
-	time.Sleep(15 * time.Second)
+	// Wait until ClickHouse contains blocks from both primary and DLQ consumers.
+	expectedTotal := uint64(len(validBlocks) + len(dlqBlocks))
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", blocksTable)
+	require.Eventually(t, func() bool {
+		var count uint64
+		if err := chClient.Conn().QueryRow(ctx, countQuery).Scan(&count); err != nil {
+			return false
+		}
+		return count >= expectedTotal
+	}, 30*time.Second, 500*time.Millisecond, "ClickHouse should contain blocks from both primary and DLQ consumers")
 
-	// ---- Verify primary consumer's valid blocks are in ClickHouse ----
+	// Verify invalid message was published to DLQ by primary.
 	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer verifyCancel()
-
-	verifyBlocksInClickHouse(t, verifyCtx, chClient, blocksTable, validBlocks)
-
-	// ---- Verify DLQ consumer's blocks are in ClickHouse ----
-	verifyBlocksInClickHouse(t, verifyCtx, chClient, blocksTable, dlqBlocks)
-
-	// ---- Verify invalid message was published to DLQ by primary ----
 	verifyMessageInDLQ(t, verifyCtx, kafkaBrokers, dlqTopic)
 
-	// ---- Verify total block count ----
-	var totalCount uint64
-	err = chClient.Conn().QueryRow(verifyCtx, fmt.Sprintf("SELECT COUNT(*) FROM %s", blocksTable)).Scan(&totalCount)
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, totalCount, uint64(len(validBlocks)+len(dlqBlocks)),
-		"ClickHouse should contain blocks from both primary and DLQ consumers")
-
 	cancel()
-	_ = g.Wait()
+	require.NoError(t, g.Wait())
 
 	t.Logf("DLQ consumer pipeline e2e test completed: %d primary blocks + %d DLQ blocks = %d total",
-		len(validBlocks), len(dlqBlocks), totalCount)
+		len(validBlocks), len(dlqBlocks), expectedTotal)
 }
 
 // TestE2EConsumerIndexerMetricsIsolation verifies that primary and DLQ consumers
@@ -1438,37 +1432,38 @@ func TestE2EConsumerIndexerMetricsIsolation(t *testing.T) {
 	g.Go(func() error { return primaryConsumer.Start(gctx) })
 	g.Go(func() error { return dlqConsumer.Start(gctx) })
 
-	time.Sleep(15 * time.Second)
-
 	// ---- Verify metrics have distinct role labels ----
-	families, err := registry.Gather()
-	require.NoError(t, err)
-
 	foundPrimaryRole := false
 	foundDLQRole := false
-	for _, mf := range families {
-		if mf.GetName() != "indexer_consumer_messages_received_total" {
-			continue
+	require.Eventually(t, func() bool {
+		families, err := registry.Gather()
+		if err != nil {
+			return false
 		}
-		for _, m := range mf.GetMetric() {
-			for _, lp := range m.GetLabel() {
-				if lp.GetName() == "role" {
-					switch lp.GetValue() {
-					case metrics.RolePrimaryConsumer:
-						foundPrimaryRole = true
-					case metrics.RoleDLQConsumer:
-						foundDLQRole = true
+		foundPrimaryRole = false
+		foundDLQRole = false
+		for _, mf := range families {
+			if mf.GetName() != "indexer_consumer_messages_received_total" {
+				continue
+			}
+			for _, m := range mf.GetMetric() {
+				for _, lp := range m.GetLabel() {
+					if lp.GetName() == "role" {
+						switch lp.GetValue() {
+						case metrics.RolePrimaryConsumer:
+							foundPrimaryRole = true
+						case metrics.RoleDLQConsumer:
+							foundDLQRole = true
+						}
 					}
 				}
 			}
 		}
-	}
-
-	require.True(t, foundPrimaryRole, "Expected primary_consumer role label in metrics")
-	require.True(t, foundDLQRole, "Expected dlq_consumer role label in metrics")
+		return foundPrimaryRole && foundDLQRole
+	}, 30*time.Second, 500*time.Millisecond, "Expected both primary_consumer and dlq_consumer role labels in metrics")
 
 	cancel()
-	_ = g.Wait()
+	require.NoError(t, g.Wait())
 
 	t.Log("Metrics isolation e2e test completed: both role labels present on same registry")
 }
