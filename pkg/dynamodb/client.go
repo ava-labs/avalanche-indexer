@@ -14,9 +14,7 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 )
 
-var (
-	errRegionRequired = errors.New("dynamodb region is required")
-)
+var errRegionRequired = errors.New("dynamodb region is required")
 
 func New(cfg Config, _ *zap.SugaredLogger) (*dynamodb.Client, error) {
 	if strings.TrimSpace(cfg.Region) == "" {
