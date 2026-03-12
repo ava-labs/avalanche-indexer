@@ -208,31 +208,29 @@ func buildConfig(c *cli.Context) (*Config, error) {
 
 func buildCheckpointConfig(c *cli.Context, dynamoDBCreateTable bool) (checkpointConfig, error) {
 	checkpointBackend := strings.ToLower(strings.TrimSpace(c.String("checkpoint-backend")))
+	chCfg := clickhouse.Config{}
+	ddbCfg := dynamodb.Config{}
+	var err error
 	switch checkpointBackend {
-	case checkpointBackendClickHouse, checkpointBackendDynamoDB:
+	case checkpointBackendClickHouse:
+		chCfg, err = buildClickHouseConfig(c)
+		if err != nil {
+			return checkpointConfig{}, fmt.Errorf("failed to build ClickHouse config: %w", err)
+		}
+	case checkpointBackendDynamoDB:
+		ddbCfg, err = buildDynamoDBConfig(c)
+		if err != nil {
+			return checkpointConfig{}, fmt.Errorf("failed to build DynamoDB config: %w", err)
+		}
 	default:
 		return checkpointConfig{}, fmt.Errorf("invalid checkpoint backend %q, must be one of [%s, %s]",
 			checkpointBackend, checkpointBackendClickHouse, checkpointBackendDynamoDB)
 	}
 
-	chCfg := clickhouse.Config{}
-	if checkpointBackend == checkpointBackendClickHouse {
-		var err error
-		chCfg, err = buildClickHouseConfig(c)
-		if err != nil {
-			return checkpointConfig{}, fmt.Errorf("failed to build ClickHouse config: %w", err)
-		}
-	}
-
 	return checkpointConfig{
-		Backend:   checkpointBackend,
-		TableName: c.String("checkpoint-table-name"),
-		DynamoDBConfig: dynamodb.Config{
-			Region:          c.String("dynamodb-region"),
-			EndpointURL:     c.String("dynamodb-endpoint-url"),
-			AccessKeyID:     c.String("dynamodb-access-key-id"),
-			SecretAccessKey: c.String("dynamodb-secret-access-key"),
-		},
+		Backend:          checkpointBackend,
+		TableName:        c.String("checkpoint-table-name"),
+		DynamoDBConfig:   ddbCfg,
 		ClickHouseConfig: chCfg,
 	}, nil
 }
@@ -275,6 +273,15 @@ func buildClickHouseConfig(c *cli.Context) (clickhouse.Config, error) {
 		ClientName:           c.String("clickhouse-client-name"),
 		ClientVersion:        c.String("clickhouse-client-version"),
 		UseHTTP:              c.Bool("clickhouse-use-http"),
+	}, nil
+}
+
+func buildDynamoDBConfig(c *cli.Context) (dynamodb.Config, error) {
+	return dynamodb.Config{
+		Region:          c.String("dynamodb-region"),
+		EndpointURL:     c.String("dynamodb-endpoint-url"),
+		AccessKeyID:     c.String("dynamodb-access-key-id"),
+		SecretAccessKey: c.String("dynamodb-secret-access-key"),
 	}, nil
 }
 
