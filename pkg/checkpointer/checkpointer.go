@@ -25,6 +25,9 @@ type Checkpointer interface {
 	// block height and whether a checkpoint exists. If no checkpoint exists, exists will be false and
 	// lowestUnprocessed will be 0.
 	Read(ctx context.Context, evmChainID uint64, mode string) (lowestUnprocessed uint64, exists bool, err error)
+
+	// Delete removes the checkpoint for a given chain and mode.
+	Delete(ctx context.Context, evmChainID uint64, mode string) error
 }
 
 // Start periodically persists the sliding window state to durable storage.

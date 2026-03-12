@@ -23,6 +23,11 @@ func remove(c *cli.Context) error {
 		return errors.New("evm chain ID is required")
 	}
 
+	mode := c.String("mode")
+	if mode == "" {
+		return errors.New("mode is required")
+	}
+
 	checkpointCfg, err := buildCheckpointConfig(c, false)
 	if err != nil {
 		return err
@@ -37,13 +42,13 @@ func remove(c *cli.Context) error {
 		DynamoDBEndpointURL: checkpointCfg.DynamoDBEndpoint,
 	}
 
-	_, store, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
+	store, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
 	if err != nil {
 		return err
 	}
 	defer cleanupCheckpointStore()
 
-	err = store.DeleteCheckpoints(ctx, evmChainID)
+	err = store.Delete(ctx, evmChainID, mode)
 	if err != nil {
 		return fmt.Errorf("failed to delete checkpoints: %w", err)
 	}

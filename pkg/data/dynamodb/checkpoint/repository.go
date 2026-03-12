@@ -23,6 +23,7 @@ const (
 	defaultDescribeInterval  = 1 * time.Second
 
 	chainIDAttr           = "chain_id"
+	modeAttr              = "mode"
 	lowestUnprocessedAttr = "lowest_unprocessed_block"
 	updatedAtAttr         = "updated_at"
 )
@@ -35,39 +36,19 @@ type dynamoAPI interface {
 	DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
 }
 
-// Repository persists and reads blockfetcher checkpoints from DynamoDB.
-type Repository interface {
-	checkpointer.Checkpointer
-	DeleteCheckpoints(ctx context.Context, chainID uint64) error
-}
-
 var (
-	_ Repository                = (*repository)(nil)
 	_ checkpointer.Checkpointer = (*repository)(nil)
-
-	// ErrTableNotFoundCreateDisabled is returned when the checkpoint table does
-	// not exist and auto-create is disabled.
-	ErrTableNotFoundCreateDisabled = errors.New("checkpoint table does not exist and auto-create is disabled")
 )
 
-type Config struct {
-	Region       string
-	TableName    string
-	CreateTables bool
-	EndpointURL  string
-	Logger       *zap.SugaredLogger
-}
-
 type repository struct {
-	client       dynamoAPI
-	tableName    string
-	createTables bool
-	logger       *zap.SugaredLogger
+	client    dynamoAPI
+	tableName string
+	logger    *zap.SugaredLogger
 }
 
 // NewRepository builds a DynamoDB-backed checkpoint repository and ensures
 // its table exists/ready based on config.
-func NewRepository(ctx context.Context, cfg Config) (Repository, error) {
+func NewRepository(ctx context.Context, cfg Config) (checkpointer.Checkpointer, error) {
 	if strings.TrimSpace(cfg.Region) == "" {
 		return nil, errors.New("dynamodb region is required")
 	}
@@ -90,9 +71,8 @@ func NewRepository(ctx context.Context, cfg Config) (Repository, error) {
 				o.BaseEndpoint = aws.String(cfg.EndpointURL)
 			}
 		}),
-		tableName:    cfg.TableName,
-		createTables: cfg.CreateTables,
-		logger:       cfg.Logger,
+		tableName: cfg.TableName,
+		logger:    cfg.Logger,
 	}
 
 	initCtx, cancel := context.WithTimeout(ctx, defaultInitializeTimeout)
@@ -114,10 +94,6 @@ func (r *repository) Initialize(ctx context.Context) error {
 	var notFound *types.ResourceNotFoundException
 	if !errors.As(err, &notFound) {
 		return fmt.Errorf("failed to describe checkpoint table %s: %w", r.tableName, err)
-	}
-
-	if !r.createTables {
-		return fmt.Errorf("checkpoint table %s does not exist and auto-create is disabled: %w", r.tableName, ErrTableNotFoundCreateDisabled)
 	}
 
 	if r.logger != nil {
@@ -174,11 +150,12 @@ func (r *repository) waitForTableActive(ctx context.Context) error {
 	}
 }
 
-func (r *repository) Write(ctx context.Context, evmChainID uint64, lowestUnprocessed uint64) error {
+func (r *repository) Write(ctx context.Context, evmChainID uint64, mode string, lowestUnprocessed uint64) error {
 	_, err := r.client.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(r.tableName),
 		Item: map[string]types.AttributeValue{
 			chainIDAttr:           &types.AttributeValueMemberN{Value: strconv.FormatUint(evmChainID, 10)},
+			modeAttr:              &types.AttributeValueMemberS{Value: mode},
 			lowestUnprocessedAttr: &types.AttributeValueMemberN{Value: strconv.FormatUint(lowestUnprocessed, 10)},
 			updatedAtAttr:         &types.AttributeValueMemberN{Value: strconv.FormatInt(time.Now().Unix(), 10)},
 		},
@@ -189,11 +166,12 @@ func (r *repository) Write(ctx context.Context, evmChainID uint64, lowestUnproce
 	return nil
 }
 
-func (r *repository) Read(ctx context.Context, evmChainID uint64) (lowestUnprocessed uint64, exists bool, err error) {
+func (r *repository) Read(ctx context.Context, evmChainID uint64, mode string) (lowestUnprocessed uint64, exists bool, err error) {
 	out, err := r.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.tableName),
 		Key: map[string]types.AttributeValue{
 			chainIDAttr: &types.AttributeValueMemberN{Value: strconv.FormatUint(evmChainID, 10)},
+			modeAttr:    &types.AttributeValueMemberS{Value: mode},
 		},
 		ConsistentRead: aws.Bool(true),
 	})
@@ -216,11 +194,12 @@ func (r *repository) Read(ctx context.Context, evmChainID uint64) (lowestUnproce
 	return lowest, true, nil
 }
 
-func (r *repository) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
+func (r *repository) Delete(ctx context.Context, chainID uint64, mode string) error {
 	_, err := r.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: aws.String(r.tableName),
 		Key: map[string]types.AttributeValue{
 			chainIDAttr: &types.AttributeValueMemberN{Value: strconv.FormatUint(chainID, 10)},
+			modeAttr:    &types.AttributeValueMemberS{Value: mode},
 		},
 	})
 	if err != nil {

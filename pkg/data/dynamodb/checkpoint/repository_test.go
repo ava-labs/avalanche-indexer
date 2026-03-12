@@ -42,8 +42,7 @@ func (m *mockDynamoClient) DeleteItem(ctx context.Context, params *dynamodb.Dele
 
 func TestRepository_Initialize_TableExists(t *testing.T) {
 	repo := &repository{
-		tableName:    "checkpoints",
-		createTables: true,
+		tableName: "checkpoints",
 		client: &mockDynamoClient{
 			describeTableFn: func(context.Context, *dynamodb.DescribeTableInput, ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error) {
 				return &dynamodb.DescribeTableOutput{
@@ -65,8 +64,7 @@ func TestRepository_Initialize_TableExists(t *testing.T) {
 func TestRepository_Initialize_CreateTable(t *testing.T) {
 	describeCalls := 0
 	repo := &repository{
-		tableName:    "checkpoints",
-		createTables: true,
+		tableName: "checkpoints",
 		client: &mockDynamoClient{
 			describeTableFn: func(context.Context, *dynamodb.DescribeTableInput, ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error) {
 				describeCalls++
@@ -86,21 +84,6 @@ func TestRepository_Initialize_CreateTable(t *testing.T) {
 	}
 
 	require.NoError(t, repo.Initialize(t.Context()))
-}
-
-func TestRepository_Initialize_TableNotFoundCreateDisabled(t *testing.T) {
-	repo := &repository{
-		tableName:    "checkpoints",
-		createTables: false,
-		client: &mockDynamoClient{
-			describeTableFn: func(context.Context, *dynamodb.DescribeTableInput, ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error) {
-				return nil, &types.ResourceNotFoundException{}
-			},
-		},
-	}
-
-	err := repo.Initialize(t.Context())
-	require.ErrorIs(t, err, ErrTableNotFoundCreateDisabled)
 }
 
 func TestRepository_Write_ReadDelete(t *testing.T) {
@@ -123,6 +106,7 @@ func TestRepository_Write_ReadDelete(t *testing.T) {
 				return &dynamodb.GetItemOutput{
 					Item: map[string]types.AttributeValue{
 						chainIDAttr:           &types.AttributeValueMemberN{Value: "43114"},
+						modeAttr:              &types.AttributeValueMemberS{Value: "blocks"},
 						lowestUnprocessedAttr: &types.AttributeValueMemberN{Value: "123"},
 					},
 				}, nil
@@ -133,17 +117,17 @@ func TestRepository_Write_ReadDelete(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, repo.Write(t.Context(), 43114, 123))
+	require.NoError(t, repo.Write(t.Context(), 43114, "blocks", 123))
 	require.NotNil(t, writeInput)
 	require.Equal(t, "43114", writeInput.Item[chainIDAttr].(*types.AttributeValueMemberN).Value)
 	require.Equal(t, "123", writeInput.Item[lowestUnprocessedAttr].(*types.AttributeValueMemberN).Value)
 
-	lowest, exists, err := repo.Read(t.Context(), 43114)
+	lowest, exists, err := repo.Read(t.Context(), 43114, "blocks")
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.Equal(t, uint64(123), lowest)
 
-	require.NoError(t, repo.DeleteCheckpoints(t.Context(), 43114))
+	require.NoError(t, repo.Delete(t.Context(), 43114, "blocks"))
 }
 
 func TestRepository_Read_NoRows(t *testing.T) {
@@ -156,7 +140,7 @@ func TestRepository_Read_NoRows(t *testing.T) {
 		},
 	}
 
-	lowest, exists, err := repo.Read(t.Context(), 1)
+	lowest, exists, err := repo.Read(t.Context(), 1, "blocks")
 	require.NoError(t, err)
 	require.False(t, exists)
 	require.Zero(t, lowest)
@@ -176,7 +160,7 @@ func TestRepository_Read_ParseError(t *testing.T) {
 		},
 	}
 
-	_, _, err := repo.Read(t.Context(), 1)
+	_, _, err := repo.Read(t.Context(), 1, "blocks")
 	require.ErrorIs(t, err, strconv.ErrSyntax)
 }
 
@@ -191,6 +175,6 @@ func TestRepository_Write_Error(t *testing.T) {
 		},
 	}
 
-	err := repo.Write(t.Context(), 1, 2)
+	err := repo.Write(t.Context(), 1, "blocks", 2)
 	require.ErrorIs(t, err, writeErr)
 }

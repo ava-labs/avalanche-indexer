@@ -261,7 +261,7 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("invalid mode: %s", cfg.Mode)
 	}
 
-	chkpt, _, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
+	chkpt, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
 	if err != nil {
 		return err
 	}

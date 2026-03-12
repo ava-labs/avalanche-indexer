@@ -36,6 +36,11 @@ func (m *mockCheckpointer) Read(ctx context.Context, evmChainID uint64, mode str
 	return args.Get(0).(uint64), args.Bool(1), args.Error(2)
 }
 
+func (m *mockCheckpointer) Delete(ctx context.Context, evmChainID uint64, mode string) error {
+	args := m.Called(ctx, evmChainID, mode)
+	return args.Error(0)
+}
+
 func TestStart_WritesAndCancels(t *testing.T) {
 	t.Parallel()
 	state, err := slidingwindow.NewState(5, 10)
