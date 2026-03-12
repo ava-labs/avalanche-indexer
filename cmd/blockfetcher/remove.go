@@ -40,11 +40,11 @@ func remove(c *cli.Context) error {
 		DynamoDB:            checkpointCfg.DynamoDBConfig,
 	}
 
-	store, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
+	store, err := newCheckpointStore(ctx, cfg, sugar)
 	if err != nil {
 		return err
 	}
-	defer cleanupCheckpointStore()
+	defer store.Close()
 
 	err = store.Delete(ctx, evmChainID, mode)
 	if err != nil {

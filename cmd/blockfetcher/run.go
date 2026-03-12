@@ -260,11 +260,11 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("invalid mode: %s", cfg.Mode)
 	}
 
-	chkpt, cleanupCheckpointStore, err := newCheckpointStore(ctx, cfg, sugar)
+	chkpt, err := newCheckpointStore(ctx, cfg, sugar)
 	if err != nil {
 		return err
 	}
-	defer cleanupCheckpointStore()
+	defer chkpt.Close()
 
 	if fetchStartHeight {
 		lowestUnprocessed, exists, err := chkpt.Read(ctx, cfg.EVMChainID, cfg.Mode)

@@ -155,3 +155,8 @@ func (r *repository) Delete(ctx context.Context, chainID uint64, mode string) er
 	}
 	return nil
 }
+
+// Close does nothing for DynamoDB as DDB API is RESTful
+func (r *repository) Close() error {
+	return nil
+}

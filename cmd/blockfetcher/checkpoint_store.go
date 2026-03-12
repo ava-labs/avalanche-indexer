@@ -18,14 +18,14 @@ func newCheckpointStore(
 	ctx context.Context,
 	cfg *Config,
 	log *zap.SugaredLogger,
-) (checkpointer.Checkpointer, func(), error) {
+) (checkpointer.Checkpointer, error) {
 	switch cfg.CheckpointBackend {
 	case checkpointBackendClickHouse:
 		return newClickHouseCheckpointStore(ctx, cfg, log)
 	case checkpointBackendDynamoDB:
 		return newDynamoCheckpointStore(ctx, cfg, log)
 	default:
-		return nil, nil, fmt.Errorf("unsupported checkpoint backend: %s", cfg.CheckpointBackend)
+		return nil, fmt.Errorf("unsupported checkpoint backend: %s", cfg.CheckpointBackend)
 	}
 }
 
@@ -33,38 +33,35 @@ func newClickHouseCheckpointStore(
 	_ context.Context,
 	cfg *Config,
 	log *zap.SugaredLogger,
-) (checkpointer.Checkpointer, func(), error) {
+) (checkpointer.Checkpointer, error) {
 	chClient, err := clickhouse.New(cfg.ClickHouse, log)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create ClickHouse client: %w", err)
+		return nil, fmt.Errorf("failed to create ClickHouse client: %w", err)
 	}
 
 	repo, err := chcheckpoint.NewRepository(chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.CheckpointTableName)
 	if err != nil {
 		chClient.Close()
-		return nil, nil, fmt.Errorf("failed to create checkpoint repository: %w", err)
+		return nil, fmt.Errorf("failed to create checkpoint repository: %w", err)
 	}
 
-	cleanup := func() {
-		chClient.Close()
-	}
-	return repo, cleanup, nil
+	return repo, nil
 }
 
 func newDynamoCheckpointStore(
 	ctx context.Context,
 	cfg *Config,
 	log *zap.SugaredLogger,
-) (checkpointer.Checkpointer, func(), error) {
+) (checkpointer.Checkpointer, error) {
 	ddbClient, err := ddbClient.New(cfg.DynamoDB, log)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create DynamoDB client: %w", err)
+		return nil, fmt.Errorf("failed to create DynamoDB client: %w", err)
 	}
 
 	repo, err := ddbcheckpoint.NewRepository(ddbClient, cfg.CheckpointTableName, log)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create DynamoDB checkpoint repository: %w", err)
+		return nil, fmt.Errorf("failed to create DynamoDB checkpoint repository: %w", err)
 	}
 
-	return repo, func() {}, nil
+	return repo, nil
 }

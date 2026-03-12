@@ -28,6 +28,9 @@ type Checkpointer interface {
 
 	// Delete removes the checkpoint for a given chain and mode.
 	Delete(ctx context.Context, evmChainID uint64, mode string) error
+
+	// Close releases any resources held by the checkpointer.
+	Close() error
 }
 
 // Start periodically persists the sliding window state to durable storage.

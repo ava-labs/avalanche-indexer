@@ -123,3 +123,7 @@ func (r *repository) Delete(ctx context.Context, chainID uint64, mode string) er
 
 	return nil
 }
+
+func (r *repository) Close() error {
+	return r.client.Close()
+}
