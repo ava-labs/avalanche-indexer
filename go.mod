@@ -9,6 +9,7 @@ require (
 	github.com/ava-labs/subnet-evm v0.8.0
 	github.com/aws/aws-sdk-go-v2 v1.41.3
 	github.com/aws/aws-sdk-go-v2/config v1.27.10
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.10
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.56.1
 	github.com/confluentinc/confluent-kafka-go/v2 v2.13.0
 	github.com/docker/docker v28.5.2+incompatible
@@ -34,7 +35,6 @@ require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/ava-labs/avalanchego v1.14.0 // indirect
 	github.com/ava-labs/firewood-go-ethhash/ffi v0.0.13 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.1 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.19 // indirect
