@@ -218,48 +218,7 @@ func run(c *cli.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
 
 	if cfg.EnableDLQConsumer {
-		dlqLabels := baseLabels
-		dlqLabels.Role = metrics.RoleDLQConsumer
-		dlqMetrics, err := metrics.NewWithLabels(registry, dlqLabels)
-		if err != nil {
-			return fmt.Errorf("failed to create DLQ metrics: %w", err)
-		}
-
-		dlqProc, err := newProcessor(ctx, mode, dlqLog, chClient, cfg, dlqMetrics)
-		if err != nil {
-			return fmt.Errorf("failed to create DLQ processor: %w", err)
-		}
-
-		if cfg.DLQTopic == "" {
-			return errors.New("DLQ topic empty, cannot create DLQ consumer")
-		}
-
-		if cfg.DLQConsumerGroupID == "" || cfg.GroupID == cfg.DLQConsumerGroupID {
-			return errors.New("DLQ consumer group ID empty or same as primary group ID, cannot create DLQ consumer")
-		}
-
-		dlqConsumerConfig := kafka.ConsumerConfig{
-			Topic:                       cfg.DLQTopic,
-			Concurrency:                 cfg.DLQConsumerConcurrency,
-			PublishToDLQ:                false,
-			BootstrapServers:            cfg.BootstrapServers,
-			GroupID:                     cfg.DLQConsumerGroupID,
-			AutoOffsetReset:             cfg.AutoOffsetReset,
-			EnableLogs:                  cfg.EnableKafkaLogs,
-			OffsetManagerCommitInterval: cfg.DLQConsumerOffsetCommitInterval,
-			SessionTimeout:              &cfg.DLQConsumerSessionTimeout,
-			MaxPollInterval:             &cfg.DLQConsumerMaxPollInterval,
-			FlushTimeout:                new(time.Duration),
-			GoroutineWaitTimeout:        &cfg.DLQConsumerGoroutineWaitTimeout,
-			PollInterval:                &cfg.DLQConsumerPollInterval,
-			SASL:                        cfg.KafkaSASL,
-			Retry: kafka.RetryPolicy{
-				MaxRetries: kafka.InfiniteRetries,
-				BaseDelay:  1 * time.Second,
-				MaxDelay:   5 * time.Minute,
-			},
-		}
-		dlqConsumer, err := kafka.NewConsumer(ctx, dlqLog, dlqConsumerConfig, dlqProc, dlqMetrics)
+		dlqConsumer, err := newDLQConsumer(ctx, cfg, baseLabels, registry, mode, dlqLog, chClient)
 		if err != nil {
 			return fmt.Errorf("failed to create DLQ consumer: %w", err)
 		}
@@ -351,4 +310,62 @@ func newProcessor(
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", mode)
 	}
+}
+
+// newDLQConsumer validates DLQ-specific configuration and creates a Consumer
+// that subscribes to the DLQ topic with infinite-retry semantics. It never
+// publishes failures to a secondary DLQ (no cascading failure loop).
+func newDLQConsumer(
+	ctx context.Context,
+	cfg *Config,
+	baseLabels metrics.Labels,
+	registry *prometheus.Registry,
+	mode string,
+	log *zap.SugaredLogger,
+	chClient clickhouse.Client,
+) (*kafka.Consumer, error) {
+	if cfg.DLQTopic == "" {
+		return nil, errors.New("DLQ topic must be set when DLQ consumer is enabled")
+	}
+	if cfg.DLQConsumerGroupID == "" {
+		return nil, errors.New("DLQ consumer group ID must be set when DLQ consumer is enabled")
+	}
+	if cfg.GroupID == cfg.DLQConsumerGroupID {
+		return nil, errors.New("DLQ consumer group ID must differ from the primary consumer group ID")
+	}
+
+	dlqLabels := baseLabels
+	dlqLabels.Role = metrics.RoleDLQConsumer
+	dlqMetrics, err := metrics.NewWithLabels(registry, dlqLabels)
+	if err != nil {
+		return nil, fmt.Errorf("DLQ metrics: %w", err)
+	}
+
+	dlqProc, err := newProcessor(ctx, mode, log, chClient, cfg, dlqMetrics)
+	if err != nil {
+		return nil, fmt.Errorf("DLQ processor: %w", err)
+	}
+
+	dlqCfg := kafka.ConsumerConfig{
+		Topic:                       cfg.DLQTopic,
+		Concurrency:                 cfg.DLQConsumerConcurrency,
+		PublishToDLQ:                false,
+		BootstrapServers:            cfg.BootstrapServers,
+		GroupID:                     cfg.DLQConsumerGroupID,
+		AutoOffsetReset:             cfg.AutoOffsetReset,
+		EnableLogs:                  cfg.EnableKafkaLogs,
+		OffsetManagerCommitInterval: cfg.DLQConsumerOffsetCommitInterval,
+		SessionTimeout:              &cfg.DLQConsumerSessionTimeout,
+		MaxPollInterval:             &cfg.DLQConsumerMaxPollInterval,
+		GoroutineWaitTimeout:        &cfg.DLQConsumerGoroutineWaitTimeout,
+		PollInterval:                &cfg.DLQConsumerPollInterval,
+		SASL:                        cfg.KafkaSASL,
+		Retry: kafka.RetryPolicy{
+			MaxRetries: kafka.InfiniteRetries,
+			BaseDelay:  1 * time.Second,
+			MaxDelay:   5 * time.Minute,
+		},
+	}
+
+	return kafka.NewConsumer(ctx, log, dlqCfg, dlqProc, dlqMetrics)
 }
