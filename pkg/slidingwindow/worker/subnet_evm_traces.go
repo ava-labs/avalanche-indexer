@@ -41,9 +41,12 @@ func NewSubnetEVMTracesWorker(
 	evmChainID uint64,
 	blockchainID string,
 	log *zap.SugaredLogger,
-	metrics *metrics.Metrics,
+	m *metrics.Metrics,
 	traceTimeout time.Duration,
 ) (*SubnetEVMTracesWorker, error) {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	RegisterCustomTypesOnce.Do(func() {
 		subnetevmCustomtypes.Register()
 	})
@@ -56,7 +59,7 @@ func NewSubnetEVMTracesWorker(
 		evmChainID:   new(big.Int).SetUint64(evmChainID),
 		blockchainID: &blockchainID,
 		log:          log,
-		metrics:      metrics,
+		metrics:      m,
 		traceTimeout: traceTimeout,
 	}, nil
 }
@@ -114,10 +117,8 @@ func (stw *SubnetEVMTracesWorker) FetchBlockTraces(ctx context.Context, height u
 	const method = "debug_traceBlockByNumber"
 	start := time.Now()
 
-	if stw.metrics != nil {
-		stw.metrics.IncRPCInFlight()
-		defer stw.metrics.DecRPCInFlight()
-	}
+	stw.metrics.IncRPCInFlight()
+	defer stw.metrics.DecRPCInFlight()
 
 	ctxTimeout, cancel := context.WithTimeout(ctx, stw.traceTimeout)
 	defer cancel()
@@ -133,9 +134,7 @@ func (stw *SubnetEVMTracesWorker) FetchBlockTraces(ctx context.Context, height u
 	err := stw.rpc.CallContext(ctxTimeout, &traces, method, fmt.Sprintf("0x%x", height), traceConfig)
 	rpcDuration := time.Since(start)
 
-	if stw.metrics != nil {
-		stw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
-	}
+	stw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

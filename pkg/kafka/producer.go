@@ -93,7 +93,6 @@ func NewProducer(ctx context.Context, conf *ckafka.ConfigMap, log *zap.SugaredLo
 // Callers should design for possible duplicate delivery when retrying.
 func (q *Producer) Produce(ctx context.Context, msg Msg) error {
 	deliveryCh := make(chan ckafka.Event, 1)
-	defer close(deliveryCh)
 
 	kMsg := &ckafka.Message{
 		TopicPartition: ckafka.TopicPartition{
@@ -129,18 +128,18 @@ func (q *Producer) Close(timeout time.Duration) {
 		q.log.Info("closing kafka producer")
 		defer close(q.errCh)
 
+		// Flush the producer queue.
+		pending := q.producer.Flush(int(timeout.Milliseconds()))
+		if pending > 0 {
+			q.log.Warnf("flush incomplete, messages will be lost. pending: %d", pending)
+		}
+
 		// Signal the monitor or logs goroutines to stop.
 		close(q.closedCh)
 
 		// Wait for the monitor or logs goroutines to stop.
 		<-q.eventsDone
 		<-q.logsDone
-
-		// Flush the producer queue.
-		pending := q.producer.Flush(int(timeout.Milliseconds()))
-		if pending > 0 {
-			q.log.Warnf("flush incomplete, messages will be lost. pending: %d", pending)
-		}
 
 		q.producer.Close()
 		q.log.Info("kafka producer closed")

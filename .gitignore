@@ -7,3 +7,6 @@ coverage.out
 /consumerindexer
 *.out
 *.html
+.gocache/
+*.out
+*.html

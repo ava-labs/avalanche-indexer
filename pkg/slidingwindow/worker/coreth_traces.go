@@ -41,9 +41,12 @@ func NewCorethTracesWorker(
 	evmChainID uint64,
 	blockchainID string,
 	log *zap.SugaredLogger,
-	metrics *metrics.Metrics,
+	m *metrics.Metrics,
 	traceTimeout time.Duration,
 ) (*CorethTracesWorker, error) {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	RegisterCustomTypesOnce.Do(func() {
 		corethCustomtypes.Register()
 	})
@@ -56,7 +59,7 @@ func NewCorethTracesWorker(
 		evmChainID:   new(big.Int).SetUint64(evmChainID),
 		blockchainID: &blockchainID,
 		log:          log,
-		metrics:      metrics,
+		metrics:      m,
 		traceTimeout: traceTimeout,
 	}, nil
 }
@@ -114,10 +117,8 @@ func (ctw *CorethTracesWorker) FetchBlockTraces(ctx context.Context, height uint
 	const method = "debug_traceBlockByNumber"
 	start := time.Now()
 
-	if ctw.metrics != nil {
-		ctw.metrics.IncRPCInFlight()
-		defer ctw.metrics.DecRPCInFlight()
-	}
+	ctw.metrics.IncRPCInFlight()
+	defer ctw.metrics.DecRPCInFlight()
 
 	ctxTimeout, cancel := context.WithTimeout(ctx, ctw.traceTimeout)
 	defer cancel()
@@ -133,9 +134,7 @@ func (ctw *CorethTracesWorker) FetchBlockTraces(ctx context.Context, height uint
 	err := ctw.rpc.CallContext(ctxTimeout, &traces, method, fmt.Sprintf("0x%x", height), traceConfig)
 	rpcDuration := time.Since(start)
 
-	if ctw.metrics != nil {
-		ctw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
-	}
+	ctw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
