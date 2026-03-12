@@ -10,17 +10,20 @@ import (
 	"time"
 
 	"github.com/ava-labs/subnet-evm/eth/tracers"
-	"github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 	"github.com/ava-labs/subnet-evm/rpc"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
+
+	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
+	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 )
 
 type SubnetEVMTracesWorker struct {
-	client       *rpc.Client
+	client       subnetClient.Client
+	rpc          *rpc.Client
 	producer     *kafka.Producer
 	topic        string
 	evmChainID   *big.Int
@@ -31,27 +34,32 @@ type SubnetEVMTracesWorker struct {
 }
 
 func NewSubnetEVMTracesWorker(
-	client *rpc.Client,
+	client subnetClient.Client,
+	rpc *rpc.Client,
 	producer *kafka.Producer,
 	topic string,
 	evmChainID uint64,
 	blockchainID string,
 	log *zap.SugaredLogger,
-	metrics *metrics.Metrics,
+	m *metrics.Metrics,
 	traceTimeout time.Duration,
 ) (*SubnetEVMTracesWorker, error) {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	RegisterCustomTypesOnce.Do(func() {
-		customtypes.Register()
+		subnetevmCustomtypes.Register()
 	})
 
 	return &SubnetEVMTracesWorker{
 		client:       client,
+		rpc:          rpc,
 		producer:     producer,
 		topic:        topic,
 		evmChainID:   new(big.Int).SetUint64(evmChainID),
 		blockchainID: &blockchainID,
 		log:          log,
-		metrics:      metrics,
+		metrics:      m,
 		traceTimeout: traceTimeout,
 	}, nil
 }
@@ -64,8 +72,24 @@ func (stw *SubnetEVMTracesWorker) Process(ctx context.Context, height uint64) er
 		return fmt.Errorf("fetch block traces failed %d: %w", height, err)
 	}
 
+	h := new(big.Int).SetUint64(height)
+	stw.log.Debugw("calling eth_getBlockByNumber", "height", height)
+	block, err := stw.client.BlockByNumber(ctx, h)
+	if err != nil {
+		return fmt.Errorf("get block failed %d: %w", height, err)
+	}
+
+	timestamp := block.Time()
+
 	stw.log.Debugw("block traces fetched, serializing", "height", height, "traces", len(traces))
-	bytes, err := messages.MarshalEVMBlockTrace(height, traces, stw.evmChainID, stw.blockchainID)
+
+	var timestampMilliseconds uint64
+	extra := subnetevmCustomtypes.GetHeaderExtra(block.Header())
+	if extra.TimeMilliseconds != nil {
+		timestampMilliseconds = *extra.TimeMilliseconds
+	}
+
+	bytes, err := messages.MarshalEVMBlockTrace(height, timestamp, timestampMilliseconds, traces, stw.evmChainID, stw.blockchainID)
 	if err != nil {
 		return fmt.Errorf("serialize block traces failed %d: %w", height, err)
 	}
@@ -93,10 +117,8 @@ func (stw *SubnetEVMTracesWorker) FetchBlockTraces(ctx context.Context, height u
 	const method = "debug_traceBlockByNumber"
 	start := time.Now()
 
-	if stw.metrics != nil {
-		stw.metrics.IncRPCInFlight()
-		defer stw.metrics.DecRPCInFlight()
-	}
+	stw.metrics.IncRPCInFlight()
+	defer stw.metrics.DecRPCInFlight()
 
 	ctxTimeout, cancel := context.WithTimeout(ctx, stw.traceTimeout)
 	defer cancel()
@@ -109,12 +131,10 @@ func (stw *SubnetEVMTracesWorker) FetchBlockTraces(ctx context.Context, height u
 	}
 
 	var traces []json.RawMessage
-	err := stw.client.CallContext(ctxTimeout, &traces, method, fmt.Sprintf("0x%x", height), traceConfig)
+	err := stw.rpc.CallContext(ctxTimeout, &traces, method, fmt.Sprintf("0x%x", height), traceConfig)
 	rpcDuration := time.Since(start)
 
-	if stw.metrics != nil {
-		stw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
-	}
+	stw.metrics.RecordRPCCall(method, err, rpcDuration.Seconds())
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

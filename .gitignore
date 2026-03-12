@@ -5,3 +5,6 @@ avalanche-indexer
 coverage.out
 /blockfetcher
 /consumerindexer
+.gocache/
+*.out
+*.html

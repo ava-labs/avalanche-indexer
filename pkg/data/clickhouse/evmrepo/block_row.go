@@ -20,6 +20,7 @@ type BlockRow struct {
 	Hash                  string
 	ParentHash            string
 	BlockTime             time.Time
+	TimestampMs           uint64
 	Miner                 string
 	Difficulty            *big.Int // UInt256 in ClickHouse
 	TotalDifficulty       *big.Int // UInt256 in ClickHouse

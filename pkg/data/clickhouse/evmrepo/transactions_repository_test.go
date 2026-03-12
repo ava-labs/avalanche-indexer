@@ -39,11 +39,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	}
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_transactions_local") || containsSubstring(q, "`default`.`raw_transactions`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
 
 	// Expect WriteTransaction call
 	mockConn.
@@ -55,6 +51,7 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.BlockNumber,
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(hashBytes[:]), // string: 32-byte binary string
 			string(fromBytes[:]), // string: 20-byte binary string
 			toBytes,              // string or nil: 20-byte binary string
@@ -105,11 +102,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 	}
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_transactions_local") || containsSubstring(q, "`default`.`raw_transactions`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
 
 	// Expect WriteTransaction call that fails
 	mockConn.
@@ -119,6 +112,7 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.BlockNumber,
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(hashBytes[:]), // string: 32-byte binary string
 			string(fromBytes[:]), // string: 20-byte binary string
 			toBytes,              // string or nil: 20-byte binary string
@@ -166,11 +160,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 	var toBytes interface{} = nil
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_transactions_local") || containsSubstring(q, "`default`.`raw_transactions`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
 
 	// Expect WriteTransaction call
 	mockConn.
@@ -182,6 +172,7 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.BlockNumber,
 			string(blockHashBytes[:]), // string: 32-byte binary string
 			tx.BlockTime,
+			tx.TimestampMs,
 			string(hashBytes[:]), // string: 32-byte binary string
 			string(fromBytes[:]), // string: 20-byte binary string
 			toBytes,              // nil for contract creation
@@ -215,11 +206,7 @@ func TestTransactionsRepository_DeleteTransactions_Success(t *testing.T) {
 	chainID := uint64(43114)
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_transactions_local") || containsSubstring(q, "`default`.`raw_transactions`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
 
 	// Expect DeleteTransactions call
 	mockConn.
@@ -243,11 +230,7 @@ func TestTransactionsRepository_DeleteTransactions_Error(t *testing.T) {
 	deleteErr := errors.New("delete failed")
 
 	// Expect CreateTableIfNotExists + migrations during initialization
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE")) && (containsSubstring(q, "raw_transactions_local") || containsSubstring(q, "`default`.`raw_transactions`"))
-		})).
-		Return(nil)
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
 
 	// Expect DeleteTransactions call that fails
 	mockConn.
@@ -277,6 +260,7 @@ func createTestTransaction() *TransactionRow {
 		BlockNumber:      1647,
 		BlockHash:        blockHash,
 		BlockTime:        time.Unix(1604768510, 0).UTC(),
+		TimestampMs:      1604768510000,
 		Hash:             txHash,
 		From:             from,
 		To:               &to,

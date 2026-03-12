@@ -60,6 +60,9 @@ func NewConsumer(
 	proc processor.Processor,
 	m *metrics.Metrics,
 ) (*Consumer, error) {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	// Apply defaults to config
 	cfg = cfg.WithDefaults()
 
@@ -80,20 +83,23 @@ func NewConsumer(
 		return nil, fmt.Errorf("failed to create kafka consumer: %w", err)
 	}
 
-	dlqProducerConfig := ckafka.ConfigMap{
-		"bootstrap.servers":      cfg.BootstrapServers,
-		"acks":                   "all", // All brokers must acknowledge the message
-		"linger.ms":              5,     // Batch messages for 5ms
-		"batch.size":             16384, // 16KB batch size
-		"compression.type":       "lz4", // Fast compression
-		"message.max.bytes":      cfg.MessageMaxBytes,
-		"enable.idempotence":     true,
-		"go.logs.channel.enable": cfg.EnableLogs,
-	}
-	cfg.SASL.ApplyToConfigMap(&dlqProducerConfig)
-	dlqProducer, err := NewProducer(ctx, &dlqProducerConfig, log)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
+	var dlqProducer *Producer
+	if cfg.PublishToDLQ {
+		dlqProducerConfig := ckafka.ConfigMap{
+			"bootstrap.servers":      cfg.BootstrapServers,
+			"acks":                   "all", // All brokers must acknowledge the message
+			"linger.ms":              5,     // Batch messages for 5ms
+			"batch.size":             16384, // 16KB batch size
+			"compression.type":       "lz4", // Fast compression
+			"message.max.bytes":      cfg.MessageMaxBytes,
+			"enable.idempotence":     true,
+			"go.logs.channel.enable": cfg.EnableLogs,
+		}
+		cfg.SASL.ApplyToConfigMap(&dlqProducerConfig)
+		dlqProducer, err = NewProducer(ctx, &dlqProducerConfig, log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kafka producer: %w", err)
+		}
 	}
 
 	offsetManager := NewOffsetManager(
@@ -153,7 +159,13 @@ func (c *Consumer) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to subscribe to topics: %w", err)
 	}
 
+	var dlqProducerErrs <-chan error
+	if c.dlqProducer != nil {
+		dlqProducerErrs = c.dlqProducer.Errors()
+	}
+
 	c.log.Info("consumer subscribed to topic, starting to poll for messages...")
+	var loopErr error
 	run := true
 	for run {
 		select {
@@ -161,12 +173,14 @@ func (c *Consumer) Start(ctx context.Context) error {
 			c.log.Info("context done, shutting down consumer...")
 			run = false
 			continue
-		case err := <-c.dlqProducer.Errors():
-			c.log.Errorw("fatal error from DLQ producer, shutting down consumer", "error", err)
+		case dlqErr := <-dlqProducerErrs:
+			c.log.Errorw("fatal error from DLQ producer, shutting down consumer", "error", dlqErr)
+			loopErr = dlqErr
 			run = false
 			continue
-		case err := <-c.errCh:
-			c.log.Errorw("error from consumer, shutting down consumer", "error", err)
+		case procErr := <-c.errCh:
+			c.log.Errorw("error from message processing, shutting down consumer", "error", procErr)
+			loopErr = procErr
 			run = false
 			continue
 		default:
@@ -190,6 +204,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 				if msg.IsFatal() {
 					c.metrics.RecordKafkaError(true)
 					c.log.Errorw("fatal kafka error", "error", msg)
+					loopErr = msg
 					run = false
 					continue
 				}
@@ -203,22 +218,37 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 
 	c.log.Info("consumer shutting down...")
-	err := c.close()
-	if err != nil {
-		c.log.Errorw("failed to close consumer", "error", err)
+	closeErr := c.close()
+	if closeErr != nil {
+		c.log.Errorw("failed to close consumer", "error", closeErr)
 	}
 
 	c.log.Info("consumer shutdown complete")
-	return err
+
+	if loopErr != nil {
+		return loopErr
+	}
+	return closeErr
 }
 
 // dispatch spawns a goroutine to process msg with concurrency control via semaphore.
-// Returns immediately after spawning (non-blocking). If context is cancelled during semaphore
-// acquisition, the message is dropped (will be reprocessed after rebalance).
-// On successful processing, commits offset. On failure, publishes to DLQ (if configured) before committing.
+// If all concurrency slots are occupied, the consumer partitions are paused to apply
+// backpressure (stop pre-fetching from brokers), then a blocking acquire waits for a
+// slot. Once acquired the partitions are resumed. This keeps librdkafka's internal
+// buffers bounded while the background heartbeat thread maintains group membership.
 func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
-	if err := c.sem.Acquire(ctx, 1); err != nil {
-		return
+	if msg != nil {
+		observeConsumedMessageSize(c.metrics, len(msg.Value))
+	}
+
+	if !c.sem.TryAcquire(1) {
+		c.pauseConsumer()
+		if err := c.sem.Acquire(ctx, 1); err != nil {
+			c.resumeConsumer()
+			c.log.Errorw("failed to acquire semaphore probably due to context cancellation or deadline exceeded, skipping message", "error", err)
+			return
+		}
+		c.resumeConsumer()
 	}
 
 	c.wg.Add(1)
@@ -230,23 +260,24 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 		defer c.metrics.DecMessagesInFlight()
 
 		start := time.Now()
-		err := c.processor.Process(ctx, msg)
+		err := c.processWithRetry(ctx, msg)
 		if err == nil {
 			c.offsetManager.InsertOffsetWithRetry(ctx, msg)
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, nil, time.Since(start).Seconds())
 			return
 		}
 
-		c.log.Errorw("error processing message", "error", err, "partition", msg.TopicPartition.Partition, "offset", msg.TopicPartition.Offset)
-
 		if errors.Is(err, context.Canceled) {
-			c.log.Debugw("processing cancelled due to context cancellation",
-				"partition", msg.TopicPartition.Partition,
-				"offset", msg.TopicPartition.Offset,
-			)
+			c.log.Debugw("message processing cancelled", "error", err)
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
 			return
 		}
+
+		c.log.Errorw("message processing failed after retries",
+			"error", err,
+			"partition", msg.TopicPartition.Partition,
+			"offset", msg.TopicPartition.Offset,
+		)
 
 		if !c.cfg.PublishToDLQ {
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
@@ -278,6 +309,81 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 		c.offsetManager.InsertOffsetWithRetry(ctx, msg)
 		c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
 	}()
+}
+
+// processWithRetry attempts to process msg, retrying according to the
+// configured RetryPolicy. Returns nil on success, context.Canceled if the
+// context is cancelled, or the last processing error after retries are
+// exhausted. With InfiniteRetries the loop only exits on success or
+// context cancellation — the consumer stays stuck on the offset.
+func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) error {
+	err := c.processor.Process(ctx, msg)
+	if err == nil || errors.Is(err, context.Canceled) {
+		return err
+	}
+
+	policy := c.cfg.Retry
+	for attempt := 0; policy.ShouldRetry(attempt); attempt++ {
+		c.metrics.RecordMessageRetry()
+
+		backoff := policy.Backoff(attempt)
+		c.log.Errorw("retrying message processing",
+			"error", err,
+			"attempt", attempt+1,
+			"backoff", backoff,
+			"partition", msg.TopicPartition.Partition,
+			"offset", msg.TopicPartition.Offset,
+		)
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+
+		err = c.processor.Process(ctx, msg)
+
+		if err == nil || errors.Is(err, context.Canceled) {
+			return err
+		}
+	}
+
+	if c.cfg.Retry.MaxRetries != 0 {
+		c.metrics.RecordMessageRetriesExhausted()
+	}
+
+	return err
+}
+
+// pauseConsumer pauses fetching on all currently assigned partitions and records
+// a backpressure metric. It is safe to call when no partitions are assigned.
+func (c *Consumer) pauseConsumer() {
+	partitions, err := c.consumer.Assignment()
+	if err != nil || len(partitions) == 0 {
+		return
+	}
+	if err := c.consumer.Pause(partitions); err != nil {
+		c.log.Warnw("failed to pause consumer partitions", "error", err)
+		return
+	}
+	c.metrics.RecordConsumerPause()
+	c.log.Debugw("consumer paused due to backpressure", "partitions", len(partitions))
+}
+
+// resumeConsumer resumes fetching on all currently assigned partitions.
+func (c *Consumer) resumeConsumer() {
+	partitions, err := c.consumer.Assignment()
+	if err != nil || len(partitions) == 0 {
+		return
+	}
+	if err := c.consumer.Resume(partitions); err != nil {
+		c.log.Warnw("failed to resume consumer partitions", "error", err)
+		return
+	}
+	c.metrics.RecordConsumerResume()
+	c.log.Debugw("consumer resumed after backpressure cleared", "partitions", len(partitions))
 }
 
 // publishToDLQ publishes msg to the configured DLQ topic, preserving original key and value.
@@ -323,7 +429,9 @@ func (c *Consumer) close() error {
 
 	close(c.doneCh)
 	<-c.logsDone
-	c.dlqProducer.Close(*c.cfg.FlushTimeout)
+	if c.dlqProducer != nil {
+		c.dlqProducer.Close(*c.cfg.FlushTimeout)
+	}
 	return c.consumer.Close()
 }
 
@@ -394,4 +502,9 @@ func (c *Consumer) printKafkaLogs(ctx context.Context) {
 			c.log.Debugf("consumer level: %d tag: %s message: %s ", log.Level, log.Tag, log.Message)
 		}
 	}
+}
+
+// observeConsumedMessageSize records the size of a Kafka message consumed.
+func observeConsumedMessageSize(m *metrics.Metrics, sizeBytes int) {
+	m.ObserveKafkaMessageSize(metrics.DirectionConsumed, sizeBytes)
 }

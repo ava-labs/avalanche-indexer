@@ -58,6 +58,7 @@ func validateBlockBufferSize(size int) (uint8, error) {
 type Config struct {
 	// Application settings
 	Verbose bool
+	Mode    string
 
 	// Kafka consumer settings
 	BootstrapServers               string
@@ -85,13 +86,24 @@ type Config struct {
 	KafkaTopicMessageMaxBytes      string
 	KafkaSASL                      kafka.SASLConfig
 
+	// DLQ consumer settings
+	EnableDLQConsumer               bool
+	DLQConsumerGroupID              string
+	DLQConsumerConcurrency          int64
+	DLQConsumerOffsetCommitInterval time.Duration
+	DLQConsumerSessionTimeout       time.Duration
+	DLQConsumerMaxPollInterval      time.Duration
+	DLQConsumerGoroutineWaitTimeout time.Duration
+	DLQConsumerPollInterval         time.Duration
+
 	// ClickHouse settings
 	ClickHouse clickhouse.Config
 
 	// Table names
-	RawBlocksTableName       string
-	RawTransactionsTableName string
-	RawLogsTableName         string
+	RawBlocksTableName            string
+	RawTransactionsTableName      string
+	RawLogsTableName              string
+	InternalTransactionsTableName string
 
 	// Metrics settings
 	MetricsHost   string
@@ -137,46 +149,56 @@ func buildConfig(c *cli.Context) (*Config, error) {
 	}
 
 	return &Config{
-		Verbose:                        c.Bool("verbose"),
-		BootstrapServers:               c.String("bootstrap-servers"),
-		GroupID:                        c.String("group-id"),
-		Topic:                          c.String("topic"),
-		DLQTopic:                       c.String("dlq-topic"),
-		AutoOffsetReset:                c.String("auto-offset-reset"),
-		Concurrency:                    c.Int64("concurrency"),
-		OffsetCommitInterval:           c.Duration("offset-commit-interval"),
-		EnableKafkaLogs:                c.Bool("enable-kafka-logs"),
-		SessionTimeout:                 c.Duration("session-timeout"),
-		MaxPollInterval:                c.Duration("max-poll-interval"),
-		FlushTimeout:                   c.Duration("flush-timeout"),
-		GoroutineWaitTimeout:           c.Duration("goroutine-wait-timeout"),
-		PollInterval:                   c.Duration("poll-interval"),
-		PublishToDLQ:                   c.Bool("publish-to-dlq"),
-		KafkaTopicNumPartitions:        c.Int("kafka-topic-num-partitions"),
-		KafkaTopicReplicationFactor:    c.Int("kafka-topic-replication-factor"),
-		KafkaTopicRetentionMs:          c.String("kafka-topic-retention-ms"),
-		KafkaTopicRetentionBytes:       c.String("kafka-topic-retention-bytes"),
-		KafkaDLQTopicNumPartitions:     c.Int("kafka-dlq-topic-num-partitions"),
-		KafkaDLQTopicReplicationFactor: c.Int("kafka-dlq-topic-replication-factor"),
-		KafkaDLQTopicRetentionMs:       c.String("kafka-dlq-topic-retention-ms"),
-		KafkaDLQTopicRetentionBytes:    c.String("kafka-dlq-topic-retention-bytes"),
-		KafkaTopicMessageMaxBytes:      c.String("kafka-topic-message-max-bytes"),
+		Verbose:                         c.Bool("verbose"),
+		Mode:                            c.String("mode"),
+		BootstrapServers:                c.String("bootstrap-servers"),
+		GroupID:                         c.String("group-id"),
+		Topic:                           c.String("topic"),
+		DLQTopic:                        c.String("dlq-topic"),
+		AutoOffsetReset:                 c.String("auto-offset-reset"),
+		Concurrency:                     c.Int64("concurrency"),
+		OffsetCommitInterval:            c.Duration("offset-commit-interval"),
+		EnableKafkaLogs:                 c.Bool("enable-kafka-logs"),
+		SessionTimeout:                  c.Duration("session-timeout"),
+		MaxPollInterval:                 c.Duration("max-poll-interval"),
+		FlushTimeout:                    c.Duration("flush-timeout"),
+		GoroutineWaitTimeout:            c.Duration("goroutine-wait-timeout"),
+		PollInterval:                    c.Duration("poll-interval"),
+		PublishToDLQ:                    c.Bool("publish-to-dlq"),
+		KafkaTopicNumPartitions:         c.Int("kafka-topic-num-partitions"),
+		KafkaTopicReplicationFactor:     c.Int("kafka-topic-replication-factor"),
+		KafkaTopicRetentionMs:           c.String("kafka-topic-retention-ms"),
+		KafkaTopicRetentionBytes:        c.String("kafka-topic-retention-bytes"),
+		KafkaDLQTopicNumPartitions:      c.Int("kafka-dlq-topic-num-partitions"),
+		KafkaDLQTopicReplicationFactor:  c.Int("kafka-dlq-topic-replication-factor"),
+		KafkaDLQTopicRetentionMs:        c.String("kafka-dlq-topic-retention-ms"),
+		KafkaDLQTopicRetentionBytes:     c.String("kafka-dlq-topic-retention-bytes"),
+		KafkaTopicMessageMaxBytes:       c.String("kafka-topic-message-max-bytes"),
+		EnableDLQConsumer:               c.Bool("enable-dlq-consumer"),
+		DLQConsumerGroupID:              c.String("dlq-consumer-group-id"),
+		DLQConsumerConcurrency:          c.Int64("dlq-consumer-concurrency"),
+		DLQConsumerOffsetCommitInterval: c.Duration("dlq-consumer-offset-commit-interval"),
+		DLQConsumerSessionTimeout:       c.Duration("dlq-consumer-session-timeout"),
+		DLQConsumerMaxPollInterval:      c.Duration("dlq-consumer-max-poll-interval"),
+		DLQConsumerGoroutineWaitTimeout: c.Duration("dlq-consumer-goroutine-wait-timeout"),
+		DLQConsumerPollInterval:         c.Duration("dlq-consumer-poll-interval"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),
 			Password:         c.String("kafka-sasl-password"),
 			Mechanism:        c.String("kafka-sasl-mechanism"),
 			SecurityProtocol: c.String("kafka-security-protocol"),
 		},
-		ClickHouse:               chCfg,
-		RawBlocksTableName:       c.String("raw-blocks-table-name"),
-		RawTransactionsTableName: c.String("raw-transactions-table-name"),
-		RawLogsTableName:         c.String("raw-logs-table-name"),
-		MetricsHost:              c.String("metrics-host"),
-		MetricsPort:              c.Int("metrics-port"),
-		ChainID:                  c.Uint64("chain-id"),
-		Environment:              c.String("environment"),
-		Region:                   c.String("region"),
-		CloudProvider:            c.String("cloud-provider"),
+		ClickHouse:                    chCfg,
+		RawBlocksTableName:            c.String("raw-blocks-table-name"),
+		RawTransactionsTableName:      c.String("raw-transactions-table-name"),
+		RawLogsTableName:              c.String("raw-logs-table-name"),
+		InternalTransactionsTableName: c.String("internal-transactions-table-name"),
+		MetricsHost:                   c.String("metrics-host"),
+		MetricsPort:                   c.Int("metrics-port"),
+		ChainID:                       c.Uint64("chain-id"),
+		Environment:                   c.String("environment"),
+		Region:                        c.String("region"),
+		CloudProvider:                 c.String("cloud-provider"),
 	}, nil
 }
 

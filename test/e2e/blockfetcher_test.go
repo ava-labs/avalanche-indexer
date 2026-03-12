@@ -76,7 +76,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 		startHeight = latest - safetyMargin
 	}
 
-	err = chkpt.Write(ctx, evmChainID, startHeight)
+	err = chkpt.Write(ctx, evmChainID, "blocks", startHeight)
 	require.NoError(t, err, "failed to seed checkpoint row")
 
 	// ---- Kafka consumer to observe realtime blocks ----
@@ -134,7 +134,7 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	g.Go(func() error {
 		cfg := checkpointer.DefaultConfig()
 		cfg.Interval = checkpointInterval
-		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID, "blocks")
 	})
 
 	minMsgs := 5
@@ -295,7 +295,7 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	g.Go(func() error {
 		cfg := checkpointer.DefaultConfig()
 		cfg.Interval = checkpointInterval
-		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID)
+		return checkpointer.Start(gctx, state, chkpt, cfg, evmChainID, "blocks")
 	})
 
 	// Collect exactly the expected backfill range
@@ -396,6 +396,7 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 		require.Equal(t, exp.StateRoot, got.StateRoot, "stateRoot %d", n)
 		require.Equal(t, exp.TransactionsRoot, got.TransactionsRoot, "txRoot %d", n)
 		require.Equal(t, exp.ReceiptsRoot, got.ReceiptsRoot, "receiptsRoot %d", n)
+		require.Equal(t, exp.TimestampMs, got.TimestampMs, "timestampMs %d", n)
 		// Optional fields (presence may vary across forks)
 		if exp.BaseFee != nil || got.BaseFee != nil {
 			require.NotNil(t, exp.BaseFee, "exp baseFee nil for %d", n)

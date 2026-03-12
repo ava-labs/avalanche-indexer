@@ -16,21 +16,25 @@ import (
 // rowMock is a minimal implementation of driver.Row that populates provided destinations.
 type rowMock struct {
 	chainID                uint64
+	mode                   string
 	lowestUnprocessedBlock uint64
 	timestamp              int64
 }
 
 func (r rowMock) Scan(dest ...interface{}) error {
-	if len(dest) != 3 {
+	if len(dest) != 4 {
 		return errors.New("unexpected dest len")
 	}
 	if p, ok := dest[0].(*uint64); ok && p != nil {
 		*p = r.chainID
 	}
-	if p, ok := dest[1].(*uint64); ok && p != nil {
+	if p, ok := dest[1].(*string); ok && p != nil {
+		*p = r.mode
+	}
+	if p, ok := dest[2].(*uint64); ok && p != nil {
 		*p = r.lowestUnprocessedBlock
 	}
-	if p, ok := dest[2].(*int64); ok && p != nil {
+	if p, ok := dest[3].(*int64); ok && p != nil {
 		*p = r.timestamp
 	}
 	return nil
@@ -52,19 +56,19 @@ func TestRepository_Write_Success(t *testing.T) {
 	// Expect Exec with query and args
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
-			uint64(43114), uint64(123), mock.MatchedBy(func(ts int64) bool {
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+			uint64(43114), "blocks", uint64(123), mock.MatchedBy(func(ts int64) bool {
 				return ts > time.Now().Unix()-60 && ts <= time.Now().Unix()
 			})).
 		Return(nil)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.NoError(t, err)
-	err = repo.Write(ctx, 43114, 123)
+	err = repo.Write(ctx, 43114, "blocks", 123)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
@@ -77,17 +81,17 @@ func TestRepository_Write_Error(t *testing.T) {
 
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?)\n",
-			mock.Anything, mock.Anything, mock.Anything).
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(execErr)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.NoError(t, err)
-	err = repo.Write(ctx, 43114, 1)
+	err = repo.Write(ctx, 43114, "blocks", 1)
 	require.ErrorIs(t, err, execErr)
 	mockConn.AssertExpectations(t)
 }
@@ -98,20 +102,20 @@ func TestRepository_Read_Success(t *testing.T) {
 	ctx := t.Context()
 
 	// Prepare row with values
-	row := rowMock{chainID: 43114, lowestUnprocessedBlock: 777, timestamp: 1700000000}
+	row := rowMock{chainID: 43114, mode: "blocks", lowestUnprocessedBlock: 777, timestamp: 1700000000}
 
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114)).
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "blocks").
 		Return(row)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.NoError(t, err)
-	lowest, exists, err := repo.Read(ctx, 43114)
+	lowest, exists, err := repo.Read(ctx, 43114, "blocks")
 	require.NoError(t, err)
 	assert.True(t, exists)
 	assert.Equal(t, uint64(777), lowest)
@@ -140,16 +144,16 @@ func TestRepository_Read_Error(t *testing.T) {
 	scanErr := errors.New("scan failed")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114)).
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "blocks").
 		Return(rowErrMock{err: scanErr})
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.NoError(t, err)
-	lowest, exists, err := repo.Read(ctx, 43114)
+	lowest, exists, err := repo.Read(ctx, 43114, "blocks")
 	assert.False(t, exists)
 	assert.Equal(t, uint64(0), lowest)
 	require.ErrorIs(t, err, scanErr)
@@ -163,12 +167,7 @@ func TestRepository_Initialize_Success(t *testing.T) {
 
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
-		})).
-		Return(nil)
-	mockConn.
-		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 // Just verify a query is passed
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 
@@ -213,7 +212,7 @@ func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
 
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 
@@ -235,7 +234,7 @@ func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
 
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 
@@ -259,18 +258,18 @@ func TestRepository_Read_NotExists(t *testing.T) {
 	// Return sql.ErrNoRows to simulate no checkpoint exists
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return len(q) > 0 && containsSubstring(q, "CREATE TABLE IF NOT EXISTS") && containsSubstring(q, "checkpoints")
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
 		})).
 		Return(nil)
 
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114)).
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "traces").
 		Return(rowErrMock{err: sql.ErrNoRows})
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.NoError(t, err)
 
-	lowest, exists, err := repo.Read(ctx, 43114)
+	lowest, exists, err := repo.Read(ctx, 43114, "traces")
 	require.NoError(t, err)
 	assert.False(t, exists)
 	assert.Equal(t, uint64(0), lowest)
@@ -289,5 +288,69 @@ func TestNewRepository_Error(t *testing.T) {
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.Nil(t, repo)
 	require.ErrorIs(t, err, createTableErr)
+	mockConn.AssertExpectations(t)
+}
+
+func TestRepository_Write_Read_DifferentModes(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	// Expect table creation and migrations
+	mockConn.
+		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 && (containsSubstring(q, "CREATE TABLE IF NOT EXISTS") || containsSubstring(q, "ALTER TABLE"))
+		})).
+		Return(nil)
+
+	// Write for "blocks" mode
+	mockConn.
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+			uint64(43114), "blocks", uint64(100), mock.Anything).
+		Return(nil).
+		Once()
+
+	// Write for "traces" mode
+	mockConn.
+		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+			uint64(43114), "traces", uint64(200), mock.Anything).
+		Return(nil).
+		Once()
+
+	// Read for "blocks" mode
+	blocksRow := rowMock{chainID: 43114, mode: "blocks", lowestUnprocessedBlock: 100, timestamp: 1700000000}
+	mockConn.
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "blocks").
+		Return(blocksRow).
+		Once()
+
+	// Read for "traces" mode
+	tracesRow := rowMock{chainID: 43114, mode: "traces", lowestUnprocessedBlock: 200, timestamp: 1700000001}
+	mockConn.
+		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "traces").
+		Return(tracesRow).
+		Once()
+
+	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
+	require.NoError(t, err)
+
+	// Write both modes
+	err = repo.Write(ctx, 43114, "blocks", 100)
+	require.NoError(t, err)
+	err = repo.Write(ctx, 43114, "traces", 200)
+	require.NoError(t, err)
+
+	// Read blocks mode - should get 100
+	lowest, exists, err := repo.Read(ctx, 43114, "blocks")
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, uint64(100), lowest)
+
+	// Read traces mode - should get 200 (not 100)
+	lowest, exists, err = repo.Read(ctx, 43114, "traces")
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, uint64(200), lowest)
+
 	mockConn.AssertExpectations(t)
 }

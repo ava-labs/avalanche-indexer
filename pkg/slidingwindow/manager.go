@@ -73,6 +73,10 @@ func NewManager(
 		return nil, errors.New("invalid max failures: must be greater than 0")
 	}
 
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
+
 	return &Manager{
 		log:         log,
 		state:       s,
@@ -98,10 +102,8 @@ func (m *Manager) SubmitHeight(h uint64) bool {
 	}
 
 	// Update window metrics when HIB changes
-	if m.metrics != nil {
-		lowest, highest, processedCount := m.state.Snapshot()
-		m.metrics.UpdateWindowMetrics(lowest, highest, processedCount)
-	}
+	lowest, highest, processedCount := m.state.Snapshot()
+	m.metrics.UpdateWindowMetrics(lowest, highest, processedCount)
 
 	select {
 	case m.heightChan <- h:
@@ -226,7 +228,7 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 			return
 		}
 		m.log.Debugw("failed processing block height", "height", h, "error", err)
-		m.handleFailure(h)
+		m.handleFailure(h, metrics.StageProcess)
 		return
 	}
 
@@ -238,16 +240,14 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 			return
 		}
 		m.log.Warnw("failed to mark processed", "height", h, "error", err)
-		m.handleFailure(h)
+		m.handleFailure(h, metrics.StageMarkProcessed)
 		return
 	}
 
 	// Record block processing duration on success
 	duration := time.Since(start)
 	m.log.Debugw("block processing completed", "height", h, "type", workerType, "duration_ms", duration.Milliseconds())
-	if m.metrics != nil {
-		m.metrics.ObserveBlockProcessingDuration(duration.Seconds())
-	}
+	m.metrics.ObserveBlockProcessingDuration(duration.Seconds())
 
 	// Get current lowest before attempting to advance (needed for commit count)
 	oldLowest, _ := m.state.Window()
@@ -256,24 +256,30 @@ func (m *Manager) process(ctx context.Context, h uint64, isBackfill bool) {
 	newLowest, advanced := m.state.AdvanceLowest()
 
 	// Update metrics after state change
-	if m.metrics != nil {
-		_, highest, processedCount := m.state.Snapshot()
-		if advanced {
-			// Window advanced - record committed blocks
-			blocksCommitted := newLowest - oldLowest
-			m.log.Debugw("window advanced", "old_lowest", oldLowest, "new_lowest", newLowest, "blocks_committed", blocksCommitted, "highest", highest)
-			m.metrics.CommitBlocks(blocksCommitted, newLowest, highest, processedCount)
-		} else {
-			m.metrics.UpdateWindowMetrics(newLowest, highest, processedCount)
-		}
+	_, highest, processedCount := m.state.Snapshot()
+	if advanced {
+		// Window advanced - record committed blocks
+		blocksCommitted := newLowest - oldLowest
+		m.log.Debugw("window advanced", "old_lowest", oldLowest, "new_lowest", newLowest, "blocks_committed", blocksCommitted, "highest", highest)
+		m.metrics.CommitBlocks(blocksCommitted, newLowest, highest, processedCount)
+	} else {
+		m.metrics.UpdateWindowMetrics(newLowest, highest, processedCount)
 	}
 
 	m.state.ResetFailureCount(h)
 }
 
-// handleFailure increments the failure count for a height and sends a signal if the threshold is exceeded.
-func (m *Manager) handleFailure(h uint64) {
+// handleFailure records a block failure metric for the given stage, increments the failure count
+// for a height, records a retry metric if below threshold, and sends a signal to the failure
+// channel if the threshold is exceeded.
+func (m *Manager) handleFailure(h uint64, stage string) {
+	m.metrics.IncBlockFailure(stage)
+
 	failCount := m.state.IncrementFailureCount(h)
+	if failCount < m.maxFailures {
+		m.metrics.IncBlockRetry()
+	}
+
 	if failCount >= m.maxFailures {
 		select {
 		case m.failureChan <- h:

@@ -7,6 +7,7 @@ ON CLUSTER `%s`
 	hash FixedString(32),
 	parent_hash FixedString(32),
 	block_time DateTime64(3, 'UTC'),
+	timestamp_ms UInt64,
 	miner FixedString(20),
 	difficulty UInt256,
 	total_difficulty UInt256,
@@ -33,5 +34,5 @@ ON CLUSTER `%s`
 	num_txns UInt32
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
-ORDER BY (blockchain_id, block_time, block_number)
+ORDER BY (blockchain_id, block_number)
 SETTINGS index_granularity = 8192

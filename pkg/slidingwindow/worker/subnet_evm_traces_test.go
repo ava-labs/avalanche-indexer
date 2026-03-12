@@ -10,17 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ava-labs/subnet-evm/rpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
-
-	subnetevmrpc "github.com/ava-labs/subnet-evm/rpc"
 )
 
-func testSubnetEVMRPCServerForTraces(t *testing.T, traces []json.RawMessage, tracesErr *rpcError, delay time.Duration) *httptest.Server {
+func testRPCServerForSubnetEVMTraces(t *testing.T, traces []json.RawMessage, tracesErr *rpcError, delay time.Duration) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -49,15 +48,15 @@ func testSubnetEVMRPCServerForTraces(t *testing.T, traces []json.RawMessage, tra
 	}))
 }
 
-func newSubnetEVMTestTracesWorker(t *testing.T, serverURL string) *SubnetEVMTracesWorker {
+func newTestSubnetEVMTracesWorker(t *testing.T, serverURL string) *SubnetEVMTracesWorker {
 	t.Helper()
-	c, err := subnetevmrpc.Dial(serverURL)
+	c, err := rpc.Dial(serverURL)
 	if err != nil {
 		require.Fail(t, "failed to dial test rpc server", err)
 	}
-	bcID := "test-blockchain-id"
+	bcID := "test-blockchain-id-1"
 	return &SubnetEVMTracesWorker{
-		client:       c,
+		rpc:          c,
 		log:          zap.NewNop().Sugar(),
 		producer:     nil,
 		topic:        "",
@@ -69,33 +68,33 @@ func newSubnetEVMTestTracesWorker(t *testing.T, serverURL string) *SubnetEVMTrac
 
 func TestSubnetEVMFetchBlockTraces_Success(t *testing.T) {
 	traces := []json.RawMessage{
-		json.RawMessage(`{"type":"CALL","from":"0x4444444444444444444444444444444444444444","to":"0x5555555555555555555555555555555555555555","value":"0x0","gas":"0x5208","gasUsed":"0x5208","input":"0x","output":"0x"}`),
-		json.RawMessage(`{"type":"CREATE","from":"0x6666666666666666666666666666666666666666","value":"0x0","gas":"0x10000","gasUsed":"0x10000","input":"0x6060","output":"0x"}`),
+		json.RawMessage(`{"type":"CALL","from":"0x1111111111111111111111111111111111111111","to":"0x2222222222222222222222222222222222222222","value":"0x0","gas":"0x5208","gasUsed":"0x5208","input":"0x","output":"0x"}`),
+		json.RawMessage(`{"type":"CREATE","from":"0x3333333333333333333333333333333333333333","value":"0x0","gas":"0x10000","gasUsed":"0x10000","input":"0x6060","output":"0x"}`),
 	}
 
-	server := testSubnetEVMRPCServerForTraces(t, traces, nil, 0)
+	server := testRPCServerForSubnetEVMTraces(t, traces, nil, 0)
 	defer server.Close()
 
-	w := newSubnetEVMTestTracesWorker(t, server.URL)
+	w := newTestSubnetEVMTracesWorker(t, server.URL)
 	w.traceTimeout = 2 * time.Second
 
 	ctx := t.Context()
-	fetchedTraces, err := w.FetchBlockTraces(ctx, 2)
+	fetchedTraces, err := w.FetchBlockTraces(ctx, 1)
 	require.NoError(t, err)
 	require.Len(t, fetchedTraces, 2)
 }
 
 func TestSubnetEVMFetchBlockTraces_FetchError(t *testing.T) {
-	server := testSubnetEVMRPCServerForTraces(t, nil, &rpcError{Code: -32000, Message: "trace failed"}, 0)
+	server := testRPCServerForSubnetEVMTraces(t, nil, &rpcError{Code: -32000, Message: "trace failed"}, 0)
 	defer server.Close()
 
-	w := newSubnetEVMTestTracesWorker(t, server.URL)
+	w := newTestSubnetEVMTracesWorker(t, server.URL)
 	w.traceTimeout = 2 * time.Second
 
 	ctx := t.Context()
-	_, err := w.FetchBlockTraces(ctx, 2)
+	_, err := w.FetchBlockTraces(ctx, 1)
 	require.ErrorIs(t, err, ErrTracesFetchFailed)
-	require.Contains(t, err.Error(), "for block 2")
+	require.Contains(t, err.Error(), "for block 1")
 }
 
 func TestSubnetEVMFetchBlockTraces_Timeout(t *testing.T) {
@@ -103,36 +102,36 @@ func TestSubnetEVMFetchBlockTraces_Timeout(t *testing.T) {
 		json.RawMessage(`{"type":"CALL"}`),
 	}
 
-	server := testSubnetEVMRPCServerForTraces(t, traces, nil, 200*time.Millisecond)
+	server := testRPCServerForSubnetEVMTraces(t, traces, nil, 200*time.Millisecond)
 	defer server.Close()
 
-	w := newSubnetEVMTestTracesWorker(t, server.URL)
+	w := newTestSubnetEVMTracesWorker(t, server.URL)
 	w.traceTimeout = 50 * time.Millisecond
 
 	ctx := t.Context()
-	_, err := w.FetchBlockTraces(ctx, 2)
+	_, err := w.FetchBlockTraces(ctx, 1)
 	require.ErrorIs(t, err, ErrTracesFetchFailed)
 	require.Contains(t, strings.ToLower(err.Error()), "deadline")
 }
 
 func TestSubnetEVMFetchBlockTraces_MetricsSuccess(t *testing.T) {
 	traces := []json.RawMessage{
-		json.RawMessage(`{"type":"CALL","from":"0x4444444444444444444444444444444444444444","to":"0x5555555555555555555555555555555555555555"}`),
+		json.RawMessage(`{"type":"CALL","from":"0x1111111111111111111111111111111111111111","to":"0x2222222222222222222222222222222222222222"}`),
 	}
 
-	server := testSubnetEVMRPCServerForTraces(t, traces, nil, 0)
+	server := testRPCServerForSubnetEVMTraces(t, traces, nil, 0)
 	defer server.Close()
 
 	reg := prometheus.NewRegistry()
 	m, err := metrics.New(reg)
 	require.NoError(t, err)
 
-	w := newSubnetEVMTestTracesWorker(t, server.URL)
+	w := newTestSubnetEVMTracesWorker(t, server.URL)
 	w.metrics = m
 	w.traceTimeout = 2 * time.Second
 
 	ctx := t.Context()
-	fetchedTraces, err := w.FetchBlockTraces(ctx, 2)
+	fetchedTraces, err := w.FetchBlockTraces(ctx, 1)
 	require.NoError(t, err)
 	require.Len(t, fetchedTraces, 1)
 
@@ -142,19 +141,19 @@ func TestSubnetEVMFetchBlockTraces_MetricsSuccess(t *testing.T) {
 }
 
 func TestSubnetEVMFetchBlockTraces_MetricsError(t *testing.T) {
-	server := testSubnetEVMRPCServerForTraces(t, nil, &rpcError{Code: -32000, Message: "trace failed"}, 0)
+	server := testRPCServerForSubnetEVMTraces(t, nil, &rpcError{Code: -32000, Message: "trace failed"}, 0)
 	defer server.Close()
 
 	reg := prometheus.NewRegistry()
 	m, err := metrics.New(reg)
 	require.NoError(t, err)
 
-	w := newSubnetEVMTestTracesWorker(t, server.URL)
+	w := newTestSubnetEVMTracesWorker(t, server.URL)
 	w.metrics = m
 	w.traceTimeout = 2 * time.Second
 
 	ctx := t.Context()
-	_, err = w.FetchBlockTraces(ctx, 2)
+	_, err = w.FetchBlockTraces(ctx, 1)
 	require.ErrorIs(t, err, ErrTracesFetchFailed)
 
 	require.Equal(t, 0.0, getGaugeValue(t, reg))
@@ -163,20 +162,24 @@ func TestSubnetEVMFetchBlockTraces_MetricsError(t *testing.T) {
 
 func TestSubnetEVMMarshalBlockTrace(t *testing.T) {
 	traces := []json.RawMessage{
-		json.RawMessage(`{"type":"CALL","from":"0x4444444444444444444444444444444444444444"}`),
+		json.RawMessage(`{"type":"CALL","from":"0x1111111111111111111111111111111111111111"}`),
 	}
 
-	evmChainID := big.NewInt(99999)
-	bcID := "subnet-blockchain-id"
+	evmChainID := big.NewInt(43114)
+	bcID := "test-blockchain-id-2"
+	blockTimestamp := uint64(1640000000)
 
-	bytes, err := messages.MarshalEVMBlockTrace(456, traces, evmChainID, &bcID)
+	timestampMs := blockTimestamp*1000 + 123
+	bytes, err := messages.MarshalEVMBlockTrace(123, blockTimestamp, timestampMs, traces, evmChainID, &bcID)
 	require.NoError(t, err)
 	require.NotEmpty(t, bytes)
 
 	var result messages.EVMBlockTrace
 	err = json.Unmarshal(bytes, &result)
 	require.NoError(t, err)
-	require.Equal(t, uint64(456), result.BlockNumber)
+	require.Equal(t, uint64(123), result.BlockNumber)
+	require.Equal(t, blockTimestamp, result.BlockTimestamp)
+	require.Equal(t, timestampMs, result.TimestampMs)
 	require.Equal(t, evmChainID, result.EVMChainID)
 	require.Equal(t, bcID, *result.BlockchainID)
 	require.Len(t, result.Traces, 1)
@@ -185,14 +188,14 @@ func TestSubnetEVMMarshalBlockTrace(t *testing.T) {
 func TestSubnetEVMFetchBlockTraces_EmptyTraces(t *testing.T) {
 	traces := []json.RawMessage{}
 
-	server := testSubnetEVMRPCServerForTraces(t, traces, nil, 0)
+	server := testRPCServerForSubnetEVMTraces(t, traces, nil, 0)
 	defer server.Close()
 
-	w := newSubnetEVMTestTracesWorker(t, server.URL)
+	w := newTestSubnetEVMTracesWorker(t, server.URL)
 	w.traceTimeout = 2 * time.Second
 
 	ctx := t.Context()
-	fetchedTraces, err := w.FetchBlockTraces(ctx, 2)
+	fetchedTraces, err := w.FetchBlockTraces(ctx, 1)
 	require.NoError(t, err)
 	require.Empty(t, fetchedTraces)
 }
