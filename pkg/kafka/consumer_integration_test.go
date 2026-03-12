@@ -12,7 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
+
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
@@ -801,5 +806,491 @@ func TestConsumer_LogPrinting(t *testing.T) {
 		case <-time.After(1 * time.Second):
 			require.Fail(t, "logsDone channel should be closed after consumer stops")
 		}
+	})
+}
+
+// gatherIntegrationCounter returns the value of a counter metric by its fully-qualified
+// name from the Prometheus registry, or 0 if not found.
+func gatherIntegrationCounter(t *testing.T, reg *prometheus.Registry, name string) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, mf := range families {
+		if mf.GetName() == name {
+			for _, m := range mf.GetMetric() {
+				if m.GetCounter() != nil {
+					return m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// newTestMetrics creates a Prometheus registry and metrics instance for tests
+// that need to verify metric values.
+func newTestMetrics(t *testing.T) (*prometheus.Registry, *metrics.Metrics) {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	m, err := metrics.New(reg)
+	require.NoError(t, err)
+	return reg, m
+}
+
+func TestConsumer_RetryWithRealKafka(t *testing.T) {
+	kc := setupConsumerKafka(t)
+	defer kc.teardown(t)
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+
+	t.Run("finite_retries_eventual_success", func(t *testing.T) {
+		var callCount atomic.Int32
+
+		proc := newTestProcessor()
+		proc.processFunc = func(_ context.Context, _ *ckafka.Message) error {
+			n := callCount.Add(1)
+			if n <= 2 {
+				return errors.New("transient failure")
+			}
+			atomic.AddInt32(&proc.processedCount, 1)
+			return nil
+		}
+
+		reg, m := newTestMetrics(t)
+
+		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-retry-finite-%d", time.Now().UnixNano()))
+		cfg.Retry = RetryPolicy{
+			MaxRetries: 5,
+			BaseDelay:  100 * time.Millisecond,
+			MaxDelay:   500 * time.Millisecond,
+		}
+
+		consumer, err := NewConsumer(context.Background(), log, cfg, proc, m)
+		require.NoError(t, err)
+
+		produceTestMessages(t, kc.brokers, consumerTestTopic, 1)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		consumerErrCh := make(chan error, 1)
+		go func() {
+			consumerErrCh <- consumer.Start(ctx)
+		}()
+
+		require.Eventually(t, func() bool {
+			return proc.GetProcessedCount() >= 1
+		}, 20*time.Second, 500*time.Millisecond, "Message should be processed after retries")
+
+		cancel()
+		select {
+		case err := <-consumerErrCh:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("Consumer did not stop within timeout")
+		}
+
+		require.GreaterOrEqual(t, callCount.Load(), int32(3), "Expected at least 3 calls (2 failures + 1 success)")
+		retries := gatherIntegrationCounter(t, reg, "indexer_consumer_message_retries_total")
+		require.GreaterOrEqual(t, retries, float64(1), "Expected retry metrics to be recorded")
+	})
+
+	t.Run("retries_exhausted_then_error", func(t *testing.T) {
+		proc := newTestProcessor()
+		proc.SetShouldFail(true)
+		proc.SetFailureError(errors.New("permanent failure"))
+
+		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-retry-exhausted-%d", time.Now().UnixNano()))
+		cfg.Retry = RetryPolicy{
+			MaxRetries: 2,
+			BaseDelay:  50 * time.Millisecond,
+			MaxDelay:   100 * time.Millisecond,
+		}
+		cfg.PublishToDLQ = false
+
+		consumer, err := NewConsumer(context.Background(), log, cfg, proc, nil)
+		require.NoError(t, err)
+
+		produceTestMessages(t, kc.brokers, consumerTestTopic, 1)
+
+		go func() {
+			_ = consumer.Start(context.Background())
+		}()
+
+		select {
+		case err := <-consumer.errCh:
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "permanent failure")
+		case <-time.After(30 * time.Second):
+			t.Fatal("Expected consumer to report error after retries exhausted")
+		}
+
+		require.GreaterOrEqual(t, proc.GetProcessedCount(), 3,
+			"Expected 1 initial + 2 retries = 3 calls minimum")
+	})
+}
+
+func TestConsumer_InfiniteRetries(t *testing.T) {
+	kc := setupConsumerKafka(t)
+	defer kc.teardown(t)
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+
+	t.Run("eventual_success_after_many_failures", func(t *testing.T) {
+		var callCount atomic.Int32
+
+		proc := newTestProcessor()
+		proc.processFunc = func(_ context.Context, _ *ckafka.Message) error {
+			n := callCount.Add(1)
+			if n <= 5 {
+				return errors.New("transient failure")
+			}
+			atomic.AddInt32(&proc.processedCount, 1)
+			return nil
+		}
+
+		reg, m := newTestMetrics(t)
+
+		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-infinite-%d", time.Now().UnixNano()))
+		cfg.Retry = RetryPolicy{
+			MaxRetries: InfiniteRetries,
+			BaseDelay:  50 * time.Millisecond,
+			MaxDelay:   200 * time.Millisecond,
+		}
+
+		consumer, err := NewConsumer(context.Background(), log, cfg, proc, m)
+		require.NoError(t, err)
+
+		produceTestMessages(t, kc.brokers, consumerTestTopic, 1)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		consumerErrCh := make(chan error, 1)
+		go func() {
+			consumerErrCh <- consumer.Start(ctx)
+		}()
+
+		require.Eventually(t, func() bool {
+			return proc.GetProcessedCount() >= 1
+		}, 20*time.Second, 500*time.Millisecond, "Message should eventually succeed with infinite retries")
+
+		cancel()
+		select {
+		case err := <-consumerErrCh:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("Consumer did not stop within timeout")
+		}
+
+		require.GreaterOrEqual(t, callCount.Load(), int32(6), "Expected at least 6 calls (5 failures + 1 success)")
+
+		retries := gatherIntegrationCounter(t, reg, "indexer_consumer_message_retries_total")
+		require.GreaterOrEqual(t, retries, float64(5), "Expected at least 5 retries recorded")
+
+		exhausted := gatherIntegrationCounter(t, reg, "indexer_consumer_message_retries_exhausted_total")
+		require.Equal(t, float64(0), exhausted, "No retries should be exhausted with infinite retries")
+	})
+}
+
+func TestConsumer_DLQPipeline(t *testing.T) {
+	kc := setupConsumerKafka(t)
+	defer kc.teardown(t)
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+
+	t.Run("primary_fails_dlq_consumer_succeeds", func(t *testing.T) {
+		// --- Phase 1: Primary consumer fails, messages go to DLQ ---
+		primaryProc := newTestProcessor()
+		primaryProc.SetShouldFail(true)
+		primaryProc.SetFailureError(errors.New("primary processing failure"))
+
+		primaryCfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-pipeline-primary-%d", time.Now().UnixNano()))
+		primaryCfg.PublishToDLQ = true
+
+		primaryConsumer, err := NewConsumer(context.Background(), log, primaryCfg, primaryProc, nil)
+		require.NoError(t, err)
+
+		messageCount := 3
+		produceTestMessages(t, kc.brokers, consumerTestTopic, messageCount)
+
+		primaryCtx, primaryCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer primaryCancel()
+
+		primaryErrCh := make(chan error, 1)
+		go func() {
+			primaryErrCh <- primaryConsumer.Start(primaryCtx)
+		}()
+
+		require.Eventually(t, func() bool {
+			return primaryProc.GetProcessedCount() >= messageCount
+		}, 20*time.Second, 500*time.Millisecond, "Primary should attempt all messages")
+
+		primaryCancel()
+		select {
+		case <-primaryErrCh:
+		case <-time.After(10 * time.Second):
+			t.Fatal("Primary consumer did not stop within timeout")
+		}
+
+		time.Sleep(2 * time.Second)
+
+		// --- Phase 2: DLQ consumer picks up from DLQ topic and succeeds ---
+		dlqProc := newTestProcessor()
+
+		dlqCfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-pipeline-dlq-%d", time.Now().UnixNano()))
+		dlqCfg.Topic = consumerDLQTopic
+		dlqCfg.PublishToDLQ = false
+		dlqCfg.Retry = RetryPolicy{
+			MaxRetries: InfiniteRetries,
+			BaseDelay:  50 * time.Millisecond,
+			MaxDelay:   200 * time.Millisecond,
+		}
+
+		dlqConsumer, err := NewConsumer(context.Background(), log, dlqCfg, dlqProc, nil)
+		require.NoError(t, err)
+
+		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer dlqCancel()
+
+		dlqErrCh := make(chan error, 1)
+		go func() {
+			dlqErrCh <- dlqConsumer.Start(dlqCtx)
+		}()
+
+		require.Eventually(t, func() bool {
+			count := dlqProc.GetProcessedCount()
+			t.Logf("DLQ consumer processed %d/%d messages", count, messageCount)
+			return count >= messageCount
+		}, 20*time.Second, 500*time.Millisecond, "DLQ consumer should process all messages from DLQ")
+
+		dlqCancel()
+		select {
+		case err := <-dlqErrCh:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("DLQ consumer did not stop within timeout")
+		}
+
+		dlqMessages := dlqProc.GetProcessedMessages()
+		require.GreaterOrEqual(t, len(dlqMessages), messageCount,
+			"DLQ consumer should have processed all messages that primary failed on")
+
+		for _, msg := range dlqMessages {
+			require.NotNil(t, msg.Key, "DLQ message should preserve original key")
+			require.NotNil(t, msg.Value, "DLQ message should preserve original value")
+		}
+	})
+}
+
+func TestConsumer_NoDLQCascade(t *testing.T) {
+	kc := setupConsumerKafka(t)
+	defer kc.teardown(t)
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+
+	t.Run("dlq_consumer_does_not_publish_to_secondary_dlq", func(t *testing.T) {
+		proc := newTestProcessor()
+		proc.SetShouldFail(true)
+		proc.SetFailureError(errors.New("permanent failure on DLQ message"))
+
+		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-no-cascade-%d", time.Now().UnixNano()))
+		cfg.Topic = consumerDLQTopic
+		cfg.PublishToDLQ = false
+		cfg.Retry = RetryPolicy{
+			MaxRetries: 2,
+			BaseDelay:  50 * time.Millisecond,
+			MaxDelay:   100 * time.Millisecond,
+		}
+
+		consumer, err := NewConsumer(context.Background(), log, cfg, proc, nil)
+		require.NoError(t, err)
+
+		produceTestMessages(t, kc.brokers, consumerDLQTopic, 1)
+
+		go func() {
+			_ = consumer.Start(context.Background())
+		}()
+
+		// With PublishToDLQ=false, after retries are exhausted, the error
+		// goes to errCh and the consumer shuts down.
+		select {
+		case err := <-consumer.errCh:
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "permanent failure on DLQ message")
+		case <-time.After(30 * time.Second):
+			t.Fatal("Expected error on errCh after retries exhausted")
+		}
+
+		require.Nil(t, consumer.dlqProducer, "DLQ consumer should not have a DLQ producer")
+	})
+}
+
+func TestConsumer_ContextCancelDuringRetryBackoff(t *testing.T) {
+	kc := setupConsumerKafka(t)
+	defer kc.teardown(t)
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+
+	t.Run("exits_promptly_on_cancel_during_long_backoff", func(t *testing.T) {
+		proc := newTestProcessor()
+		proc.SetShouldFail(true)
+		proc.SetFailureError(errors.New("always fails"))
+
+		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-cancel-backoff-%d", time.Now().UnixNano()))
+		cfg.Retry = RetryPolicy{
+			MaxRetries: InfiniteRetries,
+			BaseDelay:  30 * time.Second,
+			MaxDelay:   30 * time.Second,
+		}
+		cfg.PublishToDLQ = false
+
+		consumer, err := NewConsumer(context.Background(), log, cfg, proc, nil)
+		require.NoError(t, err)
+
+		produceTestMessages(t, kc.brokers, consumerTestTopic, 1)
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		consumerErrCh := make(chan error, 1)
+		go func() {
+			consumerErrCh <- consumer.Start(ctx)
+		}()
+
+		// Wait for the first processing attempt + retry to start the 30s backoff
+		require.Eventually(t, func() bool {
+			return proc.GetProcessedCount() >= 1
+		}, 15*time.Second, 200*time.Millisecond, "Consumer should attempt to process at least once")
+
+		// Cancel while the consumer is in the 30s backoff sleep
+		time.Sleep(500 * time.Millisecond)
+		cancelStart := time.Now()
+		cancel()
+
+		select {
+		case <-consumerErrCh:
+			elapsed := time.Since(cancelStart)
+			require.Less(t, elapsed, 5*time.Second,
+				"Consumer should exit promptly after cancellation, not wait for full backoff")
+		case <-time.After(10 * time.Second):
+			t.Fatal("Consumer did not stop within timeout after cancellation")
+		}
+	})
+}
+
+func TestConsumer_Backpressure(t *testing.T) {
+	kc := setupConsumerKafka(t)
+	defer kc.teardown(t)
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+
+	t.Run("pause_resume_metrics_recorded", func(t *testing.T) {
+		proc := newTestProcessor()
+		proc.processingDelay = 500 * time.Millisecond
+
+		reg, m := newTestMetrics(t)
+
+		cfg := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-backpressure-%d", time.Now().UnixNano()))
+		cfg.Concurrency = 1
+
+		consumer, err := NewConsumer(context.Background(), log, cfg, proc, m)
+		require.NoError(t, err)
+
+		messageCount := 10
+		produceTestMessages(t, kc.brokers, consumerTestTopic, messageCount)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		consumerErrCh := make(chan error, 1)
+		go func() {
+			consumerErrCh <- consumer.Start(ctx)
+		}()
+
+		require.Eventually(t, func() bool {
+			return proc.GetProcessedCount() >= messageCount
+		}, 30*time.Second, 500*time.Millisecond, "All messages should be processed")
+
+		cancel()
+		select {
+		case err := <-consumerErrCh:
+			require.NoError(t, err)
+		case <-time.After(15 * time.Second):
+			t.Fatal("Consumer did not stop within timeout")
+		}
+
+		pauses := gatherIntegrationCounter(t, reg, "indexer_consumer_pauses_total")
+		resumes := gatherIntegrationCounter(t, reg, "indexer_consumer_resumes_total")
+
+		t.Logf("Pause count: %.0f, Resume count: %.0f", pauses, resumes)
+
+		require.Greater(t, pauses, float64(0),
+			"With concurrency=1 and 10 messages with 500ms delay, pauses should occur")
+		require.Greater(t, resumes, float64(0),
+			"After pauses, resumes should also occur")
+		require.Equal(t, pauses, resumes,
+			"Each pause should have a corresponding resume")
+	})
+}
+
+func TestConsumer_ErrorPropagationErrgroup(t *testing.T) {
+	kc := setupConsumerKafka(t)
+	defer kc.teardown(t)
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+
+	t.Run("first_consumer_error_cancels_second_consumer", func(t *testing.T) {
+		// Consumer 1: processor always fails, PublishToDLQ=false -> error exits via Start()
+		proc1 := newTestProcessor()
+		proc1.SetShouldFail(true)
+		proc1.SetFailureError(errors.New("fatal processing error"))
+
+		cfg1 := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-errgroup-1-%d", time.Now().UnixNano()))
+		cfg1.PublishToDLQ = false
+
+		consumer1, err := NewConsumer(context.Background(), log, cfg1, proc1, nil)
+		require.NoError(t, err)
+
+		// Consumer 2: successful processor, reads from DLQ topic (no messages expected)
+		proc2 := newTestProcessor()
+
+		cfg2 := newTestConsumerConfig(kc.brokers, fmt.Sprintf("test-group-errgroup-2-%d", time.Now().UnixNano()))
+		cfg2.Topic = consumerDLQTopic
+		cfg2.PublishToDLQ = false
+
+		consumer2, err := NewConsumer(context.Background(), log, cfg2, proc2, nil)
+		require.NoError(t, err)
+
+		// Wire both into an errgroup (same pattern as run.go)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		g, gctx := errgroup.WithContext(ctx)
+
+		g.Go(func() error {
+			return consumer1.Start(gctx)
+		})
+
+		g.Go(func() error {
+			return consumer2.Start(gctx)
+		})
+
+		// Produce a message to the main topic to trigger consumer1's processor error
+		produceTestMessages(t, kc.brokers, consumerTestTopic, 1)
+
+		// errgroup.Wait should return the error from consumer1.
+		// consumer1's Start() returns the loopErr from errCh, which triggers
+		// context cancellation via errgroup, causing consumer2 to shut down.
+		err = g.Wait()
+		require.Error(t, err, "errgroup should return error from failing consumer")
+
+		t.Logf("errgroup returned: %v", err)
 	})
 }
