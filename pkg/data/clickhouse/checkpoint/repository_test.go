@@ -3,6 +3,7 @@ package checkpoint
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,6 +13,22 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
 )
+
+// fmtReadQuery formats the embedded readCheckpointQuery with database and table name,
+// so tests stay in sync with the actual SQL without hardcoding the query string.
+func fmtReadQuery(database, tableName string) string {
+	return fmt.Sprintf(readCheckpointQuery, database, tableName)
+}
+
+// fmtWriteQuery formats the embedded writeCheckpointQuery with database and table name.
+func fmtWriteQuery(database, tableName string) string {
+	return fmt.Sprintf(writeCheckpointQuery, database, tableName)
+}
+
+// fmtDeleteQuery formats the embedded deleteCheckpointsQuery with database, table name, and cluster.
+func fmtDeleteQuery(database, tableName, cluster string) string {
+	return fmt.Sprintf(deleteCheckpointsQuery, database, tableName, cluster)
+}
 
 // rowMock is a minimal implementation of driver.Row that populates provided destinations.
 type rowMock struct {
@@ -60,7 +77,7 @@ func TestRepository_Write_Success(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+		On("Exec", mock.Anything, fmtWriteQuery("default", "checkpoints"),
 			uint64(43114), "blocks", uint64(123), mock.MatchedBy(func(ts int64) bool {
 				return ts > time.Now().Unix()-60 && ts <= time.Now().Unix()
 			})).
@@ -85,7 +102,7 @@ func TestRepository_Write_Error(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+		On("Exec", mock.Anything, fmtWriteQuery("default", "checkpoints"),
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(execErr)
 
@@ -110,7 +127,7 @@ func TestRepository_Read_Success(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "blocks").
+		On("QueryRow", mock.Anything, fmtReadQuery("default", "checkpoints"), uint64(43114), "blocks").
 		Return(row)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
@@ -148,7 +165,7 @@ func TestRepository_Read_Error(t *testing.T) {
 		})).
 		Return(nil)
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "blocks").
+		On("QueryRow", mock.Anything, fmtReadQuery("default", "checkpoints"), uint64(43114), "blocks").
 		Return(rowErrMock{err: scanErr})
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
@@ -217,7 +234,7 @@ func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
 		Return(nil)
 
 	mockConn.
-		On("Exec", mock.Anything, "DELETE FROM `default`.`checkpoints_local` ON CLUSTER 'default' WHERE chain_id = ?\n", mock.Anything).
+		On("Exec", mock.Anything, fmtDeleteQuery("default", "checkpoints", "default"), mock.Anything).
 		Return(nil)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
@@ -240,7 +257,7 @@ func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
 
 	deleteErr := errors.New("delete failed")
 	mockConn.
-		On("Exec", mock.Anything, "DELETE FROM `default`.`checkpoints_local` ON CLUSTER 'default' WHERE chain_id = ?\n", mock.Anything).
+		On("Exec", mock.Anything, fmtDeleteQuery("default", "checkpoints", "default"), mock.Anything).
 		Return(deleteErr)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
@@ -263,7 +280,7 @@ func TestRepository_Read_NotExists(t *testing.T) {
 		Return(nil)
 
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "traces").
+		On("QueryRow", mock.Anything, fmtReadQuery("default", "checkpoints"), uint64(43114), "traces").
 		Return(rowErrMock{err: sql.ErrNoRows})
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
@@ -305,14 +322,14 @@ func TestRepository_Write_Read_DifferentModes(t *testing.T) {
 
 	// Write for "blocks" mode
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+		On("Exec", mock.Anything, fmtWriteQuery("default", "checkpoints"),
 			uint64(43114), "blocks", uint64(100), mock.Anything).
 		Return(nil).
 		Once()
 
 	// Write for "traces" mode
 	mockConn.
-		On("Exec", mock.Anything, "INSERT INTO `default`.`checkpoints` (chain_id, mode, lowest_unprocessed_block, timestamp) VALUES (?, ?, ?, ?)\n",
+		On("Exec", mock.Anything, fmtWriteQuery("default", "checkpoints"),
 			uint64(43114), "traces", uint64(200), mock.Anything).
 		Return(nil).
 		Once()
@@ -320,14 +337,14 @@ func TestRepository_Write_Read_DifferentModes(t *testing.T) {
 	// Read for "blocks" mode
 	blocksRow := rowMock{chainID: 43114, mode: "blocks", lowestUnprocessedBlock: 100, timestamp: 1700000000}
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "blocks").
+		On("QueryRow", mock.Anything, fmtReadQuery("default", "checkpoints"), uint64(43114), "blocks").
 		Return(blocksRow).
 		Once()
 
 	// Read for "traces" mode
 	tracesRow := rowMock{chainID: 43114, mode: "traces", lowestUnprocessedBlock: 200, timestamp: 1700000001}
 	mockConn.
-		On("QueryRow", mock.Anything, "SELECT * FROM `default`.`checkpoints` WHERE chain_id = ? AND mode = ? ORDER BY timestamp DESC LIMIT 1\n", uint64(43114), "traces").
+		On("QueryRow", mock.Anything, fmtReadQuery("default", "checkpoints"), uint64(43114), "traces").
 		Return(tracesRow).
 		Once()
 
