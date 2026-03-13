@@ -34,7 +34,10 @@ const (
 	txHashMultiplierLarge = 1000
 
 	// oneEtherInWei represents 1 ETH in wei (10^18)
-	oneEtherInWei        = 1000000000000000000
+	oneEtherInWei = 1000000000000000000
+
+	RoleDLQConsumer     = metrics.RoleDLQConsumer
+	RolePrimaryConsumer = metrics.RolePrimaryConsumer
 	producerFlushTimeout = 5000
 )
 
@@ -1173,4 +1176,424 @@ func getCommittedOffsets(t *testing.T, brokers, groupID, topic string) (map[int3
 	}
 
 	return offsets, nil
+}
+
+// TestE2EConsumerIndexerDLQConsumerPipeline validates the full DLQ consumer goroutine:
+// primary consumer fails on invalid messages and publishes to DLQ, then a DLQ consumer
+// running in the same errgroup picks up from the DLQ topic and processes valid messages
+// that were directly produced to it.
+func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113))
+	blockchainID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
+	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
+	testID := time.Now().UnixNano()
+	primaryTopic := fmt.Sprintf("blocks_dlq_pipeline_test_%d", testID)
+	dlqTopic := primaryTopic + "_dlq"
+	primaryGroupID := fmt.Sprintf("e2e-pipeline-primary-%d", testID)
+	dlqGroupID := fmt.Sprintf("e2e-pipeline-dlq-%d", testID)
+	blocksTable := "raw_blocks_e2e_pipeline"
+	transactionsTable := "raw_transactions_e2e_pipeline"
+	logsTable := "raw_logs_e2e_pipeline"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
+	require.NoError(t, err)
+	defer chClient.Close()
+
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
+	require.NoError(t, err)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
+	require.NoError(t, err)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
+	require.NoError(t, err)
+
+	for _, tbl := range []string{blocksTable, transactionsTable, logsTable} {
+		require.NoError(t, chClient.Conn().Exec(ctx, fmt.Sprintf("TRUNCATE TABLE IF EXISTS %s", tbl)))
+	}
+
+	// ---- Metrics: primary + DLQ with role labels on same registry ----
+	registry := prometheus.NewRegistry()
+	primaryLabels := metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RolePrimaryConsumer,
+	}
+	primaryMetrics, err := metrics.NewWithLabels(registry, primaryLabels)
+	require.NoError(t, err)
+
+	dlqLabels := metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RoleDLQConsumer,
+	}
+	dlqMetrics, err := metrics.NewWithLabels(registry, dlqLabels)
+	require.NoError(t, err)
+
+	// ---- Phase 1: Primary consumer with DLQ publishing ----
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, primaryMetrics)
+
+	primaryCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     primaryGroupID,
+		Topic:                       primaryTopic,
+		DLQTopic:                    dlqTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 2,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                true,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+	}
+
+	primaryConsumer, err := kafka.NewConsumer(ctx, log.Named(RolePrimaryConsumer), primaryCfg, primaryProc, primaryMetrics)
+	require.NoError(t, err)
+
+	// Produce valid blocks to primary topic + one invalid message
+	validBlocks := createTestBlocks(evmChainID, blockchainID, 3)
+	produceBlocksToKafka(t, kafkaBrokers, primaryTopic, validBlocks)
+	produceInvalidMessage(t, kafkaBrokers, primaryTopic)
+
+	// ---- Phase 2: DLQ consumer reading directly from DLQ topic ----
+	// Produce valid blocks directly to the DLQ topic to simulate messages
+	// that were published to DLQ and now need reprocessing.
+	dlqBlocks := createTestBlocksStartingFrom(evmChainID, blockchainID, 2000, 2)
+	produceBlocksToKafka(t, kafkaBrokers, dlqTopic, dlqBlocks)
+
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, dlqMetrics)
+
+	dlqCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     dlqGroupID,
+		Topic:                       dlqTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 1,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                false,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+		Retry: kafka.RetryPolicy{
+			MaxRetries: kafka.InfiniteRetries,
+			BaseDelay:  500 * time.Millisecond,
+			MaxDelay:   2 * time.Second,
+		},
+	}
+
+	dlqConsumer, err := kafka.NewConsumer(ctx, log.Named(RoleDLQConsumer), dlqCfg, dlqProc, dlqMetrics)
+	require.NoError(t, err)
+
+	// ---- Run both consumers in an errgroup (mirrors run.go pattern) ----
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return primaryConsumer.Start(gctx)
+	})
+
+	g.Go(func() error {
+		return dlqConsumer.Start(gctx)
+	})
+
+	// Wait until ClickHouse contains blocks from both primary and DLQ consumers.
+	expectedTotal := uint64(len(validBlocks) + len(dlqBlocks))
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", blocksTable)
+	require.Eventually(t, func() bool {
+		var count uint64
+		if err := chClient.Conn().QueryRow(ctx, countQuery).Scan(&count); err != nil {
+			return false
+		}
+		return count >= expectedTotal
+	}, 30*time.Second, 500*time.Millisecond, "ClickHouse should contain blocks from both primary and DLQ consumers")
+
+	// Verify invalid message was published to DLQ by primary.
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer verifyCancel()
+	verifyMessageInDLQ(t, verifyCtx, kafkaBrokers, dlqTopic)
+
+	cancel()
+	require.NoError(t, g.Wait())
+
+	t.Logf("DLQ consumer pipeline e2e test completed: %d primary blocks + %d DLQ blocks = %d total",
+		len(validBlocks), len(dlqBlocks), expectedTotal)
+}
+
+// TestE2EConsumerIndexerMetricsIsolation verifies that primary and DLQ consumers
+// register metrics with distinct role labels on the same Prometheus registry.
+func TestE2EConsumerIndexerMetricsIsolation(t *testing.T) {
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113))
+	blockchainID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
+	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
+	testID := time.Now().UnixNano()
+	primaryTopic := fmt.Sprintf("blocks_metrics_test_%d", testID)
+	dlqTopic := primaryTopic + "_dlq"
+	blocksTable := "raw_blocks_e2e_metrics"
+	transactionsTable := "raw_transactions_e2e_metrics"
+	logsTable := "raw_logs_e2e_metrics"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
+	require.NoError(t, err)
+	defer chClient.Close()
+
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
+	require.NoError(t, err)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
+	require.NoError(t, err)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
+	require.NoError(t, err)
+
+	for _, tbl := range []string{blocksTable, transactionsTable, logsTable} {
+		require.NoError(t, chClient.Conn().Exec(ctx, fmt.Sprintf("TRUNCATE TABLE IF EXISTS %s", tbl)))
+	}
+
+	registry := prometheus.NewRegistry()
+
+	primaryMetrics, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RolePrimaryConsumer,
+	})
+	require.NoError(t, err)
+
+	dlqMetrics, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RoleDLQConsumer,
+	})
+	require.NoError(t, err)
+
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, primaryMetrics)
+	primaryCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     fmt.Sprintf("e2e-metrics-primary-%d", testID),
+		Topic:                       primaryTopic,
+		DLQTopic:                    dlqTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 2,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                true,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+	}
+
+	primaryConsumer, err := kafka.NewConsumer(ctx, log.Named(RolePrimaryConsumer), primaryCfg, primaryProc, primaryMetrics)
+	require.NoError(t, err)
+
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, dlqMetrics)
+	dlqCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     fmt.Sprintf("e2e-metrics-dlq-%d", testID),
+		Topic:                       dlqTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 1,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                false,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+		Retry: kafka.RetryPolicy{
+			MaxRetries: kafka.InfiniteRetries,
+			BaseDelay:  200 * time.Millisecond,
+			MaxDelay:   1 * time.Second,
+		},
+	}
+
+	dlqConsumer, err := kafka.NewConsumer(ctx, log.Named(RoleDLQConsumer), dlqCfg, dlqProc, dlqMetrics)
+	require.NoError(t, err)
+
+	validBlocks := createTestBlocks(evmChainID, blockchainID, 3)
+	produceBlocksToKafka(t, kafkaBrokers, primaryTopic, validBlocks)
+
+	dlqBlocks := createTestBlocksStartingFrom(evmChainID, blockchainID, 3000, 2)
+	produceBlocksToKafka(t, kafkaBrokers, dlqTopic, dlqBlocks)
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return primaryConsumer.Start(gctx) })
+	g.Go(func() error { return dlqConsumer.Start(gctx) })
+
+	// ---- Verify metrics have distinct role labels ----
+	foundPrimaryRole := false
+	foundDLQRole := false
+	require.Eventually(t, func() bool {
+		families, err := registry.Gather()
+		if err != nil {
+			return false
+		}
+		foundPrimaryRole = false
+		foundDLQRole = false
+		for _, mf := range families {
+			if mf.GetName() != "indexer_consumer_messages_received_total" {
+				continue
+			}
+			for _, m := range mf.GetMetric() {
+				for _, lp := range m.GetLabel() {
+					if lp.GetName() == "role" {
+						switch lp.GetValue() {
+						case metrics.RolePrimaryConsumer:
+							foundPrimaryRole = true
+						case metrics.RoleDLQConsumer:
+							foundDLQRole = true
+						}
+					}
+				}
+			}
+		}
+		return foundPrimaryRole && foundDLQRole
+	}, 30*time.Second, 500*time.Millisecond, "Expected both primary_consumer and dlq_consumer role labels in metrics")
+
+	cancel()
+	require.NoError(t, g.Wait())
+
+	t.Log("Metrics isolation e2e test completed: both role labels present on same registry")
+}
+
+// TestE2EConsumerIndexerErrgroupShutdown validates that when the primary consumer
+// encounters a fatal error, the errgroup cancels the shared context, causing the
+// DLQ consumer to shut down cleanly.
+func TestE2EConsumerIndexerErrgroupShutdown(t *testing.T) {
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113))
+	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
+	testID := time.Now().UnixNano()
+	primaryTopic := fmt.Sprintf("blocks_errgroup_test_%d", testID)
+	dlqTopic := primaryTopic + "_dlq"
+	blocksTable := "raw_blocks_e2e_errgroup"
+	transactionsTable := "raw_transactions_e2e_errgroup"
+	logsTable := "raw_logs_e2e_errgroup"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
+	require.NoError(t, err)
+	defer chClient.Close()
+
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
+	require.NoError(t, err)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
+	require.NoError(t, err)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
+	require.NoError(t, err)
+
+	for _, tbl := range []string{blocksTable, transactionsTable, logsTable} {
+		require.NoError(t, chClient.Conn().Exec(ctx, fmt.Sprintf("TRUNCATE TABLE IF EXISTS %s", tbl)))
+	}
+
+	registry := prometheus.NewRegistry()
+	primaryMetrics, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RolePrimaryConsumer,
+	})
+	require.NoError(t, err)
+
+	dlqMetrics, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RoleDLQConsumer,
+	})
+	require.NoError(t, err)
+
+	// Primary consumer: PublishToDLQ=false so processing failures go to errCh -> loopErr -> Start() returns error
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, primaryMetrics)
+	primaryCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     fmt.Sprintf("e2e-errgroup-primary-%d", testID),
+		Topic:                       primaryTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 1,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                false,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+	}
+
+	primaryConsumer, err := kafka.NewConsumer(ctx, log.Named(RolePrimaryConsumer), primaryCfg, primaryProc, primaryMetrics)
+	require.NoError(t, err)
+
+	// DLQ consumer: no messages to process, just waiting
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, dlqMetrics)
+	dlqCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     fmt.Sprintf("e2e-errgroup-dlq-%d", testID),
+		Topic:                       dlqTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 1,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                false,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+		Retry: kafka.RetryPolicy{
+			MaxRetries: kafka.InfiniteRetries,
+			BaseDelay:  1 * time.Second,
+			MaxDelay:   5 * time.Second,
+		},
+	}
+
+	dlqConsumer, err := kafka.NewConsumer(ctx, log.Named(RoleDLQConsumer), dlqCfg, dlqProc, dlqMetrics)
+	require.NoError(t, err)
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		if err := primaryConsumer.Start(gctx); err != nil {
+			log.Errorw("primary consumer exited with error", "error", err)
+			return err
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		if err := dlqConsumer.Start(gctx); err != nil {
+			log.Errorw("DLQ consumer exited with error", "error", err)
+			return err
+		}
+		return nil
+	})
+
+	// Produce an invalid message to trigger a processing error on the primary.
+	// With PublishToDLQ=false, the error goes to errCh -> loopErr -> Start() returns error.
+	produceInvalidMessage(t, kafkaBrokers, primaryTopic)
+
+	startTime := time.Now()
+	err = g.Wait()
+	elapsed := time.Since(startTime)
+
+	require.Error(t, err, "errgroup should return the primary consumer's processing error")
+	t.Logf("errgroup returned error in %v: %v", elapsed, err)
+
+	require.Less(t, elapsed, 30*time.Second,
+		"Both consumers should shut down within a reasonable time after the error")
+
+	t.Log("Errgroup shutdown e2e test completed: primary error propagated, DLQ consumer shut down cleanly")
 }
