@@ -273,19 +273,25 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 			return
 		}
 
-		c.log.Errorw("message processing failed after retries",
+		c.log.Errorw("message processing failed",
 			"error", err,
+			"fatal", processor.IsFatal(err),
+			"non-retryable", processor.IsNonRetryable(err),
 			"partition", msg.TopicPartition.Partition,
 			"offset", msg.TopicPartition.Offset,
 		)
 
+		// Fatal errors always stop the consumer — never publish to DLQ.
+		if processor.IsFatal(err) {
+			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
+			c.sendToErrCh(err)
+			return
+		}
+
+		// Non-retryable or retryable-exhausted: publish to DLQ if enabled, otherwise stop.
 		if !c.cfg.PublishToDLQ {
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, err, time.Since(start).Seconds())
-			select {
-			case c.errCh <- err:
-			default:
-				c.log.Errorw("error channel full, dropping error", "error", err)
-			}
+			c.sendToErrCh(err)
 			return
 		}
 
@@ -299,11 +305,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 			}
 			c.log.Errorw("failed to publish to DLQ", "error", publishErr)
 			c.metrics.RecordMessageProcessed(msg.TopicPartition.Partition, publishErr, time.Since(start).Seconds())
-			select {
-			case c.errCh <- publishErr:
-			default:
-				c.log.Errorw("error channel full, dropping error", "error", publishErr)
-			}
+			c.sendToErrCh(publishErr)
 			return
 		}
 		c.offsetManager.InsertOffsetWithRetry(ctx, msg)
@@ -312,13 +314,18 @@ func (c *Consumer) dispatch(ctx context.Context, msg *ckafka.Message) {
 }
 
 // processWithRetry attempts to process msg, retrying according to the
-// configured RetryPolicy. Returns nil on success, context.Canceled if the
-// context is cancelled, or the last processing error after retries are
-// exhausted. With InfiniteRetries the loop only exits on success or
-// context cancellation — the consumer stays stuck on the offset.
+// configured RetryPolicy. Fatal and non-retryable errors bypass the retry
+// loop entirely. Returns nil on success, context.Canceled if the context
+// is cancelled, or the last processing error after retries are exhausted.
+// With InfiniteRetries the loop only exits on success, context
+// cancellation, or a fatal/non-retryable error.
 func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) error {
 	err := c.processor.Process(ctx, msg)
 	if err == nil || errors.Is(err, context.Canceled) {
+		return err
+	}
+
+	if processor.IsFatal(err) || processor.IsNonRetryable(err) {
 		return err
 	}
 
@@ -346,6 +353,10 @@ func (c *Consumer) processWithRetry(ctx context.Context, msg *ckafka.Message) er
 		err = c.processor.Process(ctx, msg)
 
 		if err == nil || errors.Is(err, context.Canceled) {
+			return err
+		}
+
+		if processor.IsFatal(err) || processor.IsNonRetryable(err) {
 			return err
 		}
 	}
@@ -384,6 +395,16 @@ func (c *Consumer) resumeConsumer() {
 	}
 	c.metrics.RecordConsumerResume()
 	c.log.Debugw("consumer resumed after backpressure cleared", "partitions", len(partitions))
+}
+
+// sendToErrCh sends err to the error channel without blocking. If the
+// channel is full the error is logged and dropped.
+func (c *Consumer) sendToErrCh(err error) {
+	select {
+	case c.errCh <- err:
+	default:
+		c.log.Errorw("error channel full, dropping error", "error", err)
+	}
 }
 
 // publishToDLQ publishes msg to the configured DLQ topic, preserving original key and value.

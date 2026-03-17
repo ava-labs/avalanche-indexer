@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -375,4 +376,132 @@ func TestProcessWithRetry_MetricsRegistered(t *testing.T) {
 	}
 	assert.True(t, foundRetries, "expected indexer_consumer_message_retries_total in registry, found: %v", gatherMetricNames(t, reg))
 	assert.True(t, foundExhausted, "expected indexer_consumer_message_retries_exhausted_total in registry, found: %v", gatherMetricNames(t, reg))
+}
+
+// --- Error classification tests ---
+
+func TestProcessWithRetry_NonRetryableError_BypassesRetries(t *testing.T) {
+	nonRetryableErr := processor.NonRetryable(errors.New("bad message"))
+	proc := &mockProcessor{results: []error{nonRetryableErr}}
+	c, reg := newTestConsumer(t, proc, RetryPolicy{
+		MaxRetries: 5,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   5 * time.Millisecond,
+	})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.Error(t, err)
+	assert.True(t, processor.IsNonRetryable(err))
+	assert.Equal(t, 1, proc.CallCount(), "should not retry non-retryable errors")
+	assertRetryMetrics(t, reg, 0, 0)
+}
+
+func TestProcessWithRetry_FatalError_BypassesRetries(t *testing.T) {
+	fatalErr := processor.Fatal(errors.New("auth failure"))
+	proc := &mockProcessor{results: []error{fatalErr}}
+	c, reg := newTestConsumer(t, proc, RetryPolicy{
+		MaxRetries: 5,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   5 * time.Millisecond,
+	})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.Error(t, err)
+	assert.True(t, processor.IsFatal(err))
+	assert.Equal(t, 1, proc.CallCount(), "should not retry fatal errors")
+	assertRetryMetrics(t, reg, 0, 0)
+}
+
+func TestProcessWithRetry_NonRetryableOnRetry_StopsImmediately(t *testing.T) {
+	nonRetryableErr := processor.NonRetryable(errors.New("bad data discovered on retry"))
+	proc := &mockProcessor{results: []error{errProcessing, nonRetryableErr}}
+	c, reg := newTestConsumer(t, proc, RetryPolicy{
+		MaxRetries: 5,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   5 * time.Millisecond,
+	})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.Error(t, err)
+	assert.True(t, processor.IsNonRetryable(err))
+	assert.Equal(t, 2, proc.CallCount(), "should stop on first non-retryable error during retry")
+	assertRetryMetrics(t, reg, 1, 0)
+}
+
+func TestProcessWithRetry_FatalOnRetry_StopsImmediately(t *testing.T) {
+	fatalErr := processor.Fatal(errors.New("schema mismatch discovered on retry"))
+	proc := &mockProcessor{results: []error{errProcessing, errProcessing, fatalErr}}
+	c, reg := newTestConsumer(t, proc, RetryPolicy{
+		MaxRetries: 5,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   5 * time.Millisecond,
+	})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.Error(t, err)
+	assert.True(t, processor.IsFatal(err))
+	assert.Equal(t, 3, proc.CallCount(), "should stop on first fatal error during retry")
+	assertRetryMetrics(t, reg, 2, 0)
+}
+
+func TestProcessWithRetry_NonRetryableWithInfiniteRetries_StillBypasses(t *testing.T) {
+	nonRetryableErr := processor.NonRetryable(errors.New("permanently invalid"))
+	proc := &mockProcessor{results: []error{nonRetryableErr}}
+	c, reg := newTestConsumer(t, proc, RetryPolicy{
+		MaxRetries: InfiniteRetries,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   5 * time.Millisecond,
+	})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.Error(t, err)
+	assert.True(t, processor.IsNonRetryable(err))
+	assert.Equal(t, 1, proc.CallCount(), "non-retryable should bypass even infinite retries")
+	assertRetryMetrics(t, reg, 0, 0)
+}
+
+func TestProcessWithRetry_NonRetryablePreservesWrappedError(t *testing.T) {
+	sentinel := errors.New("bad json")
+	nonRetryableErr := processor.NonRetryable(fmt.Errorf("unmarshal: %w", sentinel))
+	proc := &mockProcessor{results: []error{nonRetryableErr}}
+	c, _ := newTestConsumer(t, proc, RetryPolicy{MaxRetries: 3})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.Error(t, err)
+	assert.True(t, processor.IsNonRetryable(err))
+	assert.True(t, errors.Is(err, sentinel), "wrapped sentinel should be preserved through NonRetryable")
+}
+
+func TestProcessWithRetry_FatalPreservesWrappedError(t *testing.T) {
+	sentinel := errors.New("auth denied")
+	fatalErr := processor.Fatal(fmt.Errorf("clickhouse: %w", sentinel))
+	proc := &mockProcessor{results: []error{fatalErr}}
+	c, _ := newTestConsumer(t, proc, RetryPolicy{MaxRetries: 3})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.Error(t, err)
+	assert.True(t, processor.IsFatal(err))
+	assert.True(t, errors.Is(err, sentinel), "wrapped sentinel should be preserved through Fatal")
+}
+
+func TestProcessWithRetry_RetryableError_StillRetries(t *testing.T) {
+	proc := &mockProcessor{results: []error{errProcessing, errProcessing, nil}}
+	c, reg := newTestConsumer(t, proc, RetryPolicy{
+		MaxRetries: 3,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   5 * time.Millisecond,
+	})
+
+	err := c.processWithRetry(t.Context(), testMessage())
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, proc.CallCount(), "retryable errors should still be retried")
+	assertRetryMetrics(t, reg, 2, 0)
 }

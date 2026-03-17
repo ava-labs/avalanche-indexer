@@ -25,9 +25,11 @@ const (
 const InfiniteRetries = -1
 
 // RetryPolicy controls how the consumer retries failed messages before
-// escalating to DLQ publication or error propagation.
+// escalating to DLQ publication or error propagation. Only retryable
+// errors (plain errors) enter the retry loop; non-retryable and fatal
+// errors bypass retries entirely.
 //
-//   - MaxRetries = 0  : no retries (default for primary consumers)
+//   - MaxRetries = 0  : no retries, escalate immediately
 //   - MaxRetries > 0  : retry up to N times, then escalate
 //   - MaxRetries = -1 : retry forever (suited for DLQ consumers)
 type RetryPolicy struct {

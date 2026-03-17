@@ -200,6 +200,11 @@ func run(c *cli.Context) error {
 		GoroutineWaitTimeout:        &cfg.GoroutineWaitTimeout,
 		PollInterval:                &cfg.PollInterval,
 		SASL:                        cfg.KafkaSASL,
+		Retry: kafka.RetryPolicy{
+			MaxRetries: 3,
+			BaseDelay:  500 * time.Millisecond,
+			MaxDelay:   2 * time.Second,
+		},
 	}
 
 	// Create primary consumer with named logger

@@ -50,18 +50,18 @@ func (p *CorethTracesProcessor) Process(ctx context.Context, msg *cKafka.Message
 
 	if msg == nil || msg.Value == nil {
 		p.metrics.IncError("coreth_traces_nil_message")
-		return ErrNilMessage
+		return NonRetryable(ErrNilMessage)
 	}
 
 	var blockTrace kafkamsg.EVMBlockTrace
 	if err := json.Unmarshal(msg.Value, &blockTrace); err != nil {
 		p.metrics.IncError("coreth_traces_unmarshal_error")
-		return fmt.Errorf("%w: %w", ErrUnmarshalBlockTrace, err)
+		return NonRetryable(fmt.Errorf("%w: %w", ErrUnmarshalBlockTrace, err))
 	}
 
 	// Validate block trace (BlockchainID is required)
 	if blockTrace.BlockchainID == nil {
-		return ErrMissingBlockchainID
+		return NonRetryable(ErrMissingBlockchainID)
 	}
 
 	p.log.Debugw("processing coreth block trace",
@@ -92,7 +92,7 @@ func (p *CorethTracesProcessor) processTraces(
 	for _, rawTrace := range blockTrace.Traces {
 		txHash, traces, err := GetTracesForTransaction(rawTrace)
 		if err != nil {
-			return fmt.Errorf("failed to get traces for transaction: %w", err)
+			return NonRetryable(fmt.Errorf("failed to get traces for transaction: %w", err))
 		}
 
 		for _, trace := range traces {
@@ -117,7 +117,7 @@ func (p *CorethTracesProcessor) processTraces(
 				CallIndex:       trace.CallIndex,
 			}
 			if err := p.internalTransactionsRepo.WriteInternalTransaction(ctx, txRow); err != nil {
-				return fmt.Errorf("failed to write trace: %w", err)
+				return classifyWriteErr(fmt.Errorf("failed to write trace: %w", err))
 			}
 		}
 	}
