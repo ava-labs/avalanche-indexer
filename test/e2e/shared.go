@@ -136,7 +136,7 @@ func createCheckpointerAndLoggerDynamoDB(t *testing.T) (checkpointer.Checkpointe
 	require.NoError(t, err)
 	defer log.Desugar().Sync() //nolint:errcheck
 
-	ddbClient, err := dynamodb.New(dynamoDBTestConfig, log)
+	ddbClient, err := dynamodb.New(dynamoDBTestConfig)
 	require.NoError(t, err, "dynamodb connection failed (is docker-compose up?)")
 
 	chkpt, err := ddbcheckpoint.NewRepository(ddbClient, "checkpoints", log)
