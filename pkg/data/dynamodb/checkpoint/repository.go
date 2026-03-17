@@ -20,6 +20,7 @@ const (
 	modeAttr              = "mode"
 	lowestUnprocessedAttr = "lowest_unprocessed_block"
 	updatedAtAttr         = "updated_at"
+	tableDescribeTimeout  = 30 * time.Second
 )
 
 type dynamoAPI interface {
@@ -98,7 +99,7 @@ func (r *repository) Initialize(ctx context.Context) error {
 	waiter := dynamodb.NewTableExistsWaiter(r.client)
 	if err := waiter.Wait(ctx, &dynamodb.DescribeTableInput{
 		TableName: aws.String(r.tableName),
-	}, 30*time.Second); err != nil {
+	}, tableDescribeTimeout); err != nil {
 		return fmt.Errorf("timed out waiting for checkpoint table %s: %w", r.tableName, err)
 	}
 

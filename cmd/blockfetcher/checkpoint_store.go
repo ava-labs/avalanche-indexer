@@ -53,7 +53,7 @@ func newDynamoCheckpointStore(
 	cfg *Config,
 	log *zap.SugaredLogger,
 ) (checkpointer.Checkpointer, error) {
-	ddbClient, err := ddbClient.New(cfg.DynamoDB, log)
+	ddbClient, err := ddbClient.New(cfg.DynamoDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create DynamoDB client: %w", err)
 	}
