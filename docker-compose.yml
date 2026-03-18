@@ -7,6 +7,7 @@ volumes:
   grafana-data:
   clickhouse-01-data:
   clickhouse-02-data:
+  localstack-data:
 
 services:
   # Kafka Broker with KRaft (no Zookeeper) - Official Apache Kafka
@@ -192,5 +193,20 @@ services:
     depends_on:
       clickhouse-01:
         condition: service_healthy
+    networks:
+      - app-network
+
+  # LocalStack for local AWS services (DynamoDB)
+  localstack:
+    image: localstack/localstack:4.14.0
+    container_name: localstack
+    hostname: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: dynamodb
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - localstack-data:/var/lib/localstack
     networks:
       - app-network
