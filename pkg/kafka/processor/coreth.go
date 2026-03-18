@@ -9,13 +9,13 @@ import (
 	"strconv"
 	"time"
 
-	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -24,6 +24,13 @@ import (
 var (
 	ErrNilMessage     = errors.New("received nil message or empty value")
 	ErrUnmarshalBlock = errors.New("failed to unmarshal coreth block")
+)
+
+const (
+	clickhouseErrAuthenticationFailed = 516 // AUTHENTICATION_FAILED
+	clickhouseErrAccessDenied         = 497 // ACCESS_DENIED
+	clickhouseErrUnknownTable         = 60  // UNKNOWN_TABLE
+	clickhouseErrUnknownDatabase      = 81  // UNKNOWN_DATABASE
 )
 
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
@@ -447,10 +454,10 @@ func classifyWriteErr(err error) error {
 	var chErr *chdriver.Exception
 	if errors.As(err, &chErr) {
 		switch chErr.Code {
-		case 516, // AUTHENTICATION_FAILED
-			497, // ACCESS_DENIED
-			60,  // UNKNOWN_TABLE
-			81:  // UNKNOWN_DATABASE
+		case clickhouseErrAuthenticationFailed,
+			clickhouseErrAccessDenied,
+			clickhouseErrUnknownTable,
+			clickhouseErrUnknownDatabase:
 			return Fatal(err)
 		}
 	}

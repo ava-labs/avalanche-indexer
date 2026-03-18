@@ -13,6 +13,7 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	cKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -51,6 +52,7 @@ func TestCorethTracesProcessor_Process_NilMessage(t *testing.T) {
 
 	err := proc.Process(t.Context(), nil)
 	require.ErrorIs(t, err, ErrNilMessage)
+	assert.True(t, IsNonRetryable(err), "nil message should be NonRetryable")
 }
 
 func TestCorethTracesProcessor_Process_NilMessageValue(t *testing.T) {
@@ -62,6 +64,7 @@ func TestCorethTracesProcessor_Process_NilMessageValue(t *testing.T) {
 	msg := &cKafka.Message{Value: nil}
 	err := proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, ErrNilMessage)
+	assert.True(t, IsNonRetryable(err), "nil value should be NonRetryable")
 }
 
 func TestCorethTracesProcessor_Process_InvalidJSON(t *testing.T) {
@@ -74,6 +77,7 @@ func TestCorethTracesProcessor_Process_InvalidJSON(t *testing.T) {
 	err := proc.Process(t.Context(), msg)
 
 	require.ErrorIs(t, err, ErrUnmarshalBlockTrace)
+	assert.True(t, IsNonRetryable(err), "unmarshal failure should be NonRetryable")
 }
 
 func TestCorethTracesProcessor_Process_MissingBlockchainID(t *testing.T) {
@@ -96,6 +100,7 @@ func TestCorethTracesProcessor_Process_MissingBlockchainID(t *testing.T) {
 	msg := &cKafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, ErrMissingBlockchainID)
+	assert.True(t, IsNonRetryable(err), "missing blockchainID should be NonRetryable")
 }
 
 func TestCorethTracesProcessor_Process_Success_NoRepo(t *testing.T) {
@@ -173,6 +178,49 @@ func TestCorethTracesProcessor_Process_RepoError(t *testing.T) {
 	msg := &cKafka.Message{Value: data}
 	err = proc.Process(t.Context(), msg)
 	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestCorethTracesProcessor_Process_RepoFatalError(t *testing.T) {
+	t.Parallel()
+
+	chErr := &chdriver.Exception{Code: clickhouseErrAccessDenied, Message: "access denied"}
+	repo := &mockInternalTransactionsRepo{
+		writeInternalTransactionFunc: func(_ context.Context, _ *evmrepo.InternalTransactionRow) error {
+			return chErr
+		},
+	}
+	proc := NewCorethTracesProcessor(zap.NewNop().Sugar(), repo, nil)
+
+	blockTrace := createTestBlockTrace()
+	data, err := json.Marshal(blockTrace)
+	require.NoError(t, err)
+
+	msg := &cKafka.Message{Value: data}
+	err = proc.Process(t.Context(), msg)
+	assert.True(t, IsFatal(err), "ClickHouse access denied should be Fatal")
+	assert.ErrorIs(t, err, chErr)
+}
+
+func TestCorethTracesProcessor_Process_RepoRetryableError(t *testing.T) {
+	t.Parallel()
+
+	transientErr := errors.New("connection reset")
+	repo := &mockInternalTransactionsRepo{
+		writeInternalTransactionFunc: func(_ context.Context, _ *evmrepo.InternalTransactionRow) error {
+			return transientErr
+		},
+	}
+	proc := NewCorethTracesProcessor(zap.NewNop().Sugar(), repo, nil)
+
+	blockTrace := createTestBlockTrace()
+	data, err := json.Marshal(blockTrace)
+	require.NoError(t, err)
+
+	msg := &cKafka.Message{Value: data}
+	err = proc.Process(t.Context(), msg)
+	assert.False(t, IsFatal(err), "transient error should NOT be Fatal")
+	assert.False(t, IsNonRetryable(err), "transient error should NOT be NonRetryable")
+	assert.ErrorIs(t, err, transientErr)
 }
 
 func TestCorethTracesProcessor_Process_EmptyTraces(t *testing.T) {

@@ -391,7 +391,7 @@ func TestProcessWithRetry_NonRetryableError_BypassesRetries(t *testing.T) {
 
 	err := c.processWithRetry(t.Context(), testMessage())
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, nonRetryableErr)
 	assert.True(t, processor.IsNonRetryable(err))
 	assert.Equal(t, 1, proc.CallCount(), "should not retry non-retryable errors")
 	assertRetryMetrics(t, reg, 0, 0)
@@ -408,7 +408,7 @@ func TestProcessWithRetry_FatalError_BypassesRetries(t *testing.T) {
 
 	err := c.processWithRetry(t.Context(), testMessage())
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, fatalErr)
 	assert.True(t, processor.IsFatal(err))
 	assert.Equal(t, 1, proc.CallCount(), "should not retry fatal errors")
 	assertRetryMetrics(t, reg, 0, 0)
@@ -425,7 +425,7 @@ func TestProcessWithRetry_NonRetryableOnRetry_StopsImmediately(t *testing.T) {
 
 	err := c.processWithRetry(t.Context(), testMessage())
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, nonRetryableErr)
 	assert.True(t, processor.IsNonRetryable(err))
 	assert.Equal(t, 2, proc.CallCount(), "should stop on first non-retryable error during retry")
 	assertRetryMetrics(t, reg, 1, 0)
@@ -442,7 +442,7 @@ func TestProcessWithRetry_FatalOnRetry_StopsImmediately(t *testing.T) {
 
 	err := c.processWithRetry(t.Context(), testMessage())
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, fatalErr)
 	assert.True(t, processor.IsFatal(err))
 	assert.Equal(t, 3, proc.CallCount(), "should stop on first fatal error during retry")
 	assertRetryMetrics(t, reg, 2, 0)
@@ -459,7 +459,7 @@ func TestProcessWithRetry_NonRetryableWithInfiniteRetries_StillBypasses(t *testi
 
 	err := c.processWithRetry(t.Context(), testMessage())
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, nonRetryableErr)
 	assert.True(t, processor.IsNonRetryable(err))
 	assert.Equal(t, 1, proc.CallCount(), "non-retryable should bypass even infinite retries")
 	assertRetryMetrics(t, reg, 0, 0)
@@ -473,9 +473,9 @@ func TestProcessWithRetry_NonRetryablePreservesWrappedError(t *testing.T) {
 
 	err := c.processWithRetry(t.Context(), testMessage())
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, nonRetryableErr)
 	assert.True(t, processor.IsNonRetryable(err))
-	assert.True(t, errors.Is(err, sentinel), "wrapped sentinel should be preserved through NonRetryable")
+	assert.ErrorIs(t, err, sentinel)
 }
 
 func TestProcessWithRetry_FatalPreservesWrappedError(t *testing.T) {
@@ -486,9 +486,9 @@ func TestProcessWithRetry_FatalPreservesWrappedError(t *testing.T) {
 
 	err := c.processWithRetry(t.Context(), testMessage())
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, fatalErr)
 	assert.True(t, processor.IsFatal(err))
-	assert.True(t, errors.Is(err, sentinel), "wrapped sentinel should be preserved through Fatal")
+	assert.ErrorIs(t, err, sentinel)
 }
 
 func TestProcessWithRetry_RetryableError_StillRetries(t *testing.T) {
