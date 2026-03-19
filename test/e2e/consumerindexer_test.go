@@ -1321,7 +1321,14 @@ func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
 	verifyMessageInDLQ(t, verifyCtx, kafkaBrokers, dlqTopic)
 
 	cancel()
-	require.NoError(t, g.Wait())
+	err = g.Wait()
+	// The DLQ consumer is expected to fail: the primary forwards the invalid
+	// message to the DLQ topic, and the DLQ consumer (PublishToDLQ=false)
+	// correctly stops on the NonRetryable unmarshal error.
+	if err != nil {
+		require.ErrorIs(t, err, processor.ErrUnmarshalBlock,
+			"DLQ consumer should fail with ErrUnmarshalBlock from the forwarded invalid message")
+	}
 
 	t.Logf("DLQ consumer pipeline e2e test completed: %d primary blocks + %d DLQ blocks = %d total",
 		len(validBlocks), len(dlqBlocks), expectedTotal)
