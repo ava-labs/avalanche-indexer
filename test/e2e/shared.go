@@ -10,9 +10,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
+	chcheckpoint "github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
+	ddbcheckpoint "github.com/ava-labs/avalanche-indexer/pkg/data/dynamodb/checkpoint"
+	"github.com/ava-labs/avalanche-indexer/pkg/dynamodb"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
@@ -37,8 +41,15 @@ var clickhouseTestConfig = clickhouse.Config{
 	UseHTTP:              false,
 }
 
+var dynamoDBTestConfig = dynamodb.Config{
+	Region:          "us-west-2",
+	AccessKeyID:     "test",
+	SecretAccessKey: "test",
+	EndpointURL:     "http://localhost:4566",
+}
+
 // verifyCheckpointFromMaxProcessed finds the max processed height and checks checkpoint lowest==max+1.
-func verifyCheckpointFromMaxProcessed(t *testing.T, ctx context.Context, repo checkpoint.Repository, chainID uint64, kafkaByNumber map[uint64][]byte) {
+func verifyCheckpointFromMaxProcessed(t *testing.T, ctx context.Context, repo checkpointer.Checkpointer, chainID uint64, kafkaByNumber map[uint64][]byte) {
 	t.Helper()
 	if len(kafkaByNumber) == 0 {
 		return
@@ -53,7 +64,7 @@ func verifyCheckpointFromMaxProcessed(t *testing.T, ctx context.Context, repo ch
 }
 
 // verifyCheckpointLowestCorrect polls ClickHouse checkpoint for the chain until lowest>=expected or timeout.
-func verifyCheckpointLowestCorrect(t *testing.T, ctx context.Context, repo checkpoint.Repository, chainID uint64, expected uint64) {
+func verifyCheckpointLowestCorrect(t *testing.T, ctx context.Context, repo checkpointer.Checkpointer, chainID uint64, expected uint64) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -118,4 +129,32 @@ func mustHexToFixed32(t *testing.T, hex string) string {
 	b, err := utils.HexToBytes32(hex)
 	require.NoError(t, err)
 	return string(b[:])
+}
+
+func createCheckpointerAndLoggerDynamoDB(t *testing.T) (checkpointer.Checkpointer, *zap.SugaredLogger) {
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	ddbClient, err := dynamodb.New(dynamoDBTestConfig)
+	require.NoError(t, err, "dynamodb connection failed (is docker-compose up?)")
+
+	chkpt, err := ddbcheckpoint.NewRepository(ddbClient, "checkpoints", log)
+	require.NoError(t, err, "failed to create checkpoint repository")
+
+	return chkpt, log
+}
+
+func createCheckpointerAndLoggerClickHouse(t *testing.T) (checkpointer.Checkpointer, *zap.SugaredLogger) {
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
+	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
+
+	chkpt, err := chcheckpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, "checkpoints")
+	require.NoError(t, err, "failed to create checkpoint repository")
+
+	return chkpt, log
 }

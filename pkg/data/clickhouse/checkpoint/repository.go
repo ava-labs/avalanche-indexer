@@ -13,19 +13,6 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// Repository is used to write and read the checkpoint of the sliding window state
-// to persistent storage (ClickHouse). It implements the checkpointer.Checkpointer interface
-// and adds ClickHouse-specific operations.
-type Repository interface {
-	checkpointer.Checkpointer
-	DeleteCheckpoints(ctx context.Context, chainID uint64) error
-}
-
-var (
-	_ Repository                = (*repository)(nil)
-	_ checkpointer.Checkpointer = (*repository)(nil)
-)
-
 //go:embed queries/create-table-local.sql
 var createTableLocalQuery string
 
@@ -51,7 +38,7 @@ type repository struct {
 func NewRepository(
 	client clickhouse.Client,
 	cluster, database, tableName string,
-) (Repository, error) {
+) (checkpointer.Checkpointer, error) {
 	repo := &repository{client: client, cluster: cluster, database: database, tableName: tableName}
 	if err := repo.Initialize(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to create checkpoints table: %w", err)
@@ -128,11 +115,15 @@ func (r *repository) Read(
 	return checkpoint.Lowest, true, nil
 }
 
-func (r *repository) DeleteCheckpoints(ctx context.Context, chainID uint64) error {
+func (r *repository) Delete(ctx context.Context, chainID uint64, mode string) error {
 	query := fmt.Sprintf(deleteCheckpointsQuery, r.database, r.tableName, r.cluster)
-	if err := r.client.Conn().Exec(ctx, query, chainID); err != nil {
+	if err := r.client.Conn().Exec(ctx, query, chainID, mode); err != nil {
 		return fmt.Errorf("failed to delete checkpoints: %w", err)
 	}
 
 	return nil
+}
+
+func (r *repository) Close() error {
+	return r.client.Close()
 }

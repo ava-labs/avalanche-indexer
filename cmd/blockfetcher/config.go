@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/dynamodb"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -20,6 +21,9 @@ const (
 	// maxBlockBufferSize is the maximum valid value for BlockBufferSize (uint8: 255)
 	maxBlockBufferSize = 255
 	messageMaxBytes    = 20971521 // 20MB
+	// Checkpoint backends
+	checkpointBackendClickHouse = "clickhouse"
+	checkpointBackendDynamoDB   = "dynamodb"
 )
 
 // validateRetentionValue validates a Kafka retention configuration value.
@@ -82,7 +86,11 @@ type Config struct {
 	// ClickHouse settings
 	ClickHouse clickhouse.Config
 
+	// DynamoDB settings
+	DynamoDB dynamodb.Config
+
 	// Checkpoint settings
+	CheckpointBackend   string
 	CheckpointTableName string
 	CheckpointInterval  time.Duration
 	GapWatchdogInterval time.Duration
@@ -94,6 +102,13 @@ type Config struct {
 	Environment   string
 	Region        string
 	CloudProvider string
+}
+
+type checkpointConfig struct {
+	Backend          string
+	TableName        string
+	DynamoDBConfig   dynamodb.Config
+	ClickHouseConfig clickhouse.Config
 }
 
 // MetricsAddr returns the formatted metrics address
@@ -130,9 +145,9 @@ func (c *Config) KafkaProducerConfig() *ckafka.ConfigMap {
 
 // buildConfig builds a Config from CLI context flags
 func buildConfig(c *cli.Context) (*Config, error) {
-	chCfg, err := buildClickHouseConfig(c)
+	checkpointCfg, err := buildCheckpointConfig(c)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build ClickHouse config: %w", err)
+		return nil, err
 	}
 
 	// Validate retention configuration values
@@ -176,8 +191,10 @@ func buildConfig(c *cli.Context) (*Config, error) {
 			Mechanism:        c.String("kafka-sasl-mechanism"),
 			SecurityProtocol: c.String("kafka-security-protocol"),
 		},
-		ClickHouse:          chCfg,
-		CheckpointTableName: c.String("checkpoint-table-name"),
+		ClickHouse:          checkpointCfg.ClickHouseConfig,
+		DynamoDB:            checkpointCfg.DynamoDBConfig,
+		CheckpointBackend:   checkpointCfg.Backend,
+		CheckpointTableName: checkpointCfg.TableName,
 		CheckpointInterval:  c.Duration("checkpoint-interval"),
 		GapWatchdogInterval: c.Duration("gap-watchdog-interval"),
 		GapWatchdogMaxGap:   c.Uint64("gap-watchdog-max-gap"),
@@ -186,6 +203,32 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		Environment:         c.String("environment"),
 		Region:              c.String("region"),
 		CloudProvider:       c.String("cloud-provider"),
+	}, nil
+}
+
+func buildCheckpointConfig(c *cli.Context) (checkpointConfig, error) {
+	checkpointBackend := strings.ToLower(strings.TrimSpace(c.String("checkpoint-backend")))
+	chCfg := clickhouse.Config{}
+	ddbCfg := dynamodb.Config{}
+	var err error
+	switch checkpointBackend {
+	case checkpointBackendClickHouse:
+		chCfg, err = buildClickHouseConfig(c)
+		if err != nil {
+			return checkpointConfig{}, fmt.Errorf("failed to build ClickHouse config: %w", err)
+		}
+	case checkpointBackendDynamoDB:
+		ddbCfg = buildDynamoDBConfig(c)
+	default:
+		return checkpointConfig{}, fmt.Errorf("invalid checkpoint backend %q, must be one of [%s, %s]",
+			checkpointBackend, checkpointBackendClickHouse, checkpointBackendDynamoDB)
+	}
+
+	return checkpointConfig{
+		Backend:          checkpointBackend,
+		TableName:        c.String("checkpoint-table-name"),
+		DynamoDBConfig:   ddbCfg,
+		ClickHouseConfig: chCfg,
 	}, nil
 }
 
@@ -228,6 +271,15 @@ func buildClickHouseConfig(c *cli.Context) (clickhouse.Config, error) {
 		ClientVersion:        c.String("clickhouse-client-version"),
 		UseHTTP:              c.Bool("clickhouse-use-http"),
 	}, nil
+}
+
+func buildDynamoDBConfig(c *cli.Context) dynamodb.Config {
+	return dynamodb.Config{
+		Region:          c.String("dynamodb-region"),
+		EndpointURL:     c.String("dynamodb-endpoint-url"),
+		AccessKeyID:     c.String("dynamodb-access-key-id"),
+		SecretAccessKey: c.String("dynamodb-secret-access-key"),
+	}
 }
 
 // validateBlockBufferSize validates that the block buffer size is within uint8 range (0-255)

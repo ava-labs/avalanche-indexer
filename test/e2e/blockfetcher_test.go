@@ -11,26 +11,38 @@ import (
 	"time"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
-	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
-	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/checkpoint"
 	stream "github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
-	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
 	"github.com/ava-labs/coreth/plugin/evm/customethclient"
 	"github.com/ava-labs/coreth/rpc"
 	"github.com/stretchr/testify/require"
 )
 
-// TestE2EBlockfetcherRealTime validates that blockfetcher ingests realtime blocks
-// by producing them to Kafka. It assumes Docker Compose has started Kafka and ClickHouse.
-func TestE2EBlockfetcherRealTime(t *testing.T) {
+// TestE2EBlockfetcherRealTime_ClickHouse validates that blockfetcher ingests realtime blocks
+// using verifyBlockfetcherRealTime. It assumes Docker Compose has started Kafka and ClickHouse.
+func TestE2EBlockfetcherRealTime_ClickHouse(t *testing.T) {
+	chkpt, log := createCheckpointerAndLoggerClickHouse(t)
+	verifyBlockfetcherRealTime(t, chkpt, log)
+}
+
+// TestE2EBlockfetcherRealTime_DynamoDB validates that blockfetcher ingests realtime block.
+// using verifyBlockfetcherRealTime. It assumes Docker Compose has started Kafka and DynamoDB.
+func TestE2EBlockfetcherRealTime_DynamoDB(t *testing.T) {
+	chkpt, log := createCheckpointerAndLoggerDynamoDB(t)
+	verifyBlockfetcherRealTime(t, chkpt, log)
+}
+
+// verifyBlockfetcherRealTime validates that blockfetcher ingests realtime blocks
+// by producing them to Kafka.
+func verifyBlockfetcherRealTime(t *testing.T, chkpt checkpointer.Checkpointer, log *zap.SugaredLogger) {
 	// ---- Config (can be overridden via env to match local setup) ----
 	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji testnet
 	bcID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
@@ -42,24 +54,12 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 	backfill := int64(1)
 	blocksCap := 100
 	maxFailures := 10
-	// Keep interval short to validate ClickHouse writes if desired (not asserted).
+	// Keep interval short to validate checkpoint writes if desired (not asserted).
 	checkpointInterval := 2 * time.Second
 
 	// ---- Test context ----
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-
-	log, err := utils.NewSugaredLogger(true)
-	require.NoError(t, err)
-	defer log.Desugar().Sync() //nolint:errcheck
-
-	// ---- Prepare ClickHouse (create DB/table if needed, seed checkpoint at latest height) ----
-	chClient, err := clickhouse.New(clickhouseTestConfig, log)
-	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
-	defer chClient.Close()
-
-	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, "checkpoints")
-	require.NoError(t, err, "failed to create checkpoint repository")
 
 	// Get latest block height from RPC to seed checkpoint.
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
@@ -198,7 +198,21 @@ func TestE2EBlockfetcherRealTime(t *testing.T) {
 
 // TestE2EBlockfetcherBackfill runs backfill over a small recent range and verifies
 // produced Kafka blocks match RPC responses using verifyBlocksFromRPC.
-func TestE2EBlockfetcherBackfill(t *testing.T) {
+func TestE2EBlockfetcherBackfill_ClickHouse(t *testing.T) {
+	chkpt, log := createCheckpointerAndLoggerClickHouse(t)
+	verifyBlockfetcherBackfill(t, chkpt, log)
+}
+
+// TestE2EBlockfetcherBackfill_DynamoDB runs backfill over a small recent range and verifies
+// produced Kafka blocks match RPC responses using verifyBlocksFromRPC.
+func TestE2EBlockfetcherBackfill_DynamoDB(t *testing.T) {
+	chkpt, log := createCheckpointerAndLoggerDynamoDB(t)
+	verifyBlockfetcherBackfill(t, chkpt, log)
+}
+
+// verifyBlockfetcherBackfill runs backfill over a small recent range and verifies
+// produced Kafka blocks match RPC responses using verifyBlocksFromRPC.
+func verifyBlockfetcherBackfill(t *testing.T, chkpt checkpointer.Checkpointer, log *zap.SugaredLogger) {
 	// ---- Config ----
 	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113)) // Fuji by default
 	bcID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
@@ -216,10 +230,6 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	log, err := utils.NewSugaredLogger(true)
-	require.NoError(t, err)
-	defer log.Desugar().Sync() //nolint:errcheck
-
 	// Determine recent range [start..end]
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
@@ -234,14 +244,6 @@ func TestE2EBlockfetcherBackfill(t *testing.T) {
 		start = 1
 	}
 	end := latest
-
-	// ---- Prepare ClickHouse (create DB/table if needed) ----
-	chClient, err := clickhouse.New(clickhouseTestConfig, log)
-	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
-	defer chClient.Close()
-
-	chkpt, err := checkpoint.NewRepository(chClient, clickhouseTestConfig.Cluster, clickhouseTestConfig.Database, "checkpoints")
-	require.NoError(t, err, "failed to create checkpoint repository")
 
 	// ---- Kafka consumer to observe backfilled blocks ----
 	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{

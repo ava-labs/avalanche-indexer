@@ -9,12 +9,13 @@ Fetches blocks or debug traces from an RPC endpoint, processes them concurrently
 - **Backfill** of historical gaps within a bounded window
 - **Concurrency control** and backfill prioritization
 - **Automatic topic creation** with configurable partitions and replication
-- **Checkpoint persistence** to ClickHouse for recovery (mode-specific to allow parallel execution)
+- **Checkpoint persistence** to ClickHouse or DynamoDB for recovery (mode-specific to allow parallel execution)
 - **Gap watchdog** that warns if the gap grows beyond the threshold
 - **Prometheus metrics** for monitoring
 - **Graceful shutdown** with proper resource cleanup
 
 ## Clients
+
 Block fetcher currently supports two types of clients: coreth (c-chain) and subnet-evm (L1s)
 
 ## Architecture
@@ -35,16 +36,20 @@ Kafka Topic (blocks)
 
 ### Prerequisites
 
-1. **Start infrastructure services** (Kafka, ClickHouse):
+1. **Start infrastructure services** (Kafka and your checkpoint backend: ClickHouse or DynamoDB):
+
    ```bash
    docker compose up -d
    ```
 
 2. **Optionally set environment variables**:
+
    ```bash
+   export CHECKPOINT_BACKEND="clickhouse" # or dynamodb
    export CLICKHOUSE_HOSTS="localhost:9000"
    export CLICKHOUSE_USERNAME="default"
    export CLICKHOUSE_PASSWORD=""
+   export DYNAMODB_REGION="us-west-2"
    ...
    ```
 
@@ -72,6 +77,7 @@ bin/blockfetcher run \
   --max-failures 5 \
   --kafka-brokers localhost:9092 \
   --kafka-topic blocks \
+  --checkpoint-backend clickhouse \
   --kafka-topic-num-partitions 1 \
   --kafka-topic-replication-factor 1 \
   --clickhouse-cluster default \
@@ -106,6 +112,7 @@ bin/blockfetcher run \
 ```
 
 **Note:** When fetching traces, consider:
+
 - Using a separate Kafka topic (e.g., `traces` instead of `blocks`)
 - Increasing `--trace-timeout` as trace calls can be slower than block fetches
 - Trace data can be significantly larger than block data
@@ -133,9 +140,27 @@ bin/blockfetcher run \
   --kafka-security-protocol "SASL_SSL" \
   --kafka-topic-num-partitions 3 \
   --kafka-topic-replication-factor 3 \
+  --checkpoint-backend clickhouse \
   --clickhouse-cluster default \
   --clickhouse-database default \
   --verbose
+```
+
+### Run with DynamoDB checkpoints
+
+```bash
+bin/blockfetcher run \
+  --evm-chain-id 43114 \
+  --bc-id "11111111111111111111111111111111LpoYY" \
+  --rpc-url wss://api.avax-test.network/ext/bc/C/ws \
+  --client-type coreth \
+  --concurrency 16 \
+  --backfill-priority 4 \
+  --kafka-brokers localhost:9092 \
+  --kafka-topic blocks \
+  --checkpoint-backend dynamodb \
+  --dynamodb-region us-west-2 \
+  --checkpoint-table-name checkpoints \
 ```
 
 Or using environment variables:
@@ -179,8 +204,8 @@ docker run --rm \
   -e KAFKA_TOPIC_NUM_PARTITIONS=1 \
   -e KAFKA_TOPIC_REPLICATION_FACTOR=1 \
   -e CLICKHOUSE_HOSTS=clickhouse:9000 \
-  -e CLICKHOUSE_CLUSTER=default \ 
-  -e CLICKHOUSE_DATABASE=default \  
+  -e CLICKHOUSE_CLUSTER=default \
+  -e CLICKHOUSE_DATABASE=default \
   -e CLICKHOUSE_USERNAME=default \
   -e CLICKHOUSE_PASSWORD= \
   -e METRICS_PORT=9090 \
@@ -191,6 +216,7 @@ docker run --rm \
 ```
 
 Notes:
+
 - Use the WebSocket path `/ws` with the `wss` scheme for Coreth (e.g., `wss://.../ws`).
 - If you prefer building a single-service image for faster builds:
 
@@ -203,6 +229,7 @@ docker build -t indexer:blockfetcher --build-arg APP=blockfetcher .
 All flags have environment variable equivalents:
 
 **Required flags:**
+
 - `--evm-chain-id` / `-C` → `EVM_CHAIN_ID` (EVM chain ID)
 - `--bc-id` → `BLOCKCHAIN_ID` (blockchain ID)
 - `--rpc-url` / `-r` → `RPC_URL` (WebSocket RPC URL)
@@ -212,6 +239,7 @@ All flags have environment variable equivalents:
 - `--kafka-topic` / `-t` → `KAFKA_TOPIC` (Kafka topic for blocks)
 
 **Optional flags:**
+
 - `--mode` → `MODE` (default: blocks, operation mode: "blocks" or "traces")
 - `--client-type` / `-ct` → `CLIENT_TYPE` (default: coreth, client type: "coreth" or "subnet-evm")
 - `--start-height` / `-s` → `START_HEIGHT` (default: 0, fetches from mode-specific checkpoint if 0)
@@ -231,6 +259,10 @@ All flags have environment variable equivalents:
 - `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
 - `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
 - `--checkpoint-table-name` / `-T` → `CHECKPOINT_TABLE_NAME` (default: checkpoints, ClickHouse table for checkpoints)
+- `--checkpoint-backend` → `CHECKPOINT_BACKEND` (default: clickhouse, options: clickhouse or dynamodb)
+- `--dynamodb-region` → `DYNAMODB_REGION` (default: us-west-2)
+- `--dynamodb-endpoint-url` → `DYNAMODB_ENDPOINT_URL` (optional; useful with LocalStack)
+- `--dynamodb-``
 - `--checkpoint-interval` / `-i` → `CHECKPOINT_INTERVAL` (default: 1m, checkpoint write interval)
 - `--gap-watchdog-interval` / `-g` → `GAP_WATCHDOG_INTERVAL` (default: 15m, gap check interval)
 - `--gap-watchdog-max-gap` / `-G` → `GAP_WATCHDOG_MAX_GAP` (default: 100, max gap before warning)
@@ -239,6 +271,7 @@ All flags have environment variable equivalents:
 - `--verbose` / `-v` → none (enable verbose logging)
 
 **ClickHouse flags:**
+
 - `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000", comma-separated)
 - `--clickhouse-cluster` → `CLICKHOUSE_CLUSTER` (default: "default")
 - `--clickhouse-database` → `CLICKHOUSE_DATABASE` (default: "default")
@@ -250,6 +283,7 @@ All flags have environment variable equivalents:
 - `--raw-transactions-table-name` → `CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME` (default: "default.raw_transactions")
 
 ### Configuration tips
+
 - `BACKFILL_PRIORITY` must be less than `CONCURRENCY`.
 - For heavy realtime load, tune `BLOCKS_CH_CAPACITY` to absorb bursts.
 - Ensure `RPC_URL` is reachable from within your container environment.
@@ -260,13 +294,23 @@ All flags have environment variable equivalents:
 - **SASL Authentication**: For authenticated Kafka clusters (e.g., OCI Kafka), provide `--kafka-sasl-username` and `--kafka-sasl-password`. SASL is automatically applied to producer, consumer, and admin clients. Local Kafka (docker-compose) typically doesn't require SASL unless explicitly configured.
 
 ### Exit behavior
+
 - Returns a non-zero exit code on unrecoverable errors (e.g., RPC dial failure, failure threshold exceeded, Kafka fatal errors).
 - Gracefully exits on `SIGTERM`/`SIGINT`.
 
 ### Delete Resources (checkpoints)
-As a clean up it might be needed to delete all checkpoints for specific chain. Use `remove` in this case:
+
+As a clean up it might be needed to delete checkpoints for a specific chain from the selected backend. Use `remove` in this case:
+
 ```bash
 ./bin/blockfetcher remove --evm-chain-id 43114
+
+# remove from DynamoDB table
+./bin/blockfetcher remove \
+  --checkpoint-backend dynamodb \
+  --dynamodb-region us-west-2 \
+  --checkpoint-table-name checkpoints \
+  --evm-chain-id 43114
 ```
 
 **Note:** Checkpoints are mode-specific, meaning blocks and traces modes maintain separate checkpoints for the same chain. This allows you to run both modes in parallel without checkpoint conflicts. Each mode tracks its own progress independently.

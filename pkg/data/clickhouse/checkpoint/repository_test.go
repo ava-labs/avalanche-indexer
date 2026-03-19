@@ -224,7 +224,7 @@ func containsSubstring(s, substr string) bool {
 	return false
 }
 
-func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
+func TestRepository_Delete_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
@@ -236,17 +236,17 @@ func TestRepository_DeleteCheckpoints_Success(t *testing.T) {
 		Return(nil)
 
 	mockConn.
-		On("Exec", mock.Anything, testDeleteQuery(), mock.Anything).
+		On("Exec", mock.Anything, testDeleteQuery(), mock.Anything, mock.Anything).
 		Return(nil)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.NoError(t, err)
-	err = repo.DeleteCheckpoints(ctx, 43114)
+	err = repo.Delete(ctx, 43114, "blocks")
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
 
-func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
+func TestRepository_Delete_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
@@ -259,12 +259,12 @@ func TestRepository_DeleteCheckpoints_Error(t *testing.T) {
 
 	deleteErr := errors.New("delete failed")
 	mockConn.
-		On("Exec", mock.Anything, testDeleteQuery(), mock.Anything).
+		On("Exec", mock.Anything, testDeleteQuery(), mock.Anything, mock.Anything).
 		Return(deleteErr)
 
 	repo, err := NewRepository(testutils.NewTestClient(mockConn), "default", "default", "checkpoints")
 	require.NoError(t, err)
-	err = repo.DeleteCheckpoints(ctx, 43114)
+	err = repo.Delete(ctx, 43114, "blocks")
 	require.ErrorIs(t, err, deleteErr)
 	mockConn.AssertExpectations(t)
 }
