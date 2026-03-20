@@ -6,6 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
+	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 )
 
 // runFlags returns all CLI runFlags for the consumerindexer run command
@@ -188,6 +189,25 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"KAFKA_PUBLISH_TO_DLQ"},
 			Value:   false,
 		},
+		// Consumer retry policy flags
+		&cli.IntFlag{
+			Name:    "consumer-retry-max-retries",
+			Usage:   "Max retry attempts for failed message processing (-1 = infinite, 0 = disabled)",
+			EnvVars: []string{"CONSUMER_RETRY_MAX_RETRIES"},
+			Value:   3,
+		},
+		&cli.DurationFlag{
+			Name:    "consumer-retry-base-delay",
+			Usage:   "Initial backoff delay between retries",
+			EnvVars: []string{"CONSUMER_RETRY_BASE_DELAY"},
+			Value:   kafka.DefaultRetryBaseDelay,
+		},
+		&cli.DurationFlag{
+			Name:    "consumer-retry-max-delay",
+			Usage:   "Maximum backoff delay between retries",
+			EnvVars: []string{"CONSUMER_RETRY_MAX_DELAY"},
+			Value:   kafka.DefaultRetryMaxDelay,
+		},
 		// DLQ consumer flags
 		&cli.BoolFlag{
 			Name:    "enable-dlq-consumer",
@@ -235,6 +255,18 @@ func runFlags() []cli.Flag {
 			Usage:   "Poll interval for the DLQ Kafka consumer",
 			EnvVars: []string{"KAFKA_DLQ_CONSUMER_POLL_INTERVAL"},
 			Value:   100 * time.Millisecond,
+		},
+		&cli.DurationFlag{
+			Name:    "dlq-consumer-retry-base-delay",
+			Usage:   "Initial backoff delay between retries for the DLQ consumer",
+			EnvVars: []string{"DLQ_CONSUMER_RETRY_BASE_DELAY"},
+			Value:   1 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:    "dlq-consumer-retry-max-delay",
+			Usage:   "Maximum backoff delay between retries for the DLQ consumer",
+			EnvVars: []string{"DLQ_CONSUMER_RETRY_MAX_DELAY"},
+			Value:   5 * time.Minute,
 		},
 		// ClickHouse configuration flags
 		&cli.StringSliceFlag{

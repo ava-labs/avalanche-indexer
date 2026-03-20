@@ -201,9 +201,9 @@ func run(c *cli.Context) error {
 		PollInterval:                &cfg.PollInterval,
 		SASL:                        cfg.KafkaSASL,
 		Retry: kafka.RetryPolicy{
-			MaxRetries: 3,
-			BaseDelay:  500 * time.Millisecond,
-			MaxDelay:   2 * time.Second,
+			MaxRetries: cfg.ConsumerRetryMaxRetries,
+			BaseDelay:  cfg.ConsumerRetryBaseDelay,
+			MaxDelay:   cfg.ConsumerRetryMaxDelay,
 		},
 	}
 
@@ -367,8 +367,8 @@ func newDLQConsumer(
 		SASL:                        cfg.KafkaSASL,
 		Retry: kafka.RetryPolicy{
 			MaxRetries: kafka.InfiniteRetries,
-			BaseDelay:  1 * time.Second,
-			MaxDelay:   5 * time.Minute,
+			BaseDelay:  cfg.DLQConsumerRetryBaseDelay,
+			MaxDelay:   cfg.DLQConsumerRetryMaxDelay,
 		},
 	}
 
