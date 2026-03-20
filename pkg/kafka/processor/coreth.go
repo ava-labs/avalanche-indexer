@@ -15,6 +15,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -23,6 +24,13 @@ import (
 var (
 	ErrNilMessage     = errors.New("received nil message or empty value")
 	ErrUnmarshalBlock = errors.New("failed to unmarshal coreth block")
+)
+
+const (
+	clickhouseErrAuthenticationFailed = 516 // AUTHENTICATION_FAILED
+	clickhouseErrAccessDenied         = 497 // ACCESS_DENIED
+	clickhouseErrUnknownTable         = 60  // UNKNOWN_TABLE
+	clickhouseErrUnknownDatabase      = 81  // UNKNOWN_DATABASE
 )
 
 // CorethProcessor unmarshals and logs Coreth blocks from Kafka messages.
@@ -65,18 +73,17 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 
 	if msg == nil || msg.Value == nil {
 		p.metrics.IncError("coreth_nil_message")
-		return ErrNilMessage
+		return NonRetryable(ErrNilMessage)
 	}
 
 	var block kafkamsg.EVMBlock
 	if err := json.Unmarshal(msg.Value, &block); err != nil {
 		p.metrics.IncError("coreth_unmarshal_error")
-		return fmt.Errorf("%w: %w", ErrUnmarshalBlock, err)
+		return NonRetryable(fmt.Errorf("%w: %w", ErrUnmarshalBlock, err))
 	}
 
-	// Validate block (BlockchainID is required) - do this even if not persisting
 	if block.BlockchainID == nil {
-		return evmrepo.ErrBlockChainIDRequired
+		return NonRetryable(evmrepo.ErrBlockChainIDRequired)
 	}
 
 	p.log.Debugw("processing coreth block",
@@ -91,7 +98,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 		blockRow, err := CorethBlockToBlockRow(&block)
 		if err != nil {
 			p.metrics.IncError("coreth_parse_error")
-			return fmt.Errorf("failed to parse block for storage: %w", err)
+			return NonRetryable(fmt.Errorf("failed to parse block for storage: %w", err))
 		}
 
 		writeStart := time.Now()
@@ -99,7 +106,7 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawBlocksTableName, err, writeStart)
 		if err != nil {
 			p.metrics.IncError("coreth_write_error")
-			return fmt.Errorf("failed to write block to ClickHouse: %w", err)
+			return classifyWriteErr(fmt.Errorf("failed to write block to ClickHouse: %w", err))
 		}
 
 		p.log.Debugw("successfully persisted block to ClickHouse",
@@ -110,17 +117,15 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 		)
 	}
 
-	// Persist transactions to ClickHouse if repository is configured
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
 		if err := p.processTransactions(ctx, &block); err != nil {
-			return fmt.Errorf("failed to process transactions: %w", err)
+			return err
 		}
 	}
 
-	// Persist logs to ClickHouse if repository is configured
 	if p.logsRepo != nil && len(block.Transactions) > 0 {
 		if err := p.processLogs(ctx, &block); err != nil {
-			return fmt.Errorf("failed to process logs: %w", err)
+			return err
 		}
 	}
 
@@ -303,20 +308,19 @@ func (p *CorethProcessor) processTransactions(
 	ctx context.Context,
 	block *kafkamsg.EVMBlock,
 ) error {
-	// Convert and write each transaction
 	// TODO: Add batching (in a future PR)
 	totalLogs := 0
 	for i, tx := range block.Transactions {
 		txRow, err := CorethTransactionToTransactionRow(tx, block, uint64(i))
 		if err != nil {
-			return fmt.Errorf("failed to convert transaction %d: %w", i, err)
+			return NonRetryable(fmt.Errorf("failed to convert transaction %d: %w", i, err))
 		}
 
 		writeStart := time.Now()
 		err = p.txsRepo.WriteTransaction(ctx, txRow)
 		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawTransactionsTableName, err, writeStart)
 		if err != nil {
-			return fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err)
+			return classifyWriteErr(fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err))
 		}
 
 		// Count logs from this transaction's receipt
@@ -357,14 +361,14 @@ func (p *CorethProcessor) processLogs(
 		for _, log := range tx.Receipt.Logs {
 			logRow, err := CorethLogToLogRow(log, block)
 			if err != nil {
-				return fmt.Errorf("failed to convert log: %w", err)
+				return NonRetryable(fmt.Errorf("failed to convert log: %w", err))
 			}
 
 			writeStart := time.Now()
 			err = p.logsRepo.WriteLog(ctx, logRow)
 			recordClickHouseWrite(p.metrics, clickhouse.DefaultRawLogsTableName, err, writeStart)
 			if err != nil {
-				return fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err)
+				return classifyWriteErr(fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err))
 			}
 			totalLogs++
 		}
@@ -439,6 +443,25 @@ func CorethLogToLogRow(
 		LogIndex:     uint32(log.Index),
 		Removed:      log.Removed,
 	}, nil
+}
+
+// classifyWriteErr inspects a ClickHouse write error and wraps it as Fatal
+// for permanent infrastructure failures (authentication, authorization),
+// or returns it as-is (retryable by default) for transient errors.
+//
+// Error codes: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp
+func classifyWriteErr(err error) error {
+	var chErr *chdriver.Exception
+	if errors.As(err, &chErr) {
+		switch chErr.Code {
+		case clickhouseErrAuthenticationFailed,
+			clickhouseErrAccessDenied,
+			clickhouseErrUnknownTable,
+			clickhouseErrUnknownDatabase:
+			return Fatal(err)
+		}
+	}
+	return err
 }
 
 // recordClickHouseWrite records a ClickHouse write duration and status for a table.

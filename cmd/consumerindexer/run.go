@@ -200,6 +200,11 @@ func run(c *cli.Context) error {
 		GoroutineWaitTimeout:        &cfg.GoroutineWaitTimeout,
 		PollInterval:                &cfg.PollInterval,
 		SASL:                        cfg.KafkaSASL,
+		Retry: kafka.RetryPolicy{
+			MaxRetries: cfg.ConsumerRetryMaxRetries,
+			BaseDelay:  cfg.ConsumerRetryBaseDelay,
+			MaxDelay:   cfg.ConsumerRetryMaxDelay,
+		},
 	}
 
 	// Create primary consumer with named logger
@@ -362,8 +367,8 @@ func newDLQConsumer(
 		SASL:                        cfg.KafkaSASL,
 		Retry: kafka.RetryPolicy{
 			MaxRetries: kafka.InfiniteRetries,
-			BaseDelay:  1 * time.Second,
-			MaxDelay:   5 * time.Minute,
+			BaseDelay:  cfg.DLQConsumerRetryBaseDelay,
+			MaxDelay:   cfg.DLQConsumerRetryMaxDelay,
 		},
 	}
 

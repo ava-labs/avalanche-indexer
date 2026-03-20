@@ -86,6 +86,11 @@ type Config struct {
 	KafkaTopicMessageMaxBytes      string
 	KafkaSASL                      kafka.SASLConfig
 
+	// Consumer retry policy settings
+	ConsumerRetryMaxRetries int
+	ConsumerRetryBaseDelay  time.Duration
+	ConsumerRetryMaxDelay   time.Duration
+
 	// DLQ consumer settings
 	EnableDLQConsumer               bool
 	DLQConsumerGroupID              string
@@ -95,6 +100,8 @@ type Config struct {
 	DLQConsumerMaxPollInterval      time.Duration
 	DLQConsumerGoroutineWaitTimeout time.Duration
 	DLQConsumerPollInterval         time.Duration
+	DLQConsumerRetryBaseDelay       time.Duration
+	DLQConsumerRetryMaxDelay        time.Duration
 
 	// ClickHouse settings
 	ClickHouse clickhouse.Config
@@ -174,6 +181,9 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		KafkaDLQTopicRetentionMs:        c.String("kafka-dlq-topic-retention-ms"),
 		KafkaDLQTopicRetentionBytes:     c.String("kafka-dlq-topic-retention-bytes"),
 		KafkaTopicMessageMaxBytes:       c.String("kafka-topic-message-max-bytes"),
+		ConsumerRetryMaxRetries:         c.Int("consumer-retry-max-retries"),
+		ConsumerRetryBaseDelay:          c.Duration("consumer-retry-base-delay"),
+		ConsumerRetryMaxDelay:           c.Duration("consumer-retry-max-delay"),
 		EnableDLQConsumer:               c.Bool("enable-dlq-consumer"),
 		DLQConsumerGroupID:              c.String("dlq-consumer-group-id"),
 		DLQConsumerConcurrency:          c.Int64("dlq-consumer-concurrency"),
@@ -182,6 +192,8 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		DLQConsumerMaxPollInterval:      c.Duration("dlq-consumer-max-poll-interval"),
 		DLQConsumerGoroutineWaitTimeout: c.Duration("dlq-consumer-goroutine-wait-timeout"),
 		DLQConsumerPollInterval:         c.Duration("dlq-consumer-poll-interval"),
+		DLQConsumerRetryBaseDelay:       c.Duration("dlq-consumer-retry-base-delay"),
+		DLQConsumerRetryMaxDelay:        c.Duration("dlq-consumer-retry-max-delay"),
 		KafkaSASL: kafka.SASLConfig{
 			Username:         c.String("kafka-sasl-username"),
 			Password:         c.String("kafka-sasl-password"),

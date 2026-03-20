@@ -1321,7 +1321,14 @@ func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
 	verifyMessageInDLQ(t, verifyCtx, kafkaBrokers, dlqTopic)
 
 	cancel()
-	require.NoError(t, g.Wait())
+	err = g.Wait()
+	// The DLQ consumer is expected to fail: the primary forwards the invalid
+	// message to the DLQ topic, and the DLQ consumer (PublishToDLQ=false)
+	// correctly stops on the NonRetryable unmarshal error.
+	if err != nil {
+		require.ErrorIs(t, err, processor.ErrUnmarshalBlock,
+			"DLQ consumer should fail with ErrUnmarshalBlock from the forwarded invalid message")
+	}
 
 	t.Logf("DLQ consumer pipeline e2e test completed: %d primary blocks + %d DLQ blocks = %d total",
 		len(validBlocks), len(dlqBlocks), expectedTotal)
@@ -1596,4 +1603,268 @@ func TestE2EConsumerIndexerErrgroupShutdown(t *testing.T) {
 		"Both consumers should shut down within a reasonable time after the error")
 
 	t.Log("Errgroup shutdown e2e test completed: primary error propagated, DLQ consumer shut down cleanly")
+}
+
+// TestE2EConsumerIndexerNonRetryableBypassesRetries validates that NonRetryable
+// errors (e.g. malformed JSON) bypass the retry loop, route to DLQ immediately,
+// and allow the consumer to continue processing subsequent valid messages.
+// A high retry policy (10 retries × 5 s base delay) is configured so that if
+// retries were NOT bypassed, the test would take > 150 s and time out.
+func TestE2EConsumerIndexerNonRetryableBypassesRetries(t *testing.T) {
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113))
+	blockchainID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
+	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
+	testID := time.Now().UnixNano()
+	primaryTopic := fmt.Sprintf("blocks_nonretryable_test_%d", testID)
+	dlqTopic := primaryTopic + "_dlq"
+	groupID := fmt.Sprintf("e2e-nonretryable-%d", testID)
+	blocksTable := "raw_blocks_e2e_nonretryable"
+	transactionsTable := "raw_transactions_e2e_nonretryable"
+	logsTable := "raw_logs_e2e_nonretryable"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
+	require.NoError(t, err)
+	defer chClient.Close()
+
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
+	require.NoError(t, err)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
+	require.NoError(t, err)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
+	require.NoError(t, err)
+
+	for _, tbl := range []string{blocksTable, transactionsTable, logsTable} {
+		require.NoError(t, chClient.Conn().Exec(ctx, fmt.Sprintf("TRUNCATE TABLE IF EXISTS %s", tbl)))
+	}
+
+	// Produce: [valid×2, invalid×3, valid×2] — 7 messages total.
+	allBlocks := createTestBlocks(evmChainID, blockchainID, 4)
+	produceBlocksToKafka(t, kafkaBrokers, primaryTopic, allBlocks[:2])
+	for i := 0; i < 3; i++ {
+		produceInvalidMessage(t, kafkaBrokers, primaryTopic)
+	}
+	produceBlocksToKafka(t, kafkaBrokers, primaryTopic, allBlocks[2:])
+
+	registry := prometheus.NewRegistry()
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RolePrimaryConsumer,
+	})
+	require.NoError(t, err)
+
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, m)
+
+	consumerCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     groupID,
+		Topic:                       primaryTopic,
+		DLQTopic:                    dlqTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 2,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                true,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+		Retry: kafka.RetryPolicy{
+			MaxRetries: 10,
+			BaseDelay:  5 * time.Second,
+			MaxDelay:   10 * time.Second,
+		},
+	}
+
+	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
+	require.NoError(t, err)
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return consumer.Start(gctx)
+	})
+
+	// Wait for all 4 valid blocks to land in ClickHouse.
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", blocksTable)
+	require.Eventually(t, func() bool {
+		var count uint64
+		if err := chClient.Conn().QueryRow(ctx, countQuery).Scan(&count); err != nil {
+			return false
+		}
+		return count >= uint64(len(allBlocks))
+	}, 30*time.Second, 500*time.Millisecond,
+		"all 4 valid blocks should be in ClickHouse (NonRetryable must not block the consumer)")
+
+	verifyBlocksInClickHouse(t, ctx, chClient, blocksTable, allBlocks)
+
+	// Verify that all 3 invalid messages were routed to DLQ.
+	dlqCount := countMessagesInTopic(t, kafkaBrokers, dlqTopic, 10*time.Second)
+	require.Equal(t, 3, dlqCount, "all 3 invalid messages should be in the DLQ")
+
+	cancel()
+	require.NoError(t, g.Wait())
+
+	log.Infow("NonRetryable bypass test completed",
+		"valid_blocks", len(allBlocks),
+		"dlq_messages", dlqCount)
+}
+
+// TestE2EConsumerIndexerFatalStopsConsumer validates that a Fatal error
+// (e.g. ClickHouse UNKNOWN_TABLE) stops the consumer immediately, bypasses
+// both retries and DLQ publishing, and propagates through the errgroup.
+func TestE2EConsumerIndexerFatalStopsConsumer(t *testing.T) {
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113))
+	blockchainID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
+	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
+	testID := time.Now().UnixNano()
+	primaryTopic := fmt.Sprintf("blocks_fatal_test_%d", testID)
+	dlqTopic := primaryTopic + "_dlq"
+	groupID := fmt.Sprintf("e2e-fatal-%d", testID)
+	blocksTable := fmt.Sprintf("raw_blocks_e2e_fatal_%d", testID)
+	transactionsTable := fmt.Sprintf("raw_transactions_e2e_fatal_%d", testID)
+	logsTable := fmt.Sprintf("raw_logs_e2e_fatal_%d", testID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
+	require.NoError(t, err)
+	defer chClient.Close()
+
+	// Create repos (this auto-creates the tables via migrations).
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
+	require.NoError(t, err)
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
+	require.NoError(t, err)
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
+	require.NoError(t, err)
+
+	// DROP the blocks table so WriteBlock returns UNKNOWN_TABLE (code 60) → Fatal.
+	require.NoError(t, chClient.Conn().Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", blocksTable)))
+
+	// Produce a valid block — it will parse successfully but fail at the
+	// ClickHouse write step, triggering the Fatal classification.
+	validBlocks := createTestBlocks(evmChainID, blockchainID, 1)
+	produceBlocksToKafka(t, kafkaBrokers, primaryTopic, validBlocks)
+
+	registry := prometheus.NewRegistry()
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+		Role:          metrics.RolePrimaryConsumer,
+	})
+	require.NoError(t, err)
+
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, m)
+
+	consumerCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     groupID,
+		Topic:                       primaryTopic,
+		DLQTopic:                    dlqTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 1,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                true,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+		Retry: kafka.RetryPolicy{
+			MaxRetries: 10,
+			BaseDelay:  5 * time.Second,
+			MaxDelay:   10 * time.Second,
+		},
+	}
+
+	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
+	require.NoError(t, err)
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return consumer.Start(gctx)
+	})
+
+	startTime := time.Now()
+	err = g.Wait()
+	elapsed := time.Since(startTime)
+
+	// Fatal error should stop the consumer and propagate through errgroup.
+	require.Error(t, err, "consumer should return a Fatal error")
+	t.Logf("consumer stopped in %v with error: %v", elapsed, err)
+
+	// The consumer should stop fast — no retries for Fatal errors.
+	require.Less(t, elapsed, 30*time.Second,
+		"Fatal error should stop the consumer quickly without retries")
+
+	// Fatal errors must NOT publish to DLQ, even though PublishToDLQ=true.
+	dlqCount := countMessagesInTopic(t, kafkaBrokers, dlqTopic, 5*time.Second)
+	require.Equal(t, 0, dlqCount,
+		"Fatal errors must not publish to DLQ")
+
+	// Clean up the tables created by this test.
+	for _, tbl := range []string{transactionsTable, logsTable} {
+		_ = chClient.Conn().Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", tbl))
+	}
+
+	log.Infow("Fatal error test completed",
+		"elapsed", elapsed,
+		"dlq_messages", dlqCount)
+}
+
+// countMessagesInTopic consumes all available messages from a Kafka topic and
+// returns the count. It stops after three consecutive empty polls or when
+// timeout is reached.
+func countMessagesInTopic(t *testing.T, brokers, topic string, timeout time.Duration) int {
+	t.Helper()
+
+	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
+		"bootstrap.servers": brokers,
+		"group.id":          fmt.Sprintf("e2e-counter-%d", time.Now().UnixNano()),
+		"auto.offset.reset": "earliest",
+	})
+	require.NoError(t, err)
+	defer consumer.Close()
+
+	if err := consumer.Subscribe(topic, nil); err != nil {
+		return 0
+	}
+
+	count := 0
+	emptyPolls := 0
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		ev := consumer.Poll(1000)
+		if ev == nil {
+			emptyPolls++
+			if emptyPolls >= 3 {
+				break
+			}
+			continue
+		}
+
+		switch ev.(type) {
+		case *ckafka.Message:
+			count++
+			emptyPolls = 0
+		case ckafka.Error:
+			continue
+		}
+	}
+
+	t.Logf("Counted %d messages in topic %s", count, topic)
+	return count
 }

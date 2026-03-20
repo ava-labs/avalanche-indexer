@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -849,6 +851,205 @@ func TestMockLogsRepo_DeleteLogs_NilFunc(t *testing.T) {
 
 	err := logsRepo.DeleteLogs(t.Context(), 43114)
 	require.NoError(t, err, "should return nil when deleteLogsFunc is not set")
+}
+
+// ============================================================================
+// classifyWriteErr Tests
+// ============================================================================
+
+func TestClassifyWriteErr_FatalCodes(t *testing.T) {
+	t.Parallel()
+
+	fatalCodes := []struct {
+		code int32
+		name string
+	}{
+		{clickhouseErrAuthenticationFailed, "AUTHENTICATION_FAILED"},
+		{clickhouseErrAccessDenied, "ACCESS_DENIED"},
+		{clickhouseErrUnknownTable, "UNKNOWN_TABLE"},
+		{clickhouseErrUnknownDatabase, "UNKNOWN_DATABASE"},
+	}
+
+	for _, tc := range fatalCodes {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			chErr := &chdriver.Exception{Code: tc.code, Message: tc.name}
+			err := classifyWriteErr(chErr)
+			assert.True(t, IsFatal(err), "code %d (%s) should be classified as fatal", tc.code, tc.name)
+			assert.ErrorIs(t, err, chErr)
+		})
+	}
+}
+
+func TestClassifyWriteErr_RetryableCodes(t *testing.T) {
+	t.Parallel()
+
+	retryableCodes := []struct {
+		code int32
+		name string
+	}{
+		{159, "TIMEOUT_EXCEEDED"},
+		{242, "TABLE_IS_READ_ONLY"},
+		{999, "UNKNOWN_CODE"},
+	}
+
+	for _, tc := range retryableCodes {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			chErr := &chdriver.Exception{Code: tc.code, Message: tc.name}
+			err := classifyWriteErr(chErr)
+			assert.False(t, IsFatal(err), "code %d (%s) should NOT be fatal", tc.code, tc.name)
+			assert.ErrorIs(t, err, chErr)
+		})
+	}
+}
+
+func TestClassifyWriteErr_NonClickHouseError(t *testing.T) {
+	t.Parallel()
+
+	plainErr := errors.New("connection reset")
+	err := classifyWriteErr(plainErr)
+	assert.False(t, IsFatal(err))
+	assert.ErrorIs(t, err, plainErr, "non-ClickHouse errors should pass through unchanged")
+}
+
+func TestClassifyWriteErr_WrappedClickHouseError(t *testing.T) {
+	t.Parallel()
+
+	chErr := &chdriver.Exception{Code: clickhouseErrAuthenticationFailed, Message: "auth failed"}
+	wrapped := fmt.Errorf("write block: %w", chErr)
+	err := classifyWriteErr(wrapped)
+	assert.True(t, IsFatal(err), "wrapped ClickHouse fatal error should be classified as fatal")
+	assert.ErrorIs(t, err, chErr)
+}
+
+// ============================================================================
+// Process Error Classification Tests
+// ============================================================================
+
+func TestProcess_NilMessage_IsNonRetryable(t *testing.T) {
+	t.Parallel()
+
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+
+	err := proc.Process(t.Context(), nil)
+	require.ErrorIs(t, err, ErrNilMessage)
+	assert.True(t, IsNonRetryable(err), "nil message should be NonRetryable")
+}
+
+func TestProcess_InvalidJSON_IsNonRetryable(t *testing.T) {
+	t.Parallel()
+
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+
+	msg := &ckafka.Message{Value: []byte(`{bad}`)}
+	err := proc.Process(t.Context(), msg)
+	require.ErrorIs(t, err, ErrUnmarshalBlock)
+	assert.True(t, IsNonRetryable(err), "unmarshal failure should be NonRetryable")
+}
+
+func TestProcess_MissingBlockchainID_IsNonRetryable(t *testing.T) {
+	t.Parallel()
+
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+
+	block := &kafkamsg.EVMBlock{
+		Number:       big.NewInt(1),
+		BlockchainID: nil,
+		Transactions: []*kafkamsg.EVMTransaction{},
+	}
+	data, err := json.Marshal(block)
+	require.NoError(t, err)
+
+	msg := &ckafka.Message{Value: data}
+	err = proc.Process(t.Context(), msg)
+	require.ErrorIs(t, err, evmrepo.ErrBlockChainIDRequired)
+	assert.True(t, IsNonRetryable(err), "missing blockchainID should be NonRetryable")
+}
+
+func TestProcess_BlockWriteFatal(t *testing.T) {
+	t.Parallel()
+
+	chErr := &chdriver.Exception{Code: clickhouseErrAuthenticationFailed, Message: "auth failed"}
+	blocksRepo := &mockBlocksRepo{
+		writeBlockFunc: func(_ context.Context, _ *evmrepo.BlockRow) error {
+			return chErr
+		},
+	}
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, nil)
+
+	block := createTestBlock()
+	data, err := json.Marshal(block)
+	require.NoError(t, err)
+
+	msg := &ckafka.Message{Value: data}
+	err = proc.Process(t.Context(), msg)
+	assert.True(t, IsFatal(err), "auth failure on block write should be Fatal")
+	assert.ErrorIs(t, err, chErr)
+}
+
+func TestProcess_BlockWriteRetryable(t *testing.T) {
+	t.Parallel()
+
+	transientErr := errors.New("connection timeout")
+	blocksRepo := &mockBlocksRepo{
+		writeBlockFunc: func(_ context.Context, _ *evmrepo.BlockRow) error {
+			return transientErr
+		},
+	}
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, nil)
+
+	block := createTestBlock()
+	data, err := json.Marshal(block)
+	require.NoError(t, err)
+
+	msg := &ckafka.Message{Value: data}
+	err = proc.Process(t.Context(), msg)
+	assert.False(t, IsFatal(err), "transient error should NOT be Fatal")
+	assert.False(t, IsNonRetryable(err), "transient error should NOT be NonRetryable")
+	assert.ErrorIs(t, err, transientErr)
+}
+
+func TestProcess_TransactionWriteFatal(t *testing.T) {
+	t.Parallel()
+
+	chErr := &chdriver.Exception{Code: clickhouseErrUnknownTable, Message: "unknown table"}
+	txsRepo := &mockTransactionsRepo{
+		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
+			return chErr
+		},
+	}
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, txsRepo, nil, nil)
+
+	block := createTestBlock()
+	data, err := json.Marshal(block)
+	require.NoError(t, err)
+
+	msg := &ckafka.Message{Value: data}
+	err = proc.Process(t.Context(), msg)
+	assert.True(t, IsFatal(err), "unknown table on tx write should be Fatal")
+	assert.ErrorIs(t, err, chErr)
+}
+
+func TestProcess_LogWriteFatal(t *testing.T) {
+	t.Parallel()
+
+	chErr := &chdriver.Exception{Code: clickhouseErrUnknownDatabase, Message: "unknown db"}
+	logsRepo := &mockLogsRepo{
+		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
+			return chErr
+		},
+	}
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, logsRepo, nil)
+
+	block := createTestBlockWithLogs()
+	data, err := json.Marshal(block)
+	require.NoError(t, err)
+
+	msg := &ckafka.Message{Value: data}
+	err = proc.Process(t.Context(), msg)
+	assert.True(t, IsFatal(err), "unknown database on log write should be Fatal")
+	assert.ErrorIs(t, err, chErr)
 }
 
 // ============================================================================
