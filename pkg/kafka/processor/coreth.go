@@ -308,7 +308,6 @@ func (p *CorethProcessor) processTransactions(
 	ctx context.Context,
 	block *kafkamsg.EVMBlock,
 ) error {
-	// TODO: Add batching (in a future PR)
 	totalLogs := 0
 	txs := make([]*evmrepo.TransactionRow, 0, len(block.Transactions))
 	for i, tx := range block.Transactions {
@@ -321,6 +320,15 @@ func (p *CorethProcessor) processTransactions(
 		if tx.Receipt != nil {
 			totalLogs += len(tx.Receipt.Logs)
 		}
+	}
+
+	if len(txs) == 0 {
+		p.log.Debugw("no transactions to write",
+			"blockchainID", block.BlockchainID,
+			"evmChainID", block.EVMChainID,
+			"blockNumber", block.Number,
+		)
+		return nil
 	}
 
 	writeStart := time.Now()
@@ -368,6 +376,15 @@ func (p *CorethProcessor) processLogs(
 			logs = append(logs, logRow)
 			totalLogs++
 		}
+	}
+
+	if totalLogs == 0 {
+		p.log.Debugw("no logs to write",
+			"blockchainID", block.BlockchainID,
+			"evmChainID", block.EVMChainID,
+			"blockNumber", block.Number,
+		)
+		return nil
 	}
 
 	writeStart := time.Now()

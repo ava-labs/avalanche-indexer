@@ -281,7 +281,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 
 	row, err := convertBlockRowToChBlockRow(block)
 	if err != nil {
-		return fmt.Errorf("failed to convert block row to row: %w", err)
+		return fmt.Errorf("failed to convert block row of block %d to ch row: %w", block.BlockNumber, err)
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
@@ -318,7 +318,7 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		row.numTxns,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write block: %w", err)
+		return fmt.Errorf("failed to write block of block %d: %w", block.BlockNumber, err)
 	}
 	return nil
 }
@@ -346,7 +346,7 @@ func (r *blocks) BatchInsertBlocks(ctx context.Context, blocks []*BlockRow) erro
 	for _, block := range blocks {
 		row, err := convertBlockRowToChBlockRow(block)
 		if err != nil {
-			return fmt.Errorf("failed to convert block row to row: %w", err)
+			return fmt.Errorf("failed to convert block row of block %d to ch row: %w", block.BlockNumber, err)
 		}
 		err = batch.Append(
 			row.blockchainID,
@@ -382,7 +382,7 @@ func (r *blocks) BatchInsertBlocks(ctx context.Context, blocks []*BlockRow) erro
 			row.numTxns,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to append block: %w", err)
+			return fmt.Errorf("failed to append block %d: %w", block.BlockNumber, err)
 		}
 	}
 

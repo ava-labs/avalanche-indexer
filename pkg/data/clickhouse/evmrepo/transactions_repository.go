@@ -197,7 +197,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	query := fmt.Sprintf(writeTransactionQuery, r.database, r.tableName)
 	row, err := convertTransactionRowToChTransactionRow(tx)
 	if err != nil {
-		return fmt.Errorf("failed to convert transaction row to row: %w", err)
+		return fmt.Errorf("failed to convert transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.Hash, err)
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
@@ -223,7 +223,7 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		row.numLogs,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write transaction: %w", err)
+		return fmt.Errorf("failed to write transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.Hash, err)
 	}
 	return nil
 }
@@ -240,7 +240,7 @@ func (r *transactions) BatchInsertTransactions(ctx context.Context, txs []*Trans
 	for _, tx := range txs {
 		row, err := convertTransactionRowToChTransactionRow(tx)
 		if err != nil {
-			return fmt.Errorf("failed to convert transaction row to row: %w", err)
+			return fmt.Errorf("failed to convert transaction row of block %s and txHash %s to row: %w", tx.BlockHash, tx.Hash, err)
 		}
 		err = batch.Append(
 			row.blockchainID,
@@ -265,7 +265,7 @@ func (r *transactions) BatchInsertTransactions(ctx context.Context, txs []*Trans
 			row.numLogs,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to append transaction: %w", err)
+			return fmt.Errorf("failed to append transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.Hash, err)
 		}
 	}
 	if err := batch.Send(); err != nil {

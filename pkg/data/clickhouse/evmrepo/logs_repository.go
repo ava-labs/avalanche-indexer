@@ -2,6 +2,7 @@ package evmrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -61,6 +62,10 @@ type chLogRow struct {
 }
 
 func convertLogRowToChLogRow(log *LogRow) (*chLogRow, error) {
+	if log == nil {
+		return nil, errors.New("log is nil")
+	}
+
 	// Convert BlockchainID
 	var blockchainID interface{}
 	if log.BlockchainID != nil {
@@ -70,7 +75,10 @@ func convertLogRowToChLogRow(log *LogRow) (*chLogRow, error) {
 	}
 
 	// Convert EVMChainID to string for ClickHouse UInt256
-	evmChainIDStr := log.EVMChainID.String()
+	evmChainIDStr := "0"
+	if log.EVMChainID != nil {
+		evmChainIDStr = log.EVMChainID.String()
+	}
 
 	// Convert hex strings to bytes for FixedString fields
 	blockHashBytes, err := utils.HexToBytes32(log.BlockHash)
@@ -167,7 +175,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 
 	row, err := convertLogRowToChLogRow(log)
 	if err != nil {
-		return fmt.Errorf("failed to convert log row to row: %w", err)
+		return fmt.Errorf("failed to convert log row of tx %s on index %d to ch row: %w", log.TxHash, log.LogIndex, err)
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
@@ -189,7 +197,7 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 		row.removed,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write log: %w", err)
+		return fmt.Errorf("failed to write log of tx %s on index %d: %w", log.TxHash, log.LogIndex, err)
 	}
 	return nil
 }
@@ -208,7 +216,7 @@ func (r *logs) BatchInsertLogs(ctx context.Context, logs []*LogRow) error {
 	for _, log := range logs {
 		row, err := convertLogRowToChLogRow(log)
 		if err != nil {
-			return fmt.Errorf("failed to convert log row to row: %w", err)
+			return fmt.Errorf("failed to convert log row of tx %s on index %d to ch row: %w", log.TxHash, log.LogIndex, err)
 		}
 
 		err = batch.Append(
@@ -230,7 +238,7 @@ func (r *logs) BatchInsertLogs(ctx context.Context, logs []*LogRow) error {
 			row.removed,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to append log: %w", err)
+			return fmt.Errorf("failed to append log of tx %s on index %d: %w", log.TxHash, log.LogIndex, err)
 		}
 	}
 	if err := batch.Send(); err != nil {

@@ -65,7 +65,7 @@ type chInternalTransactionRow struct {
 
 func convertIntTxnRowToIntChTransactionRow(tx *InternalTransactionRow) (*chInternalTransactionRow, error) {
 	if tx == nil {
-		return nil, errors.New("transaction is nil")
+		return nil, errors.New("internal transaction is nil")
 	}
 
 	// Convert BlockchainID
@@ -151,7 +151,7 @@ func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx 
 
 	row, err := convertIntTxnRowToIntChTransactionRow(tx)
 	if err != nil {
-		return fmt.Errorf("failed to convert internal transaction row to row: %w", err)
+		return fmt.Errorf("failed to convert internal transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.TransactionHash, err)
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
@@ -175,7 +175,7 @@ func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx 
 		row.callIndex,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write internal transaction: %w", err)
+		return fmt.Errorf("failed to write internal transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.TransactionHash, err)
 	}
 	return nil
 }
@@ -194,7 +194,7 @@ func (r *internalTransactions) BatchInsertInternalTransactions(ctx context.Conte
 	for _, tx := range txs {
 		row, err := convertIntTxnRowToIntChTransactionRow(tx)
 		if err != nil {
-			return fmt.Errorf("failed to convert internal transaction row to row: %w", err)
+			return fmt.Errorf("failed to convert internal transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.TransactionHash, err)
 		}
 		err = batch.Append(
 			row.blockchainID,
@@ -217,7 +217,7 @@ func (r *internalTransactions) BatchInsertInternalTransactions(ctx context.Conte
 			row.callIndex,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to append internal transaction: %w", err)
+			return fmt.Errorf("failed to append internal transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.TransactionHash, err)
 		}
 	}
 
