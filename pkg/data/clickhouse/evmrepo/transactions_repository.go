@@ -201,6 +201,20 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		gasPriceStr = tx.GasPrice.String()
 	}
 
+	var maxFeePerGasStr interface{}
+	if row.maxFeePerGas != nil {
+		maxFeePerGasStr = row.maxFeePerGas.String()
+	} else {
+		maxFeePerGasStr = nil
+	}
+
+	var maxPriorityFeeStr interface{}
+	if row.maxPriorityFee != nil {
+		maxPriorityFeeStr = row.maxPriorityFee.String()
+	} else {
+		maxPriorityFeeStr = nil
+	}
+
 	err = r.client.Conn().Exec(ctx, query,
 		row.blockchainID,
 		evmChainIDStr,
@@ -215,8 +229,8 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		valueStr,
 		row.gas,
 		gasPriceStr,
-		row.maxFeePerGas,
-		row.maxPriorityFee,
+		maxFeePerGasStr,
+		maxPriorityFeeStr,
 		row.input,
 		row.txType,
 		row.transactionIndex,

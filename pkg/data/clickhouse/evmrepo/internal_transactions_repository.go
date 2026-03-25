@@ -155,9 +155,14 @@ func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx 
 		return fmt.Errorf("failed to convert internal transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.TransactionHash, err)
 	}
 
+	evmChainIDStr := "0"
+	if row.evmChainID != nil {
+		evmChainIDStr = row.evmChainID.String()
+	}
+
 	err = r.client.Conn().Exec(ctx, query,
 		row.blockchainID,
-		row.evmChainID,
+		evmChainIDStr,
 		row.blockNumber,
 		row.blockTime,
 		row.timestampMs,
