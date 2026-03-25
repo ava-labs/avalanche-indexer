@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	_ "embed"
@@ -44,7 +45,7 @@ type transactions struct {
 
 type chTransactionRow struct {
 	blockchainID     interface{}
-	evmChainIDStr    string
+	evmChainID       *big.Int
 	blockNumber      uint64
 	blockHash        string
 	blockTime        time.Time
@@ -53,11 +54,11 @@ type chTransactionRow struct {
 	from             string
 	to               interface{}
 	nonce            uint64
-	value            string
+	value            *big.Int
 	gas              uint64
-	gasPrice         string
-	maxFeePerGas     interface{}
-	maxPriorityFee   interface{}
+	gasPrice         *big.Int
+	maxFeePerGas     *big.Int
+	maxPriorityFee   *big.Int
 	input            string
 	txType           uint8
 	transactionIndex uint64
@@ -77,11 +78,10 @@ func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransaction
 	} else {
 		blockchainID = ""
 	}
-	// Convert *big.Int to string for ClickHouse UInt256 fields
-	// ClickHouse accepts UInt256 as string representation
-	evmChainIDStr := "0"
+
+	evmChainIDBigInt := big.NewInt(0)
 	if tx.EVMChainID != nil {
-		evmChainIDStr = tx.EVMChainID.String()
+		evmChainIDBigInt = tx.EVMChainID
 	}
 
 	// Convert hex strings to bytes for FixedString fields
@@ -110,32 +110,18 @@ func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransaction
 		toBytes = string(to[:])
 	}
 
-	// Convert *big.Int to string for ClickHouse UInt256 fields
-	// ClickHouse accepts UInt256 as string representation
-	valueStr := "0"
+	valueBigInt := big.NewInt(0)
 	if tx.Value != nil {
-		valueStr = tx.Value.String()
+		valueBigInt = tx.Value
 	}
-	gasPriceStr := "0"
+	gasPriceBigInt := big.NewInt(0)
 	if tx.GasPrice != nil {
-		gasPriceStr = tx.GasPrice.String()
-	}
-	var maxFeePerGasStr interface{}
-	if tx.MaxFeePerGas != nil {
-		maxFeePerGasStr = tx.MaxFeePerGas.String()
-	} else {
-		maxFeePerGasStr = nil
-	}
-	var maxPriorityFeeStr interface{}
-	if tx.MaxPriorityFee != nil {
-		maxPriorityFeeStr = tx.MaxPriorityFee.String()
-	} else {
-		maxPriorityFeeStr = nil
+		gasPriceBigInt = tx.GasPrice
 	}
 
 	return &chTransactionRow{
 		blockchainID:     blockchainID,
-		evmChainIDStr:    evmChainIDStr,
+		evmChainID:       evmChainIDBigInt,
 		blockNumber:      tx.BlockNumber,
 		blockHash:        string(blockHashBytes[:]),
 		blockTime:        tx.BlockTime,
@@ -144,11 +130,11 @@ func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransaction
 		from:             string(fromBytes[:]),
 		to:               toBytes,
 		nonce:            tx.Nonce,
-		value:            valueStr,
+		value:            valueBigInt,
 		gas:              tx.Gas,
-		gasPrice:         gasPriceStr,
-		maxFeePerGas:     maxFeePerGasStr,
-		maxPriorityFee:   maxPriorityFeeStr,
+		gasPrice:         gasPriceBigInt,
+		maxFeePerGas:     tx.MaxFeePerGas,
+		maxPriorityFee:   tx.MaxPriorityFee,
 		input:            tx.Input,
 		txType:           tx.Type,
 		transactionIndex: tx.TransactionIndex,
@@ -200,9 +186,24 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		return fmt.Errorf("failed to convert transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.Hash, err)
 	}
 
+	evmChainIDStr := "0"
+	if tx.EVMChainID != nil {
+		evmChainIDStr = tx.EVMChainID.String()
+	}
+
+	valueStr := "0"
+	if tx.Value != nil {
+		valueStr = tx.Value.String()
+	}
+
+	gasPriceStr := "0"
+	if tx.GasPrice != nil {
+		gasPriceStr = tx.GasPrice.String()
+	}
+
 	err = r.client.Conn().Exec(ctx, query,
 		row.blockchainID,
-		row.evmChainIDStr,
+		evmChainIDStr,
 		row.blockNumber,
 		row.blockHash,
 		row.blockTime,
@@ -211,9 +212,9 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 		row.from,
 		row.to,
 		row.nonce,
-		row.value,
+		valueStr,
 		row.gas,
-		row.gasPrice,
+		gasPriceStr,
 		row.maxFeePerGas,
 		row.maxPriorityFee,
 		row.input,
@@ -244,7 +245,7 @@ func (r *transactions) BatchInsertTransactions(ctx context.Context, txs []*Trans
 		}
 		err = batch.Append(
 			row.blockchainID,
-			row.evmChainIDStr,
+			row.evmChainID,
 			row.blockNumber,
 			row.blockHash,
 			row.blockTime,

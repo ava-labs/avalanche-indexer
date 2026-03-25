@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	_ "embed"
@@ -56,15 +57,15 @@ type chBlockRow struct {
 	nonceBytes                 interface{}
 	parentBeaconBlockRootBytes interface{}
 	blockchainID               interface{}
-	evmChainID                 string
+	evmChainID                 *big.Int
 	blockNumber                uint64
-	difficulty                 string
-	totalDifficulty            string
+	difficulty                 *big.Int
+	totalDifficulty            *big.Int
 	size                       uint64
 	gasLimit                   uint64
 	gasUsed                    uint64
-	baseFeePerGas              string
-	blockGasCost               string
+	baseFeePerGas              *big.Int
+	blockGasCost               *big.Int
 	blobGasUsed                uint64
 	excessBlobGas              uint64
 	minDelayExcess             uint64
@@ -205,17 +206,84 @@ func convertBlockRowToChBlockRow(block *BlockRow) (*chBlockRow, error) {
 		blockchainID = ""
 	}
 
-	// Convert *big.Int to string for ClickHouse UInt256 fields
-	// ClickHouse accepts UInt256 as string representation
-	evmChainIDStr := "0"
+	evmChainIDBigInt := big.NewInt(0)
 	if block.EVMChainID != nil {
-		evmChainIDStr = block.EVMChainID.String()
+		evmChainIDBigInt = block.EVMChainID
 	}
 
 	// Convert BlockNumber from *big.Int to uint64 for ClickHouse UInt64
 	var blockNumber uint64
 	if block.BlockNumber != nil {
 		blockNumber = block.BlockNumber.Uint64()
+	}
+
+	difficultyBigInt := big.NewInt(0)
+	if block.Difficulty != nil {
+		difficultyBigInt = block.Difficulty
+	}
+
+	totalDifficultyBigInt := big.NewInt(0)
+	if block.TotalDifficulty != nil {
+		totalDifficultyBigInt = block.TotalDifficulty
+	}
+
+	baseFeeBigInt := big.NewInt(0)
+	if block.BaseFeePerGas != nil {
+		baseFeeBigInt = block.BaseFeePerGas
+	}
+
+	blockGasCostBigInt := big.NewInt(0)
+	if block.BlockGasCost != nil {
+		blockGasCostBigInt = block.BlockGasCost
+	}
+
+	return &chBlockRow{
+		hashBytes:                  string(hashBytes[:]),
+		parentHashBytes:            string(parentHashBytes[:]),
+		minerBytes:                 string(minerBytes[:]),
+		stateRootBytes:             string(stateRootBytes[:]),
+		transactionsRootBytes:      string(transactionsRootBytes[:]),
+		receiptsRootBytes:          string(receiptsRootBytes[:]),
+		extDataHashBytes:           string(extDataHashBytes[:]),
+		mixHashBytes:               string(mixHashBytes[:]),
+		sha3UnclesBytes:            string(sha3UnclesBytes[:]),
+		unclesStrings:              unclesStrings,
+		nonceBytes:                 nonceBytes,
+		parentBeaconBlockRootBytes: parentBeaconBlockRootBytes,
+		blockchainID:               blockchainID,
+		evmChainID:                 evmChainIDBigInt,
+		blockNumber:                blockNumber,
+		difficulty:                 difficultyBigInt,
+		totalDifficulty:            totalDifficultyBigInt,
+		size:                       block.Size,
+		gasLimit:                   block.GasLimit,
+		gasUsed:                    block.GasUsed,
+		baseFeePerGas:              baseFeeBigInt,
+		blockGasCost:               blockGasCostBigInt,
+		blobGasUsed:                block.BlobGasUsed,
+		excessBlobGas:              block.ExcessBlobGas,
+		minDelayExcess:             block.MinDelayExcess,
+		numTxns:                    block.NumTxns,
+		blockExtraData:             block.BlockExtraData,
+		extDataGasUsed:             block.ExtDataGasUsed,
+		extraData:                  block.ExtraData,
+		timestampMs:                block.TimestampMs,
+		blockTime:                  block.BlockTime,
+	}, nil
+}
+
+// WriteBlock inserts a raw block into ClickHouse
+func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
+	query := fmt.Sprintf(writeBlockQuery, r.database, r.tableName)
+
+	row, err := convertBlockRowToChBlockRow(block)
+	if err != nil {
+		return fmt.Errorf("failed to convert block row of block %d to ch row: %w", block.BlockNumber, err)
+	}
+
+	evmChainIDStr := "0"
+	if block.EVMChainID != nil {
+		evmChainIDStr = block.EVMChainID.String()
 	}
 
 	// Convert *big.Int to string for ClickHouse UInt256 fields
@@ -240,66 +308,22 @@ func convertBlockRowToChBlockRow(block *BlockRow) (*chBlockRow, error) {
 		blockGasCostStr = block.BlockGasCost.String()
 	}
 
-	return &chBlockRow{
-		hashBytes:                  string(hashBytes[:]),
-		parentHashBytes:            string(parentHashBytes[:]),
-		minerBytes:                 string(minerBytes[:]),
-		stateRootBytes:             string(stateRootBytes[:]),
-		transactionsRootBytes:      string(transactionsRootBytes[:]),
-		receiptsRootBytes:          string(receiptsRootBytes[:]),
-		extDataHashBytes:           string(extDataHashBytes[:]),
-		mixHashBytes:               string(mixHashBytes[:]),
-		sha3UnclesBytes:            string(sha3UnclesBytes[:]),
-		unclesStrings:              unclesStrings,
-		nonceBytes:                 nonceBytes,
-		parentBeaconBlockRootBytes: parentBeaconBlockRootBytes,
-		blockchainID:               blockchainID,
-		evmChainID:                 evmChainIDStr,
-		blockNumber:                blockNumber,
-		difficulty:                 difficultyStr,
-		totalDifficulty:            totalDifficultyStr,
-		size:                       block.Size,
-		gasLimit:                   block.GasLimit,
-		gasUsed:                    block.GasUsed,
-		baseFeePerGas:              baseFeeStr,
-		blockGasCost:               blockGasCostStr,
-		blobGasUsed:                block.BlobGasUsed,
-		excessBlobGas:              block.ExcessBlobGas,
-		minDelayExcess:             block.MinDelayExcess,
-		numTxns:                    block.NumTxns,
-		blockExtraData:             block.BlockExtraData,
-		extDataGasUsed:             block.ExtDataGasUsed,
-		extraData:                  block.ExtraData,
-		timestampMs:                block.TimestampMs,
-		blockTime:                  block.BlockTime,
-	}, nil
-}
-
-// WriteBlock inserts a raw block into ClickHouse
-func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
-	query := fmt.Sprintf(writeBlockQuery, r.database, r.tableName)
-
-	row, err := convertBlockRowToChBlockRow(block)
-	if err != nil {
-		return fmt.Errorf("failed to convert block row of block %d to ch row: %w", block.BlockNumber, err)
-	}
-
 	err = r.client.Conn().Exec(ctx, query,
 		row.blockchainID,
-		row.evmChainID,
+		evmChainIDStr,
 		row.blockNumber,
 		row.hashBytes,
 		row.parentHashBytes,
 		row.blockTime,
 		row.timestampMs,
 		row.minerBytes,
-		row.difficulty,
-		row.totalDifficulty,
+		difficultyStr,
+		totalDifficultyStr,
 		row.size,
 		row.gasLimit,
 		row.gasUsed,
-		row.baseFeePerGas,
-		row.blockGasCost,
+		baseFeeStr,
+		blockGasCostStr,
 		row.stateRootBytes,
 		row.transactionsRootBytes,
 		row.receiptsRootBytes,

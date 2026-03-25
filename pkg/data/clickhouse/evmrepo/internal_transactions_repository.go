@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	_ "embed"
@@ -44,7 +45,7 @@ type internalTransactions struct {
 
 type chInternalTransactionRow struct {
 	blockchainID    interface{}
-	evmChainID      string
+	evmChainID      *big.Int
 	blockNumber     uint64
 	blockTime       time.Time
 	timestampMs     uint64
@@ -77,9 +78,9 @@ func convertIntTxnRowToIntChTransactionRow(tx *InternalTransactionRow) (*chInter
 	}
 
 	// Convert EVMChainID to string for ClickHouse UInt256
-	evmChainIDStr := "0"
+	evmChainIDBigInt := big.NewInt(0)
 	if tx.EVMChainID != nil {
-		evmChainIDStr = tx.EVMChainID.String()
+		evmChainIDBigInt = tx.EVMChainID
 	}
 
 	// Convert transaction hash hex string to bytes
@@ -90,7 +91,7 @@ func convertIntTxnRowToIntChTransactionRow(tx *InternalTransactionRow) (*chInter
 
 	return &chInternalTransactionRow{
 		blockchainID:    blockchainID,
-		evmChainID:      evmChainIDStr,
+		evmChainID:      evmChainIDBigInt,
 		blockNumber:     tx.BlockNumber,
 		blockTime:       tx.BlockTime,
 		timestampMs:     tx.TimestampMs,
