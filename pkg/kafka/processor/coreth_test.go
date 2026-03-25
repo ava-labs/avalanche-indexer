@@ -666,8 +666,8 @@ func TestProcess_Success_WithLogsRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedLogs []*evmrepo.LogRow
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, lg *evmrepo.LogRow) error {
-			capturedLogs = append(capturedLogs, lg)
+		batchInsertLogsFunc: func(_ context.Context, logs []*evmrepo.LogRow) error {
+			capturedLogs = append(capturedLogs, logs...)
 			return nil
 		},
 	}
@@ -690,7 +690,7 @@ func TestProcess_LogsRepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write log failed")
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
+		batchInsertLogsFunc: func(_ context.Context, _ []*evmrepo.LogRow) error {
 			return expectedErr
 		},
 	}
@@ -719,7 +719,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 		},
 	}
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
+		batchInsertLogsFunc: func(_ context.Context, _ []*evmrepo.LogRow) error {
 			logsRepoCalled = true
 			return nil
 		},
@@ -1061,7 +1061,7 @@ func TestProcess_LogWriteFatal(t *testing.T) {
 
 	chErr := &chdriver.Exception{Code: clickhouseErrUnknownDatabase, Message: "unknown db"}
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
+		batchInsertLogsFunc: func(_ context.Context, _ []*evmrepo.LogRow) error {
 			return chErr
 		},
 	}
