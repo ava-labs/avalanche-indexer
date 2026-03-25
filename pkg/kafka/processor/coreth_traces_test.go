@@ -20,8 +20,9 @@ import (
 
 // Mock implementation for internal transactions repository
 type mockInternalTransactionsRepo struct {
-	writeInternalTransactionFunc   func(ctx context.Context, tx *evmrepo.InternalTransactionRow) error
-	deleteInternalTransactionsFunc func(ctx context.Context, chainID uint64) error
+	writeInternalTransactionFunc        func(ctx context.Context, tx *evmrepo.InternalTransactionRow) error
+	batchInsertInternalTransactionsFunc func(ctx context.Context, txs []*evmrepo.InternalTransactionRow) error
+	deleteInternalTransactionsFunc      func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockInternalTransactionsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -29,6 +30,13 @@ func (*mockInternalTransactionsRepo) CreateTableIfNotExists(context.Context) err
 func (m *mockInternalTransactionsRepo) WriteInternalTransaction(ctx context.Context, tx *evmrepo.InternalTransactionRow) error {
 	if m.writeInternalTransactionFunc != nil {
 		return m.writeInternalTransactionFunc(ctx, tx)
+	}
+	return nil
+}
+
+func (m *mockInternalTransactionsRepo) BatchInsertInternalTransactions(ctx context.Context, txs []*evmrepo.InternalTransactionRow) error {
+	if m.batchInsertInternalTransactionsFunc != nil {
+		return m.batchInsertInternalTransactionsFunc(ctx, txs)
 	}
 	return nil
 }

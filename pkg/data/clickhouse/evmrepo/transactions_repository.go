@@ -2,7 +2,9 @@ package evmrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	_ "embed"
 
@@ -14,6 +16,7 @@ import (
 type Transactions interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteTransaction(ctx context.Context, tx *TransactionRow) error
+	BatchInsertTransactions(ctx context.Context, txs []*TransactionRow) error
 	DeleteTransactions(ctx context.Context, chainID uint64) error
 }
 
@@ -26,6 +29,9 @@ var createTransactionsTableQuery string
 //go:embed queries/transaction/write-transaction.sql
 var writeTransactionQuery string
 
+//go:embed queries/transaction/batch-insert-transactions.sql
+var batchInsertTransactionsQuery string
+
 //go:embed queries/transaction/delete-transactions.sql
 var deleteTransactionsQuery string
 
@@ -34,6 +40,121 @@ type transactions struct {
 	cluster   string
 	database  string
 	tableName string
+}
+
+type chTransactionRow struct {
+	blockchainID     interface{}
+	evmChainIDStr    string
+	blockNumber      uint64
+	blockHash        string
+	blockTime        time.Time
+	timestampMs      uint64
+	hash             string
+	from             string
+	to               interface{}
+	nonce            uint64
+	value            string
+	gas              uint64
+	gasPrice         string
+	maxFeePerGas     interface{}
+	maxPriorityFee   interface{}
+	input            string
+	txType           uint8
+	transactionIndex uint64
+	success          uint8
+	numLogs          uint32
+}
+
+func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransactionRow, error) {
+	if tx == nil {
+		return nil, errors.New("transaction is nil")
+	}
+
+	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
+	var blockchainID interface{}
+	if tx.BlockchainID != nil {
+		blockchainID = *tx.BlockchainID
+	} else {
+		blockchainID = ""
+	}
+	// Convert *big.Int to string for ClickHouse UInt256 fields
+	// ClickHouse accepts UInt256 as string representation
+	evmChainIDStr := "0"
+	if tx.EVMChainID != nil {
+		evmChainIDStr = tx.EVMChainID.String()
+	}
+
+	// Convert hex strings to bytes for FixedString fields
+	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert block_hash to bytes: %w", err)
+	}
+	hashBytes, err := utils.HexToBytes32(tx.Hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert hash to bytes: %w", err)
+	}
+	fromBytes, err := utils.HexToBytes20(tx.From)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert from_address to bytes: %w", err)
+	}
+
+	// For nullable to_address - convert empty string to nil, otherwise convert to bytes then string
+	var toBytes interface{}
+	if tx.To == nil || *tx.To == "" {
+		toBytes = nil
+	} else {
+		to, err := utils.HexToBytes20(*tx.To)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert to_address to bytes: %w", err)
+		}
+		toBytes = string(to[:])
+	}
+
+	// Convert *big.Int to string for ClickHouse UInt256 fields
+	// ClickHouse accepts UInt256 as string representation
+	valueStr := "0"
+	if tx.Value != nil {
+		valueStr = tx.Value.String()
+	}
+	gasPriceStr := "0"
+	if tx.GasPrice != nil {
+		gasPriceStr = tx.GasPrice.String()
+	}
+	var maxFeePerGasStr interface{}
+	if tx.MaxFeePerGas != nil {
+		maxFeePerGasStr = tx.MaxFeePerGas.String()
+	} else {
+		maxFeePerGasStr = nil
+	}
+	var maxPriorityFeeStr interface{}
+	if tx.MaxPriorityFee != nil {
+		maxPriorityFeeStr = tx.MaxPriorityFee.String()
+	} else {
+		maxPriorityFeeStr = nil
+	}
+
+	return &chTransactionRow{
+		blockchainID:     blockchainID,
+		evmChainIDStr:    evmChainIDStr,
+		blockNumber:      tx.BlockNumber,
+		blockHash:        string(blockHashBytes[:]),
+		blockTime:        tx.BlockTime,
+		timestampMs:      tx.TimestampMs,
+		hash:             string(hashBytes[:]),
+		from:             string(fromBytes[:]),
+		to:               toBytes,
+		nonce:            tx.Nonce,
+		value:            valueStr,
+		gas:              tx.Gas,
+		gasPrice:         gasPriceStr,
+		maxFeePerGas:     maxFeePerGasStr,
+		maxPriorityFee:   maxPriorityFeeStr,
+		input:            tx.Input,
+		txType:           tx.Type,
+		transactionIndex: tx.TransactionIndex,
+		success:          tx.Success,
+		numLogs:          tx.NumLogs,
+	}, nil
 }
 
 // NewTransactions creates a new raw transactions repository and initializes the table
@@ -74,94 +195,81 @@ func (r *transactions) CreateTableIfNotExists(ctx context.Context) error {
 // WriteTransaction inserts a raw transaction into ClickHouse
 func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow) error {
 	query := fmt.Sprintf(writeTransactionQuery, r.database, r.tableName)
-
-	// Convert BlockchainID (string) and EVMChainID (*big.Int) for ClickHouse
-	var blockchainID interface{}
-	if tx.BlockchainID != nil {
-		blockchainID = *tx.BlockchainID
-	} else {
-		blockchainID = ""
-	}
-	// Convert *big.Int to string for ClickHouse UInt256 fields
-	// ClickHouse accepts UInt256 as string representation
-	evmChainIDStr := "0"
-	if tx.EVMChainID != nil {
-		evmChainIDStr = tx.EVMChainID.String()
-	}
-
-	// Convert hex strings to bytes for FixedString fields
-	blockHashBytes, err := utils.HexToBytes32(tx.BlockHash)
+	row, err := convertTransactionRowToChTransactionRow(tx)
 	if err != nil {
-		return fmt.Errorf("failed to convert block_hash to bytes: %w", err)
-	}
-	hashBytes, err := utils.HexToBytes32(tx.Hash)
-	if err != nil {
-		return fmt.Errorf("failed to convert hash to bytes: %w", err)
-	}
-	fromBytes, err := utils.HexToBytes20(tx.From)
-	if err != nil {
-		return fmt.Errorf("failed to convert from_address to bytes: %w", err)
-	}
-
-	// For nullable to_address - convert empty string to nil, otherwise convert to bytes then string
-	var toBytes interface{}
-	if tx.To == nil || *tx.To == "" {
-		toBytes = nil
-	} else {
-		to, err := utils.HexToBytes20(*tx.To)
-		if err != nil {
-			return fmt.Errorf("failed to convert to_address to bytes: %w", err)
-		}
-		toBytes = string(to[:])
-	}
-
-	// Convert *big.Int to string for ClickHouse UInt256 fields
-	// ClickHouse accepts UInt256 as string representation
-	valueStr := "0"
-	if tx.Value != nil {
-		valueStr = tx.Value.String()
-	}
-	gasPriceStr := "0"
-	if tx.GasPrice != nil {
-		gasPriceStr = tx.GasPrice.String()
-	}
-	var maxFeePerGasStr interface{}
-	if tx.MaxFeePerGas != nil {
-		maxFeePerGasStr = tx.MaxFeePerGas.String()
-	} else {
-		maxFeePerGasStr = nil
-	}
-	var maxPriorityFeeStr interface{}
-	if tx.MaxPriorityFee != nil {
-		maxPriorityFeeStr = tx.MaxPriorityFee.String()
-	} else {
-		maxPriorityFeeStr = nil
+		return fmt.Errorf("failed to convert transaction row to row: %w", err)
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
-		blockchainID,
-		evmChainIDStr,
-		tx.BlockNumber,
-		string(blockHashBytes[:]),
-		tx.BlockTime,
-		tx.TimestampMs,
-		string(hashBytes[:]),
-		string(fromBytes[:]),
-		toBytes,
-		tx.Nonce,
-		valueStr,
-		tx.Gas,
-		gasPriceStr,
-		maxFeePerGasStr,
-		maxPriorityFeeStr,
-		tx.Input,
-		tx.Type,
-		tx.TransactionIndex,
-		tx.Success,
-		tx.NumLogs,
+		row.blockchainID,
+		row.evmChainIDStr,
+		row.blockNumber,
+		row.blockHash,
+		row.blockTime,
+		row.timestampMs,
+		row.hash,
+		row.from,
+		row.to,
+		row.nonce,
+		row.value,
+		row.gas,
+		row.gasPrice,
+		row.maxFeePerGas,
+		row.maxPriorityFee,
+		row.input,
+		row.txType,
+		row.transactionIndex,
+		row.success,
+		row.numLogs,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write transaction: %w", err)
+	}
+	return nil
+}
+
+func (r *transactions) BatchInsertTransactions(ctx context.Context, txs []*TransactionRow) error {
+	if len(txs) == 0 {
+		return nil
+	}
+	query := fmt.Sprintf(batchInsertTransactionsQuery, r.database, r.tableName)
+	batch, err := r.client.Conn().PrepareBatch(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to prepare batch: %w", err)
+	}
+	for _, tx := range txs {
+		row, err := convertTransactionRowToChTransactionRow(tx)
+		if err != nil {
+			return fmt.Errorf("failed to convert transaction row to row: %w", err)
+		}
+		err = batch.Append(
+			row.blockchainID,
+			row.evmChainIDStr,
+			row.blockNumber,
+			row.blockHash,
+			row.blockTime,
+			row.timestampMs,
+			row.hash,
+			row.from,
+			row.to,
+			row.nonce,
+			row.value,
+			row.gas,
+			row.gasPrice,
+			row.maxFeePerGas,
+			row.maxPriorityFee,
+			row.input,
+			row.txType,
+			row.transactionIndex,
+			row.success,
+			row.numLogs,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to append transaction: %w", err)
+		}
+	}
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("failed to send batch: %w", err)
 	}
 	return nil
 }

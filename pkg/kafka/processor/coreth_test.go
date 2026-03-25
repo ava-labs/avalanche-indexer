@@ -28,14 +28,23 @@ const (
 
 // Mock implementations for testing
 type mockBlocksRepo struct {
-	writeBlockFunc   func(ctx context.Context, block *evmrepo.BlockRow) error
-	deleteBlocksFunc func(ctx context.Context, chainID uint64) error
+	writeBlockFunc        func(ctx context.Context, block *evmrepo.BlockRow) error
+	batchInsertBlocksFunc func(ctx context.Context, blocks []*evmrepo.BlockRow) error
+	deleteBlocksFunc      func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockBlocksRepo) CreateTableIfNotExists(context.Context) error { return nil }
+
 func (m *mockBlocksRepo) WriteBlock(ctx context.Context, block *evmrepo.BlockRow) error {
 	if m.writeBlockFunc != nil {
 		return m.writeBlockFunc(ctx, block)
+	}
+	return nil
+}
+
+func (m *mockBlocksRepo) BatchInsertBlocks(ctx context.Context, blocks []*evmrepo.BlockRow) error {
+	if m.batchInsertBlocksFunc != nil {
+		return m.batchInsertBlocksFunc(ctx, blocks)
 	}
 	return nil
 }
@@ -48,8 +57,9 @@ func (m *mockBlocksRepo) DeleteBlocks(ctx context.Context, chainID uint64) error
 }
 
 type mockTransactionsRepo struct {
-	writeTransactionFunc   func(ctx context.Context, tx *evmrepo.TransactionRow) error
-	deleteTransactionsFunc func(ctx context.Context, chainID uint64) error
+	writeTransactionFunc        func(ctx context.Context, tx *evmrepo.TransactionRow) error
+	batchInsertTransactionsFunc func(ctx context.Context, txs []*evmrepo.TransactionRow) error
+	deleteTransactionsFunc      func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockTransactionsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -67,9 +77,17 @@ func (m *mockTransactionsRepo) DeleteTransactions(ctx context.Context, chainID u
 	return nil
 }
 
+func (m *mockTransactionsRepo) BatchInsertTransactions(ctx context.Context, txs []*evmrepo.TransactionRow) error {
+	if m.batchInsertTransactionsFunc != nil {
+		return m.batchInsertTransactionsFunc(ctx, txs)
+	}
+	return nil
+}
+
 type mockLogsRepo struct {
-	writeLogFunc   func(ctx context.Context, log *evmrepo.LogRow) error
-	deleteLogsFunc func(ctx context.Context, chainID uint64) error
+	writeLogFunc        func(ctx context.Context, log *evmrepo.LogRow) error
+	deleteLogsFunc      func(ctx context.Context, chainID uint64) error
+	batchInsertLogsFunc func(ctx context.Context, logs []*evmrepo.LogRow) error
 }
 
 func (*mockLogsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -83,6 +101,13 @@ func (m *mockLogsRepo) WriteLog(ctx context.Context, log *evmrepo.LogRow) error 
 func (m *mockLogsRepo) DeleteLogs(ctx context.Context, chainID uint64) error {
 	if m.deleteLogsFunc != nil {
 		return m.deleteLogsFunc(ctx, chainID)
+	}
+	return nil
+}
+
+func (m *mockLogsRepo) BatchInsertLogs(ctx context.Context, logs []*evmrepo.LogRow) error {
+	if m.batchInsertLogsFunc != nil {
+		return m.batchInsertLogsFunc(ctx, logs)
 	}
 	return nil
 }

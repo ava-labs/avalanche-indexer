@@ -2,7 +2,9 @@ package evmrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	_ "embed"
 
@@ -14,6 +16,7 @@ import (
 type InternalTransactions interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteInternalTransaction(ctx context.Context, tx *InternalTransactionRow) error
+	BatchInsertInternalTransactions(ctx context.Context, txs []*InternalTransactionRow) error
 	DeleteInternalTransactions(ctx context.Context, chainID uint64) error
 }
 
@@ -26,6 +29,9 @@ var createInternalTransactionsTableQuery string
 //go:embed queries/internal_transaction/write-internal-transaction.sql
 var writeInternalTransactionQuery string
 
+//go:embed queries/internal_transaction/batch-insert-internal-transactions.sql
+var batchInsertInternalTransactionsQuery string
+
 //go:embed queries/internal_transaction/delete-internal-transactions.sql
 var deleteInternalTransactionsQuery string
 
@@ -34,6 +40,74 @@ type internalTransactions struct {
 	cluster   string
 	database  string
 	tableName string
+}
+
+type chInternalTransactionRow struct {
+	blockchainID    interface{}
+	evmChainID      string
+	blockNumber     uint64
+	blockTime       time.Time
+	timestampMs     uint64
+	transactionHash string
+	transactionType string
+	fromAddress     string
+	toAddress       string
+	value           string
+	gas             string
+	gasUsed         string
+	revert          bool
+	error           string
+	revertReason    string
+	input           string
+	output          string
+	callIndex       string
+}
+
+func convertIntTxnRowToIntChTransactionRow(tx *InternalTransactionRow) (*chInternalTransactionRow, error) {
+	if tx == nil {
+		return nil, errors.New("transaction is nil")
+	}
+
+	// Convert BlockchainID
+	var blockchainID interface{}
+	if tx.BlockchainID != nil {
+		blockchainID = *tx.BlockchainID
+	} else {
+		blockchainID = ""
+	}
+
+	// Convert EVMChainID to string for ClickHouse UInt256
+	evmChainIDStr := "0"
+	if tx.EVMChainID != nil {
+		evmChainIDStr = tx.EVMChainID.String()
+	}
+
+	// Convert transaction hash hex string to bytes
+	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert transaction_hash to bytes: %w", err)
+	}
+
+	return &chInternalTransactionRow{
+		blockchainID:    blockchainID,
+		evmChainID:      evmChainIDStr,
+		blockNumber:     tx.BlockNumber,
+		blockTime:       tx.BlockTime,
+		timestampMs:     tx.TimestampMs,
+		transactionHash: string(txHashBytes[:]),
+		transactionType: tx.Type,
+		fromAddress:     string(tx.From[:]),
+		toAddress:       string(tx.To[:]),
+		value:           tx.Value,
+		gas:             tx.Gas,
+		gasUsed:         tx.GasUsed,
+		revert:          tx.Revert,
+		error:           tx.Error,
+		revertReason:    tx.RevertReason,
+		input:           tx.Input,
+		output:          tx.Output,
+		callIndex:       tx.CallIndex,
+	}, nil
 }
 
 // NewInternalTransactions creates a new internal transactions repository and initializes the table
@@ -75,49 +149,82 @@ func (r *internalTransactions) CreateTableIfNotExists(ctx context.Context) error
 func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx *InternalTransactionRow) error {
 	query := fmt.Sprintf(writeInternalTransactionQuery, r.database, r.tableName)
 
-	// Convert BlockchainID
-	var blockchainID interface{}
-	if tx.BlockchainID != nil {
-		blockchainID = *tx.BlockchainID
-	} else {
-		blockchainID = ""
-	}
-
-	// Convert EVMChainID to string for ClickHouse UInt256
-	evmChainIDStr := "0"
-	if tx.EVMChainID != nil {
-		evmChainIDStr = tx.EVMChainID.String()
-	}
-
-	// Convert transaction hash hex string to bytes
-	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
+	row, err := convertIntTxnRowToIntChTransactionRow(tx)
 	if err != nil {
-		return fmt.Errorf("failed to convert transaction_hash to bytes: %w", err)
+		return fmt.Errorf("failed to convert internal transaction row to row: %w", err)
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
-		blockchainID,
-		evmChainIDStr,
-		tx.BlockNumber,
-		tx.BlockTime,
-		tx.TimestampMs,
-		string(txHashBytes[:]),
-		tx.Type,
-		string(tx.From[:]),
-		string(tx.To[:]),
-		tx.Value,
-		tx.Gas,
-		tx.GasUsed,
-		tx.Revert,
-		tx.Error,
-		tx.RevertReason,
-		tx.Input,
-		tx.Output,
-		tx.CallIndex,
+		row.blockchainID,
+		row.evmChainID,
+		row.blockNumber,
+		row.blockTime,
+		row.timestampMs,
+		row.transactionHash,
+		row.transactionType,
+		row.fromAddress,
+		row.toAddress,
+		row.value,
+		row.gas,
+		row.gasUsed,
+		row.revert,
+		row.error,
+		row.revertReason,
+		row.input,
+		row.output,
+		row.callIndex,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write internal transaction: %w", err)
 	}
+	return nil
+}
+
+func (r *internalTransactions) BatchInsertInternalTransactions(ctx context.Context, txs []*InternalTransactionRow) error {
+	if len(txs) == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf(batchInsertInternalTransactionsQuery, r.database, r.tableName)
+	batch, err := r.client.Conn().PrepareBatch(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to prepare batch: %w", err)
+	}
+
+	for _, tx := range txs {
+		row, err := convertIntTxnRowToIntChTransactionRow(tx)
+		if err != nil {
+			return fmt.Errorf("failed to convert internal transaction row to row: %w", err)
+		}
+		err = batch.Append(
+			row.blockchainID,
+			row.evmChainID,
+			row.blockNumber,
+			row.blockTime,
+			row.timestampMs,
+			row.transactionHash,
+			row.transactionType,
+			row.fromAddress,
+			row.toAddress,
+			row.value,
+			row.gas,
+			row.gasUsed,
+			row.revert,
+			row.error,
+			row.revertReason,
+			row.input,
+			row.output,
+			row.callIndex,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to append internal transaction: %w", err)
+		}
+	}
+
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("failed to send batch: %w", err)
+	}
+
 	return nil
 }
 

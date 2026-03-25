@@ -310,23 +310,24 @@ func (p *CorethProcessor) processTransactions(
 ) error {
 	// TODO: Add batching (in a future PR)
 	totalLogs := 0
+	txs := make([]*evmrepo.TransactionRow, 0, len(block.Transactions))
 	for i, tx := range block.Transactions {
 		txRow, err := CorethTransactionToTransactionRow(tx, block, uint64(i))
 		if err != nil {
 			return NonRetryable(fmt.Errorf("failed to convert transaction %d: %w", i, err))
 		}
-
-		writeStart := time.Now()
-		err = p.txsRepo.WriteTransaction(ctx, txRow)
-		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawTransactionsTableName, err, writeStart)
-		if err != nil {
-			return classifyWriteErr(fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err))
-		}
-
+		txs = append(txs, txRow)
 		// Count logs from this transaction's receipt
 		if tx.Receipt != nil {
 			totalLogs += len(tx.Receipt.Logs)
 		}
+	}
+
+	writeStart := time.Now()
+	err := p.txsRepo.BatchInsertTransactions(ctx, txs)
+	recordClickHouseWrite(p.metrics, clickhouse.DefaultRawTransactionsTableName, err, writeStart)
+	if err != nil {
+		return classifyWriteErr(fmt.Errorf("failed to batch insert transactions: %w", err))
 	}
 
 	p.metrics.AddLogsProcessed(totalLogs)
@@ -353,6 +354,7 @@ func (p *CorethProcessor) processLogs(
 	block *kafkamsg.EVMBlock,
 ) error {
 	totalLogs := 0
+	var logs []*evmrepo.LogRow
 	for _, tx := range block.Transactions {
 		if tx.Receipt == nil || len(tx.Receipt.Logs) == 0 {
 			continue
@@ -363,15 +365,16 @@ func (p *CorethProcessor) processLogs(
 			if err != nil {
 				return NonRetryable(fmt.Errorf("failed to convert log: %w", err))
 			}
-
-			writeStart := time.Now()
-			err = p.logsRepo.WriteLog(ctx, logRow)
-			recordClickHouseWrite(p.metrics, clickhouse.DefaultRawLogsTableName, err, writeStart)
-			if err != nil {
-				return classifyWriteErr(fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err))
-			}
+			logs = append(logs, logRow)
 			totalLogs++
 		}
+	}
+
+	writeStart := time.Now()
+	err := p.logsRepo.BatchInsertLogs(ctx, logs)
+	recordClickHouseWrite(p.metrics, clickhouse.DefaultRawLogsTableName, err, writeStart)
+	if err != nil {
+		return classifyWriteErr(fmt.Errorf("failed to batch insert logs: %w", err))
 	}
 
 	var blockNumber uint64
