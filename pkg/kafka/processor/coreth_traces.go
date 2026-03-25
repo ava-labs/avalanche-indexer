@@ -89,7 +89,6 @@ func (p *CorethTracesProcessor) processTraces(
 	ctx context.Context,
 	blockTrace *kafkamsg.EVMBlockTrace,
 ) error {
-
 	var internalTransactions []*evmrepo.InternalTransactionRow
 	for _, rawTrace := range blockTrace.Traces {
 		txHash, traces, err := GetTracesForTransaction(rawTrace)
