@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
@@ -93,40 +94,28 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 		"hash", block.Hash,
 	)
 
-	// Persist block to ClickHouse if repository is configured
+	g, gctx := errgroup.WithContext(ctx)
+
 	if p.blocksRepo != nil {
-		blockRow, err := CorethBlockToBlockRow(&block)
-		if err != nil {
-			p.metrics.IncError("coreth_parse_error")
-			return NonRetryable(fmt.Errorf("failed to parse block for storage: %w", err))
-		}
-
-		writeStart := time.Now()
-		err = p.blocksRepo.WriteBlock(ctx, blockRow)
-		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawBlocksTableName, err, writeStart)
-		if err != nil {
-			p.metrics.IncError("coreth_write_error")
-			return classifyWriteErr(fmt.Errorf("failed to write block to ClickHouse: %w", err))
-		}
-
-		p.log.Debugw("successfully persisted block to ClickHouse",
-			"evmChainID", blockRow.EVMChainID,
-			"blockchainID", blockRow.BlockchainID,
-			"blockNumber", blockRow.BlockNumber,
-			"hash", blockRow.Hash,
-		)
+		g.Go(func() error {
+			return p.processBlock(gctx, &block)
+		})
 	}
 
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
-		if err := p.processTransactions(ctx, &block); err != nil {
-			return err
-		}
+		g.Go(func() error {
+			return p.processTransactions(gctx, &block)
+		})
 	}
 
 	if p.logsRepo != nil && len(block.Transactions) > 0 {
-		if err := p.processLogs(ctx, &block); err != nil {
-			return err
-		}
+		g.Go(func() error {
+			return p.processLogs(gctx, &block)
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	// Record successful end-to-end processing duration (block + transactions + logs)
@@ -300,6 +289,34 @@ func CorethTransactionToTransactionRow(
 	}
 
 	return txRow, nil
+}
+
+// processBlock converts a kafkamsg.EVMBlock to BlockRow and writes it to ClickHouse
+func (p *CorethProcessor) processBlock(
+	ctx context.Context,
+	block *kafkamsg.EVMBlock,
+) error {
+	blockRow, err := CorethBlockToBlockRow(block)
+	if err != nil {
+		p.metrics.IncError("coreth_parse_error")
+		return NonRetryable(fmt.Errorf("failed to parse block for storage: %w", err))
+	}
+
+	writeStart := time.Now()
+	err = p.blocksRepo.WriteBlock(ctx, blockRow)
+	recordClickHouseWrite(p.metrics, clickhouse.DefaultRawBlocksTableName, err, writeStart)
+	if err != nil {
+		p.metrics.IncError("coreth_write_error")
+		return classifyWriteErr(fmt.Errorf("failed to write block to ClickHouse: %w", err))
+	}
+
+	p.log.Debugw("successfully persisted block to ClickHouse",
+		"evmChainID", blockRow.EVMChainID,
+		"blockchainID", blockRow.BlockchainID,
+		"blockNumber", blockRow.BlockNumber,
+		"hash", blockRow.Hash,
+	)
+	return nil
 }
 
 // processTransactions converts transactions from a kafkamsg.CorethBlock to TransactionRow and writes
