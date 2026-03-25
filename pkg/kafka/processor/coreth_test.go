@@ -620,8 +620,8 @@ func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedTxs []*evmrepo.TransactionRow
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, tx *evmrepo.TransactionRow) error {
-			capturedTxs = append(capturedTxs, tx)
+		batchInsertTransactionsFunc: func(_ context.Context, txs []*evmrepo.TransactionRow) error {
+			capturedTxs = append(capturedTxs, txs...)
 			return nil
 		},
 	}
@@ -645,7 +645,7 @@ func TestProcess_TransactionsRepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write transaction failed")
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
+		batchInsertTransactionsFunc: func(_ context.Context, _ []*evmrepo.TransactionRow) error {
 			return expectedErr
 		},
 	}
@@ -713,7 +713,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 	logsRepoCalled := false
 
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
+		batchInsertTransactionsFunc: func(_ context.Context, _ []*evmrepo.TransactionRow) error {
 			txsRepoCalled = true
 			return nil
 		},
@@ -1040,7 +1040,7 @@ func TestProcess_TransactionWriteFatal(t *testing.T) {
 
 	chErr := &chdriver.Exception{Code: clickhouseErrUnknownTable, Message: "unknown table"}
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
+		batchInsertTransactionsFunc: func(_ context.Context, _ []*evmrepo.TransactionRow) error {
 			return chErr
 		},
 	}
