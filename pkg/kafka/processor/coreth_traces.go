@@ -121,6 +121,16 @@ func (p *CorethTracesProcessor) processTraces(
 		}
 	}
 
+	if len(internalTransactions) == 0 {
+		p.log.Debugw("no internal transactions to write",
+			"blockchainID", blockTrace.BlockchainID,
+			"evmChainID", blockTrace.EVMChainID,
+			"blockNumber", blockTrace.BlockNumber,
+			"traceCount", len(blockTrace.Traces),
+		)
+		return nil
+	}
+
 	err := p.internalTransactionsRepo.BatchInsertInternalTransactions(ctx, internalTransactions)
 	if err != nil {
 		return classifyWriteErr(fmt.Errorf("failed to batch insert internal transactions: %w", err))

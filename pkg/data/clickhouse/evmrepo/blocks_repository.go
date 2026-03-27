@@ -17,7 +17,6 @@ import (
 type Blocks interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteBlock(ctx context.Context, block *BlockRow) error
-	BatchInsertBlocks(ctx context.Context, blocks []*BlockRow) error
 	DeleteBlocks(ctx context.Context, chainID uint64) error
 }
 
