@@ -43,23 +43,24 @@ type logs struct {
 	tableName string
 }
 
+// chLogRow holds ClickHouse-ready values; `ch` tags match batch INSERT columns for AppendStruct.
 type chLogRow struct {
-	blockchainID interface{}
-	evmChainID   *big.Int
-	blockNumber  uint64
-	blockHash    string
-	blockTime    time.Time
-	timestampMs  uint64
-	txHash       string
-	txIndex      uint32
-	address      string
-	topic0       *string
-	topic1       *string
-	topic2       *string
-	topic3       *string
-	data         string
-	logIndex     uint32
-	removed      bool
+	BlockchainID interface{} `ch:"blockchain_id"`
+	EVMChainID   *big.Int    `ch:"evm_chain_id"`
+	BlockNumber  uint64      `ch:"block_number"`
+	BlockHash    string      `ch:"block_hash"`
+	BlockTime    time.Time   `ch:"block_time"`
+	TimestampMs  uint64      `ch:"timestamp_ms"`
+	TxHash       string      `ch:"tx_hash"`
+	TxIndex      uint32      `ch:"tx_index"`
+	Address      string      `ch:"address"`
+	Topic0       *string     `ch:"topic0"`
+	Topic1       *string     `ch:"topic1"`
+	Topic2       *string     `ch:"topic2"`
+	Topic3       *string     `ch:"topic3"`
+	Data         string      `ch:"data"`
+	LogIndex     uint32      `ch:"log_index"`
+	Removed      bool        `ch:"removed"`
 }
 
 func convertLogRowToChLogRow(log *LogRow) (*chLogRow, error) {
@@ -116,22 +117,22 @@ func convertLogRowToChLogRow(log *LogRow) (*chLogRow, error) {
 	}
 
 	return &chLogRow{
-		blockchainID: blockchainID,
-		evmChainID:   evmChainIDBigInt,
-		blockNumber:  log.BlockNumber,
-		blockHash:    string(blockHashBytes[:]),
-		blockTime:    log.BlockTime,
-		timestampMs:  log.TimestampMs,
-		txHash:       string(txHashBytes[:]),
-		txIndex:      log.TxIndex,
-		address:      string(addressBytes[:]),
-		topic0:       topic0,
-		topic1:       topic1,
-		topic2:       topic2,
-		topic3:       topic3,
-		data:         string(log.Data),
-		logIndex:     log.LogIndex,
-		removed:      log.Removed,
+		BlockchainID: blockchainID,
+		EVMChainID:   evmChainIDBigInt,
+		BlockNumber:  log.BlockNumber,
+		BlockHash:    string(blockHashBytes[:]),
+		BlockTime:    log.BlockTime,
+		TimestampMs:  log.TimestampMs,
+		TxHash:       string(txHashBytes[:]),
+		TxIndex:      log.TxIndex,
+		Address:      string(addressBytes[:]),
+		Topic0:       topic0,
+		Topic1:       topic1,
+		Topic2:       topic2,
+		Topic3:       topic3,
+		Data:         string(log.Data),
+		LogIndex:     log.LogIndex,
+		Removed:      log.Removed,
 	}, nil
 }
 
@@ -185,22 +186,22 @@ func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
-		row.blockchainID,
+		row.BlockchainID,
 		evmChainIDStr,
-		row.blockNumber,
-		row.blockHash,
-		row.blockTime,
-		row.timestampMs,
-		row.txHash,
-		row.txIndex,
-		row.address,
-		row.topic0,
-		row.topic1,
-		row.topic2,
-		row.topic3,
-		row.data,
-		row.logIndex,
-		row.removed,
+		row.BlockNumber,
+		row.BlockHash,
+		row.BlockTime,
+		row.TimestampMs,
+		row.TxHash,
+		row.TxIndex,
+		row.Address,
+		row.Topic0,
+		row.Topic1,
+		row.Topic2,
+		row.Topic3,
+		row.Data,
+		row.LogIndex,
+		row.Removed,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write log of tx %s on index %d: %w", log.TxHash, log.LogIndex, err)
@@ -224,26 +225,7 @@ func (r *logs) BatchInsertLogs(ctx context.Context, logs []*LogRow) error {
 		if err != nil {
 			return fmt.Errorf("failed to convert log row of tx %s on index %d to ch row: %w", log.TxHash, log.LogIndex, err)
 		}
-
-		err = batch.Append(
-			row.blockchainID,
-			row.evmChainID,
-			row.blockNumber,
-			row.blockHash,
-			row.blockTime,
-			row.timestampMs,
-			row.txHash,
-			row.txIndex,
-			row.address,
-			row.topic0,
-			row.topic1,
-			row.topic2,
-			row.topic3,
-			row.data,
-			row.logIndex,
-			row.removed,
-		)
-		if err != nil {
+		if err := batch.AppendStruct(row); err != nil {
 			return fmt.Errorf("failed to append log of tx %s on index %d: %w", log.TxHash, log.LogIndex, err)
 		}
 	}

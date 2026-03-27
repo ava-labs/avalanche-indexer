@@ -43,27 +43,29 @@ type transactions struct {
 	tableName string
 }
 
+// chTransactionRow holds ClickHouse-ready values for INSERT / batch. Exported fields and
+// `ch` tags match column names so batch.AppendStruct can bind rows (see clickhouse-go structMap).
 type chTransactionRow struct {
-	blockchainID     interface{}
-	evmChainID       *big.Int
-	blockNumber      uint64
-	blockHash        string
-	blockTime        time.Time
-	timestampMs      uint64
-	hash             string
-	from             string
-	to               interface{}
-	nonce            uint64
-	value            *big.Int
-	gas              uint64
-	gasPrice         *big.Int
-	maxFeePerGas     *big.Int
-	maxPriorityFee   *big.Int
-	input            string
-	txType           uint8
-	transactionIndex uint64
-	success          uint8
-	numLogs          uint32
+	BlockchainID     interface{} `ch:"blockchain_id"`
+	EVMChainID       *big.Int    `ch:"evm_chain_id"`
+	BlockNumber      uint64      `ch:"block_number"`
+	BlockHash        string      `ch:"block_hash"`
+	BlockTime        time.Time   `ch:"block_time"`
+	TimestampMs      uint64      `ch:"timestamp_ms"`
+	Hash             string      `ch:"hash"`
+	FromAddress      string      `ch:"from_address"`
+	ToAddress        interface{} `ch:"to_address"`
+	Nonce            uint64      `ch:"nonce"`
+	Value            *big.Int    `ch:"value"`
+	Gas              uint64      `ch:"gas"`
+	GasPrice         *big.Int    `ch:"gas_price"`
+	MaxFeePerGas     *big.Int    `ch:"max_fee_per_gas"`
+	MaxPriorityFee   *big.Int    `ch:"max_priority_fee"`
+	Input            string      `ch:"input"`
+	TxType           uint8       `ch:"type"`
+	TransactionIndex uint64      `ch:"transaction_index"`
+	Success          uint8       `ch:"success"`
+	NumLogs          uint32      `ch:"num_logs"`
 }
 
 func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransactionRow, error) {
@@ -120,26 +122,26 @@ func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransaction
 	}
 
 	return &chTransactionRow{
-		blockchainID:     blockchainID,
-		evmChainID:       evmChainIDBigInt,
-		blockNumber:      tx.BlockNumber,
-		blockHash:        string(blockHashBytes[:]),
-		blockTime:        tx.BlockTime,
-		timestampMs:      tx.TimestampMs,
-		hash:             string(hashBytes[:]),
-		from:             string(fromBytes[:]),
-		to:               toBytes,
-		nonce:            tx.Nonce,
-		value:            valueBigInt,
-		gas:              tx.Gas,
-		gasPrice:         gasPriceBigInt,
-		maxFeePerGas:     tx.MaxFeePerGas,
-		maxPriorityFee:   tx.MaxPriorityFee,
-		input:            tx.Input,
-		txType:           tx.Type,
-		transactionIndex: tx.TransactionIndex,
-		success:          tx.Success,
-		numLogs:          tx.NumLogs,
+		BlockchainID:     blockchainID,
+		EVMChainID:       evmChainIDBigInt,
+		BlockNumber:      tx.BlockNumber,
+		BlockHash:        string(blockHashBytes[:]),
+		BlockTime:        tx.BlockTime,
+		TimestampMs:      tx.TimestampMs,
+		Hash:             string(hashBytes[:]),
+		FromAddress:      string(fromBytes[:]),
+		ToAddress:        toBytes,
+		Nonce:            tx.Nonce,
+		Value:            valueBigInt,
+		Gas:              tx.Gas,
+		GasPrice:         gasPriceBigInt,
+		MaxFeePerGas:     tx.MaxFeePerGas,
+		MaxPriorityFee:   tx.MaxPriorityFee,
+		Input:            tx.Input,
+		TxType:           tx.Type,
+		TransactionIndex: tx.TransactionIndex,
+		Success:          tx.Success,
+		NumLogs:          tx.NumLogs,
 	}, nil
 }
 
@@ -202,40 +204,40 @@ func (r *transactions) WriteTransaction(ctx context.Context, tx *TransactionRow)
 	}
 
 	var maxFeePerGasStr interface{}
-	if row.maxFeePerGas != nil {
-		maxFeePerGasStr = row.maxFeePerGas.String()
+	if row.MaxFeePerGas != nil {
+		maxFeePerGasStr = row.MaxFeePerGas.String()
 	} else {
 		maxFeePerGasStr = nil
 	}
 
 	var maxPriorityFeeStr interface{}
-	if row.maxPriorityFee != nil {
-		maxPriorityFeeStr = row.maxPriorityFee.String()
+	if row.MaxPriorityFee != nil {
+		maxPriorityFeeStr = row.MaxPriorityFee.String()
 	} else {
 		maxPriorityFeeStr = nil
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
-		row.blockchainID,
+		row.BlockchainID,
 		evmChainIDStr,
-		row.blockNumber,
-		row.blockHash,
-		row.blockTime,
-		row.timestampMs,
-		row.hash,
-		row.from,
-		row.to,
-		row.nonce,
+		row.BlockNumber,
+		row.BlockHash,
+		row.BlockTime,
+		row.TimestampMs,
+		row.Hash,
+		row.FromAddress,
+		row.ToAddress,
+		row.Nonce,
 		valueStr,
-		row.gas,
+		row.Gas,
 		gasPriceStr,
 		maxFeePerGasStr,
 		maxPriorityFeeStr,
-		row.input,
-		row.txType,
-		row.transactionIndex,
-		row.success,
-		row.numLogs,
+		row.Input,
+		row.TxType,
+		row.TransactionIndex,
+		row.Success,
+		row.NumLogs,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.Hash, err)
@@ -257,29 +259,7 @@ func (r *transactions) BatchInsertTransactions(ctx context.Context, txs []*Trans
 		if err != nil {
 			return fmt.Errorf("failed to convert transaction row of block %s and txHash %s to row: %w", tx.BlockHash, tx.Hash, err)
 		}
-		err = batch.Append(
-			row.blockchainID,
-			row.evmChainID,
-			row.blockNumber,
-			row.blockHash,
-			row.blockTime,
-			row.timestampMs,
-			row.hash,
-			row.from,
-			row.to,
-			row.nonce,
-			row.value,
-			row.gas,
-			row.gasPrice,
-			row.maxFeePerGas,
-			row.maxPriorityFee,
-			row.input,
-			row.txType,
-			row.transactionIndex,
-			row.success,
-			row.numLogs,
-		)
-		if err != nil {
+		if err := batch.AppendStruct(row); err != nil {
 			return fmt.Errorf("failed to append transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.Hash, err)
 		}
 	}

@@ -43,37 +43,37 @@ type blocks struct {
 }
 
 type chBlockRow struct {
-	hashBytes                  string
-	parentHashBytes            string
-	minerBytes                 string
-	stateRootBytes             string
-	transactionsRootBytes      string
-	receiptsRootBytes          string
-	extDataHashBytes           string
-	mixHashBytes               string
-	sha3UnclesBytes            string
-	unclesStrings              []string
-	nonceBytes                 interface{}
-	parentBeaconBlockRootBytes interface{}
-	blockchainID               interface{}
-	evmChainID                 *big.Int
-	blockNumber                uint64
-	difficulty                 *big.Int
-	totalDifficulty            *big.Int
-	size                       uint64
-	gasLimit                   uint64
-	gasUsed                    uint64
-	baseFeePerGas              *big.Int
-	blockGasCost               *big.Int
-	blobGasUsed                uint64
-	excessBlobGas              uint64
-	minDelayExcess             uint64
-	numTxns                    uint32
-	blockExtraData             string
-	extDataGasUsed             uint32
-	extraData                  string
-	timestampMs                uint64
-	blockTime                  time.Time
+	BlockchainID          interface{} `ch:"blockchain_id"`
+	EVMChainID            *big.Int    `ch:"evm_chain_id"`
+	BlockNumber           uint64      `ch:"block_number"`
+	Hash                  string      `ch:"hash"`
+	ParentHash            string      `ch:"parent_hash"`
+	BlockTime             time.Time   `ch:"block_time"`
+	TimestampMs           uint64      `ch:"timestamp_ms"`
+	Miner                 string      `ch:"miner"`
+	Difficulty            *big.Int    `ch:"difficulty"`
+	TotalDifficulty       *big.Int    `ch:"total_difficulty"`
+	Size                  uint64      `ch:"size"`
+	GasLimit              uint64      `ch:"gas_limit"`
+	GasUsed               uint64      `ch:"gas_used"`
+	BaseFeePerGas         *big.Int    `ch:"base_fee_per_gas"`
+	BlockGasCost          *big.Int    `ch:"block_gas_cost"`
+	StateRoot             string      `ch:"state_root"`
+	TransactionsRoot      string      `ch:"transactions_root"`
+	ReceiptsRoot          string      `ch:"receipts_root"`
+	ExtraData             string      `ch:"extra_data"`
+	BlockExtraData        string      `ch:"block_extra_data"`
+	ExtDataHash           string      `ch:"ext_data_hash"`
+	ExtDataGasUsed        uint32      `ch:"ext_data_gas_used"`
+	MixHash               string      `ch:"mix_hash"`
+	Nonce                 interface{} `ch:"nonce"`
+	Sha3Uncles            string      `ch:"sha3_uncles"`
+	Uncles                []string    `ch:"uncles"`
+	BlobGasUsed           uint64      `ch:"blob_gas_used"`
+	ExcessBlobGas         uint64      `ch:"excess_blob_gas"`
+	ParentBeaconBlockRoot interface{} `ch:"parent_beacon_block_root"`
+	MinDelayExcess        uint64      `ch:"min_delay_excess"`
+	NumTxns               uint32      `ch:"num_txns"`
 }
 
 // NewBlocks creates a new raw blocks repository and initializes the table
@@ -237,37 +237,37 @@ func convertBlockRowToChBlockRow(block *BlockRow) (*chBlockRow, error) {
 	}
 
 	return &chBlockRow{
-		hashBytes:                  string(hashBytes[:]),
-		parentHashBytes:            string(parentHashBytes[:]),
-		minerBytes:                 string(minerBytes[:]),
-		stateRootBytes:             string(stateRootBytes[:]),
-		transactionsRootBytes:      string(transactionsRootBytes[:]),
-		receiptsRootBytes:          string(receiptsRootBytes[:]),
-		extDataHashBytes:           string(extDataHashBytes[:]),
-		mixHashBytes:               string(mixHashBytes[:]),
-		sha3UnclesBytes:            string(sha3UnclesBytes[:]),
-		unclesStrings:              unclesStrings,
-		nonceBytes:                 nonceBytes,
-		parentBeaconBlockRootBytes: parentBeaconBlockRootBytes,
-		blockchainID:               blockchainID,
-		evmChainID:                 evmChainIDBigInt,
-		blockNumber:                blockNumber,
-		difficulty:                 difficultyBigInt,
-		totalDifficulty:            totalDifficultyBigInt,
-		size:                       block.Size,
-		gasLimit:                   block.GasLimit,
-		gasUsed:                    block.GasUsed,
-		baseFeePerGas:              baseFeeBigInt,
-		blockGasCost:               blockGasCostBigInt,
-		blobGasUsed:                block.BlobGasUsed,
-		excessBlobGas:              block.ExcessBlobGas,
-		minDelayExcess:             block.MinDelayExcess,
-		numTxns:                    block.NumTxns,
-		blockExtraData:             block.BlockExtraData,
-		extDataGasUsed:             block.ExtDataGasUsed,
-		extraData:                  block.ExtraData,
-		timestampMs:                block.TimestampMs,
-		blockTime:                  block.BlockTime,
+		Hash:                  string(hashBytes[:]),
+		ParentHash:            string(parentHashBytes[:]),
+		Miner:                 string(minerBytes[:]),
+		StateRoot:             string(stateRootBytes[:]),
+		TransactionsRoot:      string(transactionsRootBytes[:]),
+		ReceiptsRoot:          string(receiptsRootBytes[:]),
+		ExtDataHash:           string(extDataHashBytes[:]),
+		MixHash:               string(mixHashBytes[:]),
+		Sha3Uncles:            string(sha3UnclesBytes[:]),
+		Uncles:                unclesStrings,
+		Nonce:                 nonceBytes,
+		ParentBeaconBlockRoot: parentBeaconBlockRootBytes,
+		BlockchainID:          blockchainID,
+		EVMChainID:            evmChainIDBigInt,
+		BlockNumber:           blockNumber,
+		Difficulty:            difficultyBigInt,
+		TotalDifficulty:       totalDifficultyBigInt,
+		Size:                  block.Size,
+		GasLimit:              block.GasLimit,
+		GasUsed:               block.GasUsed,
+		BaseFeePerGas:         baseFeeBigInt,
+		BlockGasCost:          blockGasCostBigInt,
+		BlobGasUsed:           block.BlobGasUsed,
+		ExcessBlobGas:         block.ExcessBlobGas,
+		MinDelayExcess:        block.MinDelayExcess,
+		NumTxns:               block.NumTxns,
+		BlockExtraData:        block.BlockExtraData,
+		ExtDataGasUsed:        block.ExtDataGasUsed,
+		ExtraData:             block.ExtraData,
+		TimestampMs:           block.TimestampMs,
+		BlockTime:             block.BlockTime,
 	}, nil
 }
 
@@ -308,37 +308,37 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
-		row.blockchainID,
+		row.BlockchainID,
 		evmChainIDStr,
-		row.blockNumber,
-		row.hashBytes,
-		row.parentHashBytes,
-		row.blockTime,
-		row.timestampMs,
-		row.minerBytes,
+		row.BlockNumber,
+		row.Hash,
+		row.ParentHash,
+		row.BlockTime,
+		row.TimestampMs,
+		row.Miner,
 		difficultyStr,
 		totalDifficultyStr,
-		row.size,
-		row.gasLimit,
-		row.gasUsed,
+		row.Size,
+		row.GasLimit,
+		row.GasUsed,
 		baseFeeStr,
 		blockGasCostStr,
-		row.stateRootBytes,
-		row.transactionsRootBytes,
-		row.receiptsRootBytes,
-		row.extraData,
-		row.blockExtraData,
-		row.extDataHashBytes,
-		row.extDataGasUsed,
-		row.mixHashBytes,
-		row.nonceBytes,
-		row.sha3UnclesBytes,
-		row.unclesStrings,
-		row.blobGasUsed,
-		row.excessBlobGas,
-		row.parentBeaconBlockRootBytes,
-		row.minDelayExcess,
-		row.numTxns,
+		row.StateRoot,
+		row.TransactionsRoot,
+		row.ReceiptsRoot,
+		row.ExtraData,
+		row.BlockExtraData,
+		row.ExtDataHash,
+		row.ExtDataGasUsed,
+		row.MixHash,
+		row.Nonce,
+		row.Sha3Uncles,
+		row.Uncles,
+		row.BlobGasUsed,
+		row.ExcessBlobGas,
+		row.ParentBeaconBlockRoot,
+		row.MinDelayExcess,
+		row.NumTxns,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write block of block %d: %w", block.BlockNumber, err)
@@ -371,40 +371,7 @@ func (r *blocks) BatchInsertBlocks(ctx context.Context, blocks []*BlockRow) erro
 		if err != nil {
 			return fmt.Errorf("failed to convert block row of block %d to ch row: %w", block.BlockNumber, err)
 		}
-		err = batch.Append(
-			row.blockchainID,
-			row.evmChainID,
-			row.blockNumber,
-			row.hashBytes,
-			row.parentHashBytes,
-			row.blockTime,
-			row.timestampMs,
-			row.minerBytes,
-			row.difficulty,
-			row.totalDifficulty,
-			row.size,
-			row.gasLimit,
-			row.gasUsed,
-			row.baseFeePerGas,
-			row.blockGasCost,
-			row.stateRootBytes,
-			row.transactionsRootBytes,
-			row.receiptsRootBytes,
-			row.extraData,
-			row.blockExtraData,
-			row.extDataHashBytes,
-			row.extDataGasUsed,
-			row.mixHashBytes,
-			row.nonceBytes,
-			row.sha3UnclesBytes,
-			row.unclesStrings,
-			row.blobGasUsed,
-			row.excessBlobGas,
-			row.parentBeaconBlockRootBytes,
-			row.minDelayExcess,
-			row.numTxns,
-		)
-		if err != nil {
+		if err := batch.AppendStruct(row); err != nil {
 			return fmt.Errorf("failed to append block %d: %w", block.BlockNumber, err)
 		}
 	}
