@@ -14,24 +14,26 @@ var (
 
 // TransactionRow represents a transaction row in the database
 type TransactionRow struct {
-	BlockchainID     *string
-	EVMChainID       *big.Int // UInt256 in ClickHouse
-	BlockNumber      uint64
-	BlockHash        string
-	BlockTime        time.Time
-	TimestampMs      uint64
-	Hash             string
-	From             string
-	To               *string // Nullable
-	Nonce            uint64
-	Value            *big.Int // UInt256 in ClickHouse
-	Gas              uint64
-	GasPrice         *big.Int // UInt256 in ClickHouse
-	MaxFeePerGas     *big.Int // Nullable, UInt256 in ClickHouse
-	MaxPriorityFee   *big.Int // Nullable, UInt256 in ClickHouse
-	Input            string
-	Type             uint8
-	TransactionIndex uint64
-	Success          uint8 // 1 for success, 0 for failure (from transaction receipt)
-	NumLogs          uint32
+	BlockchainID      *string
+	EVMChainID        *big.Int // UInt256 in ClickHouse
+	BlockNumber       uint64
+	BlockHash         string
+	BlockTime         time.Time
+	TimestampMs       uint64
+	Hash              string
+	From              string
+	To                *string // Nullable
+	Nonce             uint64
+	Value             *big.Int // UInt256 in ClickHouse
+	Gas               uint64
+	GasUsed           uint64
+	EffectiveGasPrice *big.Int // UInt256 in ClickHouse
+	GasPrice          *big.Int // UInt256 in ClickHouse
+	MaxFeePerGas      *big.Int // Nullable, UInt256 in ClickHouse
+	MaxPriorityFee    *big.Int // Nullable, UInt256 in ClickHouse
+	Input             string
+	Type              uint8
+	TransactionIndex  uint64
+	Success           uint8 // 1 for success, 0 for failure (from transaction receipt)
+	NumLogs           uint32
 }

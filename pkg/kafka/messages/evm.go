@@ -140,7 +140,7 @@ type EVMTransaction struct {
 	To             string        `json:"to"`
 	Nonce          uint64        `json:"nonce"`
 	Value          *big.Int      `json:"value"`
-	Gas            uint64        `json:"gas"`
+	Gas            uint64        `json:"gas"` // Gas limit
 	GasPrice       *big.Int      `json:"gasPrice"`
 	MaxFeePerGas   *big.Int      `json:"maxFeePerGas"`
 	MaxPriorityFee *big.Int      `json:"maxPriorityFeePerGas"`
@@ -157,10 +157,19 @@ type EVMWithdrawal struct {
 }
 
 type EVMTxReceipt struct {
-	ContractAddress common.Address `json:"contractAddress"`
-	Status          uint64         `json:"status"`
-	GasUsed         uint64         `json:"gasUsed"`
-	Logs            []*EVMLog      `json:"logs"`
+	ContractAddress   common.Address `json:"contractAddress"`
+	Status            uint64         `json:"status"`
+	GasUsed           uint64         `json:"gasUsed"`
+	EffectiveGasPrice *big.Int       `json:"effectiveGasPrice"`
+	Logs              []*EVMLog      `json:"logs"`
+}
+
+type evmTxReceiptJSON struct {
+	ContractAddress   common.Address  `json:"contractAddress"`
+	Status            uint64          `json:"status"`
+	GasUsed           uint64          `json:"gasUsed"`
+	EffectiveGasPrice json.RawMessage `json:"effectiveGasPrice,omitempty"`
+	Logs              []*EVMLog       `json:"logs"`
 }
 
 type EVMLog struct {
@@ -464,10 +473,11 @@ func EVMWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*EVMWithdr
 
 func EVMTxReceiptFromLibevm(tx *libevmtypes.Receipt) *EVMTxReceipt {
 	return &EVMTxReceipt{
-		ContractAddress: tx.ContractAddress,
-		Status:          tx.Status,
-		GasUsed:         tx.GasUsed,
-		Logs:            EVMLogsFromLibevm(tx.Logs),
+		ContractAddress:   tx.ContractAddress,
+		Status:            tx.Status,
+		GasUsed:           tx.GasUsed,
+		EffectiveGasPrice: tx.EffectiveGasPrice,
+		Logs:              EVMLogsFromLibevm(tx.Logs),
 	}
 }
 
@@ -626,6 +636,36 @@ func (t *EVMTransaction) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if t.MaxPriorityFee, err = parseBigIntFromRaw(alias.MaxPriorityFee, "maxPriorityFeePerGas"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *EVMTxReceipt) MarshalJSON() ([]byte, error) {
+	alias := evmTxReceiptJSON{
+		ContractAddress:   r.ContractAddress,
+		Status:            r.Status,
+		GasUsed:           r.GasUsed,
+		EffectiveGasPrice: bigIntToRawJSON(r.EffectiveGasPrice),
+		Logs:              r.Logs,
+	}
+	return jsonIter.Marshal(alias)
+}
+
+func (r *EVMTxReceipt) UnmarshalJSON(data []byte) error {
+	var alias evmTxReceiptJSON
+	if err := jsonIter.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+
+	r.ContractAddress = alias.ContractAddress
+	r.Status = alias.Status
+	r.GasUsed = alias.GasUsed
+	r.Logs = alias.Logs
+
+	var err error
+	if r.EffectiveGasPrice, err = parseBigIntFromRaw(alias.EffectiveGasPrice, "effectiveGasPrice"); err != nil {
 		return err
 	}
 

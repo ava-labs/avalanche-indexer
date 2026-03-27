@@ -58,9 +58,11 @@ func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
-			tx.GasPrice.String(),       // string: UInt256
-			tx.MaxFeePerGas.String(),   // string: UInt256 (nullable)
-			tx.MaxPriorityFee.String(), // string: UInt256 (nullable)
+			tx.GasUsed,
+			tx.EffectiveGasPrice.String(), // string: UInt256
+			tx.GasPrice.String(),          // string: UInt256
+			tx.MaxFeePerGas.String(),      // string: UInt256 (nullable)
+			tx.MaxPriorityFee.String(),    // string: UInt256 (nullable)
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
@@ -119,9 +121,11 @@ func TestTransactionsRepository_WriteTransaction_Error(t *testing.T) {
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
-			tx.GasPrice.String(),       // string: UInt256
-			tx.MaxFeePerGas.String(),   // string: UInt256 (nullable)
-			tx.MaxPriorityFee.String(), // string: UInt256 (nullable)
+			tx.GasUsed,
+			tx.EffectiveGasPrice.String(), // string: UInt256
+			tx.GasPrice.String(),          // string: UInt256
+			tx.MaxFeePerGas.String(),      // string: UInt256 (nullable)
+			tx.MaxPriorityFee.String(),    // string: UInt256 (nullable)
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
@@ -179,9 +183,11 @@ func TestTransactionsRepository_WriteTransaction_WithNullTo(t *testing.T) {
 			tx.Nonce,
 			tx.Value.String(), // string: UInt256
 			tx.Gas,
-			tx.GasPrice.String(),       // string: UInt256
-			tx.MaxFeePerGas.String(),   // string: UInt256 (nullable)
-			tx.MaxPriorityFee.String(), // string: UInt256 (nullable)
+			tx.GasUsed,
+			tx.EffectiveGasPrice.String(), // string: UInt256
+			tx.GasPrice.String(),          // string: UInt256
+			tx.MaxFeePerGas.String(),      // string: UInt256 (nullable)
+			tx.MaxPriorityFee.String(),    // string: UInt256 (nullable)
 			tx.Input,
 			tx.Type,
 			tx.TransactionIndex,
@@ -255,24 +261,26 @@ func createTestTransaction() *TransactionRow {
 
 	blockchainID := testBlockchainID
 	return &TransactionRow{
-		BlockchainID:     &blockchainID,
-		EVMChainID:       big.NewInt(0),
-		BlockNumber:      1647,
-		BlockHash:        blockHash,
-		BlockTime:        time.Unix(1604768510, 0).UTC(),
-		TimestampMs:      1604768510000,
-		Hash:             txHash,
-		From:             from,
-		To:               &to,
-		Nonce:            42,
-		Value:            big.NewInt(1000000000000000000), // 1 ETH in wei
-		Gas:              21000,
-		GasPrice:         big.NewInt(470000000000), // 470 gwei
-		MaxFeePerGas:     big.NewInt(1000000000),
-		MaxPriorityFee:   big.NewInt(2000000000),
-		Input:            "0x",
-		Type:             2, // EIP-1559 transaction
-		TransactionIndex: 0,
-		Success:          1, // Default to success for tests
+		BlockchainID:      &blockchainID,
+		EVMChainID:        big.NewInt(0),
+		BlockNumber:       1647,
+		BlockHash:         blockHash,
+		BlockTime:         time.Unix(1604768510, 0).UTC(),
+		TimestampMs:       1604768510000,
+		Hash:              txHash,
+		From:              from,
+		To:                &to,
+		Nonce:             42,
+		Value:             big.NewInt(1000000000000000000), // 1 ETH in wei
+		Gas:               21000,
+		GasUsed:           11000,
+		EffectiveGasPrice: big.NewInt(470000000000), // 470 gwei
+		GasPrice:          big.NewInt(470000000000), // 470 gwei
+		MaxFeePerGas:      big.NewInt(1000000000),
+		MaxPriorityFee:    big.NewInt(2000000000),
+		Input:             "0x",
+		Type:              2, // EIP-1559 transaction
+		TransactionIndex:  0,
+		Success:           1, // Default to success for tests
 	}
 }
