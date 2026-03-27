@@ -289,6 +289,13 @@ func createTestBlocks(evmChainID uint64, blockchainID string, count int) []messa
 				GasPrice: big.NewInt(25000000000),
 				Input:    "0x",
 				Type:     libevmtypes.LegacyTxType,
+				Receipt: &messages.EVMTxReceipt{
+					Status:            1,
+					GasUsed:           11000,
+					EffectiveGasPrice: big.NewInt(470000000000), // 470 gwei
+					Logs:              make([]*messages.EVMLog, 0),
+					ContractAddress:   common.HexToAddress(fmt.Sprintf("0x%040d", 3)),
+				},
 			}
 			txs[j] = tx
 		}
@@ -986,6 +993,13 @@ func createTestBlocksStartingFrom(evmChainID uint64, blockchainID string, startN
 				GasPrice: big.NewInt(25000000000),
 				Input:    "0x",
 				Type:     libevmtypes.LegacyTxType,
+				Receipt: &messages.EVMTxReceipt{
+					Status:            1,
+					GasUsed:           11000,
+					EffectiveGasPrice: big.NewInt(470000000000), // 470 gwei
+					Logs:              make([]*messages.EVMLog, 0),
+					ContractAddress:   common.HexToAddress(fmt.Sprintf("0x%040d", 3)),
+				},
 			}
 			txs[j] = tx
 		}
@@ -1043,6 +1057,13 @@ func createTestBlocksWithTransactions(evmChainID uint64, blockchainID string, bl
 				GasPrice: big.NewInt(25000000000),
 				Input:    "0x",
 				Type:     libevmtypes.LegacyTxType,
+				Receipt: &messages.EVMTxReceipt{
+					Status:            1,
+					GasUsed:           11000,
+					EffectiveGasPrice: big.NewInt(470000000000), // 470 gwei
+					Logs:              make([]*messages.EVMLog, 0),
+					ContractAddress:   common.HexToAddress(fmt.Sprintf("0x%040d", 3)),
+				},
 			}
 			txs[j] = tx
 		}
