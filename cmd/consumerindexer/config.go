@@ -87,9 +87,10 @@ type Config struct {
 	KafkaSASL                      kafka.SASLConfig
 
 	// Consumer retry policy settings
-	ConsumerRetryMaxRetries int
-	ConsumerRetryBaseDelay  time.Duration
-	ConsumerRetryMaxDelay   time.Duration
+	ConsumerRetryMaxRetries     int
+	ConsumerRetryBaseDelay      time.Duration
+	ConsumerRetryMaxDelay       time.Duration
+	EnableClickHouseBatchWrites bool
 
 	// DLQ consumer settings
 	EnableDLQConsumer               bool
@@ -211,6 +212,7 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		Environment:                   c.String("environment"),
 		Region:                        c.String("region"),
 		CloudProvider:                 c.String("cloud-provider"),
+		EnableClickHouseBatchWrites:   c.Bool("enable-clickhouse-batch-writes"),
 	}, nil
 }
 

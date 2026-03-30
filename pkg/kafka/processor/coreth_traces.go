@@ -25,6 +25,7 @@ type CorethTracesProcessor struct {
 	log                      *zap.SugaredLogger
 	internalTransactionsRepo evmrepo.InternalTransactions
 	metrics                  *metrics.Metrics
+	enableBatchWrites        bool
 }
 
 // Compile-time check that CorethTracesProcessor implements Processor.
@@ -33,12 +34,14 @@ var _ Processor = (*CorethTracesProcessor)(nil)
 func NewCorethTracesProcessor(
 	log *zap.SugaredLogger,
 	internalTransactionsRepo evmrepo.InternalTransactions,
+	enableBatchWrites bool,
 	metrics *metrics.Metrics,
 ) *CorethTracesProcessor {
 	return &CorethTracesProcessor{
 		log:                      log,
 		internalTransactionsRepo: internalTransactionsRepo,
 		metrics:                  metrics,
+		enableBatchWrites:        enableBatchWrites,
 	}
 }
 
@@ -131,9 +134,18 @@ func (p *CorethTracesProcessor) processTraces(
 		return nil
 	}
 
-	err := p.internalTransactionsRepo.BatchInsertInternalTransactions(ctx, internalTransactions)
-	if err != nil {
-		return classifyWriteErr(fmt.Errorf("failed to batch insert internal transactions: %w", err))
+	if p.enableBatchWrites {
+		err := p.internalTransactionsRepo.BatchInsertInternalTransactions(ctx, internalTransactions)
+		if err != nil {
+			return classifyWriteErr(fmt.Errorf("failed to batch insert internal transactions: %w", err))
+		}
+	} else {
+		for _, tx := range internalTransactions {
+			err := p.internalTransactionsRepo.WriteInternalTransaction(ctx, tx)
+			if err != nil {
+				return classifyWriteErr(fmt.Errorf("failed to write internal transaction: %w", err))
+			}
+		}
 	}
 
 	p.log.Debugw("successfully wrote traces",

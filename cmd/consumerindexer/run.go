@@ -80,6 +80,7 @@ func run(c *cli.Context) error {
 		"kafkaTopicReplicationFactor", cfg.KafkaTopicReplicationFactor,
 		"kafkaDLQTopicNumPartitions", cfg.KafkaDLQTopicNumPartitions,
 		"kafkaDLQTopicReplicationFactor", cfg.KafkaDLQTopicReplicationFactor,
+		"enableClickHouseBatchWrites", cfg.EnableClickHouseBatchWrites,
 	)
 
 	// Initialize Prometheus metrics with labels for multi-instance filtering.
@@ -305,13 +306,13 @@ func newProcessor(
 		if err != nil {
 			return nil, fmt.Errorf("logs repository: %w", err)
 		}
-		return processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, m), nil
+		return processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, cfg.EnableClickHouseBatchWrites, m), nil
 	case tracesMode:
 		internalTxRepo, err := evmrepo.NewInternalTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.InternalTransactionsTableName)
 		if err != nil {
 			return nil, fmt.Errorf("internal transactions repository: %w", err)
 		}
-		return processor.NewCorethTracesProcessor(log, internalTxRepo, m), nil
+		return processor.NewCorethTracesProcessor(log, internalTxRepo, cfg.EnableClickHouseBatchWrites, m), nil
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", mode)
 	}
