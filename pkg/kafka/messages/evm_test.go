@@ -1869,7 +1869,6 @@ func TestParseBigIntFromString(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -1950,7 +1949,6 @@ func TestEVMBlockTrace_UnmarshalScientificNotation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -2045,9 +2043,7 @@ func TestEVMTxReceipt_MarshalUnmarshal(t *testing.T) {
 			},
 		},
 	}
-
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -2065,7 +2061,7 @@ func TestEVMTxReceipt_MarshalUnmarshal(t *testing.T) {
 			assert.Equal(t, tt.receipt.ContractAddress, got.ContractAddress)
 			assert.Equal(t, tt.receipt.Status, got.Status)
 			assert.Equal(t, tt.receipt.GasUsed, got.GasUsed)
-			assert.Equal(t, len(tt.receipt.Logs), len(got.Logs))
+			assert.Len(t, got.Logs, len(tt.receipt.Logs))
 
 			if tt.receipt.EffectiveGasPrice == nil {
 				assert.Nil(t, got.EffectiveGasPrice)
@@ -2103,7 +2099,6 @@ func TestEVMTxReceipt_UnmarshalScientificNotation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -2237,7 +2232,6 @@ func TestEVMBlock_UnmarshalScientificNotation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
