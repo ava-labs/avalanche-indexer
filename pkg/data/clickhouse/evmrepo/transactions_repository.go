@@ -122,7 +122,8 @@ func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransaction
 	if tx.GasPrice != nil {
 		gasPriceBigInt = tx.GasPrice
 	}
-	effectiveGasPriceBigInt := big.NewInt(0)
+
+  effectiveGasPriceBigInt := big.NewInt(0)
 	if tx.EffectiveGasPrice != nil {
 		effectiveGasPriceBigInt = tx.EffectiveGasPrice
 	}
@@ -150,6 +151,7 @@ func convertTransactionRowToChTransactionRow(tx *TransactionRow) (*chTransaction
 		TransactionIndex:  tx.TransactionIndex,
 		Success:           tx.Success,
 		NumLogs:           tx.NumLogs,
+
 	}, nil
 }
 
