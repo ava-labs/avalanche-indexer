@@ -1946,6 +1946,11 @@ func TestEVMBlockTrace_UnmarshalScientificNotation(t *testing.T) {
 			payload:  `{"evmChainId":"43114","blockNumber":1,"blockTimestamp":2,"timestampMs":3,"traces":[]}`,
 			expected: "43114",
 		},
+		{
+			name:     "unquoted_large_integer_precision",
+			payload:  `{"evmChainId":1000000000000000001,"blockNumber":1,"blockTimestamp":2,"timestampMs":3,"traces":[]}`,
+			expected: "1000000000000000001",
+		},
 	}
 
 	for _, tt := range tests {
