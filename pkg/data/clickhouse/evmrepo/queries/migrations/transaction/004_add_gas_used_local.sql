@@ -1,0 +1,1 @@
+ALTER TABLE `%s`.`%s_local` ON CLUSTER `%s` ADD COLUMN IF NOT EXISTS gas_used UInt64 DEFAULT 0

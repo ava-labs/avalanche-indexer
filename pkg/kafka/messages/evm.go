@@ -43,15 +43,12 @@ func bigIntToRawJSON(v *big.Int) json.RawMessage {
 	return json.RawMessage(`"` + v.String() + `"`)
 }
 
-// parseBigIntFromRaw parses encodingjson.RawMessage into *big.Int, accepting both JSON strings and numbers.
-// Handles unquoted numbers (e.g., 1e+21, 1000000000000000000) and quoted strings (e.g., "1e+21", "1000000000000000000").
-// Returns nil for empty/null RawMessage.
 func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
 	if len(raw) == 0 || string(raw) == "null" || string(raw) == `""` {
 		return nil, nil
 	}
 
-	// Try as string first (e.g., "1000000000000000000" or "1e+21")
 	if raw[0] == '"' {
 		var s string
 		if err := jsonIter.Unmarshal(raw, &s); err != nil {
@@ -60,17 +57,7 @@ func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error)
 		return parseBigIntFromString(s, fieldName)
 	}
 
-	// Try as JSON number (e.g., 1000000000000000000 or 1e+21)
-	var f float64
-	if err := jsonIter.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("%w: failed to parse %s as number: %w", ErrParseBigInt, fieldName, err)
-	}
-
-	// Convert float to big.Int using big.Float for precision
-	bf := big.NewFloat(f)
-	bf.SetPrec(256) // High precision
-	result, _ := bf.Int(nil)
-	return result, nil
+	return parseBigIntFromString(string(raw), fieldName)
 }
 
 // parseBigIntFromString parses a string into *big.Int, supporting both decimal and scientific notation.
@@ -140,7 +127,7 @@ type EVMTransaction struct {
 	To             string        `json:"to"`
 	Nonce          uint64        `json:"nonce"`
 	Value          *big.Int      `json:"value"`
-	Gas            uint64        `json:"gas"`
+	Gas            uint64        `json:"gas"` // Gas limit
 	GasPrice       *big.Int      `json:"gasPrice"`
 	MaxFeePerGas   *big.Int      `json:"maxFeePerGas"`
 	MaxPriorityFee *big.Int      `json:"maxPriorityFeePerGas"`
@@ -157,10 +144,19 @@ type EVMWithdrawal struct {
 }
 
 type EVMTxReceipt struct {
-	ContractAddress common.Address `json:"contractAddress"`
-	Status          uint64         `json:"status"`
-	GasUsed         uint64         `json:"gasUsed"`
-	Logs            []*EVMLog      `json:"logs"`
+	ContractAddress   common.Address `json:"contractAddress"`
+	Status            uint64         `json:"status"`
+	GasUsed           uint64         `json:"gasUsed"`
+	EffectiveGasPrice *big.Int       `json:"effectiveGasPrice"`
+	Logs              []*EVMLog      `json:"logs"`
+}
+
+type evmTxReceiptJSON struct {
+	ContractAddress   common.Address  `json:"contractAddress"`
+	Status            uint64          `json:"status"`
+	GasUsed           uint64          `json:"gasUsed"`
+	EffectiveGasPrice json.RawMessage `json:"effectiveGasPrice,omitempty"`
+	Logs              []*EVMLog       `json:"logs"`
 }
 
 type EVMLog struct {
@@ -464,10 +460,11 @@ func EVMWithdrawalFromLibevm(withdrawals []*libevmtypes.Withdrawal) []*EVMWithdr
 
 func EVMTxReceiptFromLibevm(tx *libevmtypes.Receipt) *EVMTxReceipt {
 	return &EVMTxReceipt{
-		ContractAddress: tx.ContractAddress,
-		Status:          tx.Status,
-		GasUsed:         tx.GasUsed,
-		Logs:            EVMLogsFromLibevm(tx.Logs),
+		ContractAddress:   tx.ContractAddress,
+		Status:            tx.Status,
+		GasUsed:           tx.GasUsed,
+		EffectiveGasPrice: tx.EffectiveGasPrice,
+		Logs:              EVMLogsFromLibevm(tx.Logs),
 	}
 }
 
@@ -626,6 +623,36 @@ func (t *EVMTransaction) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if t.MaxPriorityFee, err = parseBigIntFromRaw(alias.MaxPriorityFee, "maxPriorityFeePerGas"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *EVMTxReceipt) MarshalJSON() ([]byte, error) {
+	alias := evmTxReceiptJSON{
+		ContractAddress:   r.ContractAddress,
+		Status:            r.Status,
+		GasUsed:           r.GasUsed,
+		EffectiveGasPrice: bigIntToRawJSON(r.EffectiveGasPrice),
+		Logs:              r.Logs,
+	}
+	return jsonIter.Marshal(alias)
+}
+
+func (r *EVMTxReceipt) UnmarshalJSON(data []byte) error {
+	var alias evmTxReceiptJSON
+	if err := jsonIter.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+
+	r.ContractAddress = alias.ContractAddress
+	r.Status = alias.Status
+	r.GasUsed = alias.GasUsed
+	r.Logs = alias.Logs
+
+	var err error
+	if r.EffectiveGasPrice, err = parseBigIntFromRaw(alias.EffectiveGasPrice, "effectiveGasPrice"); err != nil {
 		return err
 	}
 

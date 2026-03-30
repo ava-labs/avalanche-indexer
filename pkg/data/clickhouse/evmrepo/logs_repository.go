@@ -173,6 +173,10 @@ func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 
 // WriteLog inserts a raw log into ClickHouse
 func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
+	if log == nil {
+		return nil
+	}
+
 	query := fmt.Sprintf(writeLogQuery, r.database, r.tableName)
 
 	row, err := convertLogRowToChLogRow(log)
@@ -221,6 +225,10 @@ func (r *logs) BatchInsertLogs(ctx context.Context, logs []*LogRow) error {
 	}
 
 	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+
 		row, err := convertLogRowToChLogRow(log)
 		if err != nil {
 			return fmt.Errorf("failed to convert log row of tx %s on index %d to ch row: %w", log.TxHash, log.LogIndex, err)

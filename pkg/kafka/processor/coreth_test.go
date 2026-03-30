@@ -501,7 +501,7 @@ func TestProcess_NilMessage(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	err := proc.Process(t.Context(), nil)
 	require.ErrorIs(t, err, ErrNilMessage)
@@ -511,7 +511,7 @@ func TestProcess_NilMessageValue(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{Value: nil}
 	err := proc.Process(t.Context(), msg)
@@ -522,7 +522,7 @@ func TestProcess_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{Value: []byte(`{invalid json}`)}
 	err := proc.Process(t.Context(), msg)
@@ -534,7 +534,7 @@ func TestProcess_MissingBlockchainID(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	block := &kafkamsg.EVMBlock{
 		Number:       big.NewInt(1647),
@@ -555,7 +555,7 @@ func TestProcess_Success_NoRepos(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -577,7 +577,7 @@ func TestProcess_Success_WithBlocksRepo(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -603,7 +603,7 @@ func TestProcess_BlocksRepoError(t *testing.T) {
 			return expectedErr
 		},
 	}
-	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -625,7 +625,7 @@ func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, true, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -649,7 +649,7 @@ func TestProcess_TransactionsRepoError(t *testing.T) {
 			return expectedErr
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, true, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -671,7 +671,7 @@ func TestProcess_Success_WithLogsRepo(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, true, nil)
 
 	block := createTestBlockWithLogs()
 	data, err := json.Marshal(block)
@@ -694,7 +694,7 @@ func TestProcess_LogsRepoError(t *testing.T) {
 			return expectedErr
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, true, nil)
 
 	block := createTestBlockWithLogs()
 	data, err := json.Marshal(block)
@@ -724,7 +724,7 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, txsRepo, logsRepo, nil)
+	proc := NewCorethProcessor(sugar, nil, txsRepo, logsRepo, false, nil)
 
 	block := createTestBlock()
 	block.Transactions = []*kafkamsg.EVMTransaction{} // No transactions
@@ -955,7 +955,7 @@ func TestClassifyWriteErr_WrappedClickHouseError(t *testing.T) {
 func TestProcess_NilMessage_IsNonRetryable(t *testing.T) {
 	t.Parallel()
 
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, false, nil)
 
 	err := proc.Process(t.Context(), nil)
 	require.ErrorIs(t, err, ErrNilMessage)
@@ -965,7 +965,7 @@ func TestProcess_NilMessage_IsNonRetryable(t *testing.T) {
 func TestProcess_InvalidJSON_IsNonRetryable(t *testing.T) {
 	t.Parallel()
 
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{Value: []byte(`{bad}`)}
 	err := proc.Process(t.Context(), msg)
@@ -976,7 +976,7 @@ func TestProcess_InvalidJSON_IsNonRetryable(t *testing.T) {
 func TestProcess_MissingBlockchainID_IsNonRetryable(t *testing.T) {
 	t.Parallel()
 
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, false, nil)
 
 	block := &kafkamsg.EVMBlock{
 		Number:       big.NewInt(1),
@@ -1001,7 +1001,7 @@ func TestProcess_BlockWriteFatal(t *testing.T) {
 			return chErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -1022,7 +1022,7 @@ func TestProcess_BlockWriteRetryable(t *testing.T) {
 			return transientErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -1044,7 +1044,7 @@ func TestProcess_TransactionWriteFatal(t *testing.T) {
 			return chErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, txsRepo, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, txsRepo, nil, true, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -1065,7 +1065,7 @@ func TestProcess_LogWriteFatal(t *testing.T) {
 			return chErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, logsRepo, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, logsRepo, true, nil)
 
 	block := createTestBlockWithLogs()
 	data, err := json.Marshal(block)

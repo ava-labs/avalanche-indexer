@@ -13,6 +13,8 @@ ON CLUSTER `%s`
 	nonce UInt64,
 	value UInt256,
 	gas UInt64,
+	gas_used UInt64,
+	effective_gas_price UInt256,
 	gas_price UInt256,
 	max_fee_per_gas Nullable(UInt256),
 	max_priority_fee Nullable(UInt256),

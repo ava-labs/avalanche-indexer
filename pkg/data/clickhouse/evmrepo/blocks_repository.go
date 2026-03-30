@@ -273,6 +273,10 @@ func convertBlockRowToChBlockRow(block *BlockRow) (*chBlockRow, error) {
 
 // WriteBlock inserts a raw block into ClickHouse
 func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
+	if block == nil {
+		return nil
+	}
+
 	query := fmt.Sprintf(writeBlockQuery, r.database, r.tableName)
 
 	row, err := convertBlockRowToChBlockRow(block)
