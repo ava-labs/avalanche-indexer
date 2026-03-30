@@ -276,3 +276,266 @@ func createTestLog() *LogRow {
 		Removed:      false,
 	}
 }
+
+func TestLogsRepository_BatchInsertLogs_Success(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	log1 := createTestLog()
+	log2 := createTestLog()
+	log2.BlockNumber = 1648
+	log2.LogIndex = 1
+	log2.TxHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 &&
+				containsSubstring(q, "INSERT INTO") &&
+				containsSubstring(q, "`default`.`raw_logs`")
+		})).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chLogRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == log1.BlockNumber &&
+				chRow.LogIndex == log1.LogIndex
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chLogRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == log2.BlockNumber &&
+				chRow.LogIndex == log2.LogIndex
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(nil).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, []*LogRow{log1, log2})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestLogsRepository_BatchInsertLogs_Empty(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, nil)
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, []*LogRow{})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+}
+
+func TestLogsRepository_BatchInsertLogs_SkipsNilLogs(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	log := createTestLog()
+
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 &&
+				containsSubstring(q, "INSERT INTO") &&
+				containsSubstring(q, "`default`.`raw_logs`")
+		})).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chLogRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == log.BlockNumber &&
+				chRow.LogIndex == log.LogIndex
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(nil).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, []*LogRow{nil, log, nil})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestLogsRepository_BatchInsertLogs_PrepareBatchError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	prepareErr := errors.New("prepare batch failed")
+	log := createTestLog()
+
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(nil, prepareErr).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, []*LogRow{log})
+	require.ErrorIs(t, err, prepareErr)
+	assert.Contains(t, err.Error(), "failed to prepare batch")
+
+	mockConn.AssertExpectations(t)
+}
+
+func TestLogsRepository_BatchInsertLogs_ConvertError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	log := createTestLog()
+	log.TxHash = "invalid-hash"
+
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, []*LogRow{log})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to convert log row")
+	assert.Contains(t, err.Error(), log.TxHash)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestLogsRepository_BatchInsertLogs_AppendStructError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	appendErr := errors.New("append failed")
+	log := createTestLog()
+
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			_, ok := row.(*chLogRow)
+			return ok
+		})).
+		Return(appendErr).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, []*LogRow{log})
+	require.ErrorIs(t, err, appendErr)
+	assert.Contains(t, err.Error(), "failed to append log")
+	assert.Contains(t, err.Error(), log.TxHash)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestLogsRepository_BatchInsertLogs_SendError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	sendErr := errors.New("send failed")
+	log := createTestLog()
+
+	expectTableInit(mockConn, "raw_logs_local", "raw_logs")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			_, ok := row.(*chLogRow)
+			return ok
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(sendErr).
+		Once()
+
+	repo, err := NewLogs(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_logs")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertLogs(ctx, []*LogRow{log})
+	require.ErrorIs(t, err, sendErr)
+	assert.Contains(t, err.Error(), "failed to send batch")
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}

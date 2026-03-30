@@ -492,3 +492,266 @@ func createTestInternalTransaction() *InternalTransactionRow {
 		CallIndex:       "call_0",
 	}
 }
+
+func TestInternalTransactionsRepository_BatchInsertInternalTransactions_Success(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	tx1 := createTestInternalTransaction()
+	tx2 := createTestInternalTransaction()
+	tx2.BlockNumber = 1648
+	tx2.TransactionHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	tx2.CallIndex = "call_1"
+
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 &&
+				containsSubstring(q, "INSERT INTO") &&
+				containsSubstring(q, "`default`.`internal_transactions`")
+		})).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chInternalTransactionRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == tx1.BlockNumber &&
+				chRow.CallIndex == tx1.CallIndex
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chInternalTransactionRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == tx2.BlockNumber &&
+				chRow.CallIndex == tx2.CallIndex
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(nil).
+		Once()
+
+	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{tx1, tx2})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestInternalTransactionsRepository_BatchInsertInternalTransactions_Empty(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
+
+	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, nil)
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+}
+
+func TestInternalTransactionsRepository_BatchInsertInternalTransactions_SkipsNilTransactions(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	tx := createTestInternalTransaction()
+
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 &&
+				containsSubstring(q, "INSERT INTO") &&
+				containsSubstring(q, "`default`.`internal_transactions`")
+		})).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chInternalTransactionRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == tx.BlockNumber &&
+				chRow.CallIndex == tx.CallIndex
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(nil).
+		Once()
+
+	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{nil, tx, nil})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestInternalTransactionsRepository_BatchInsertInternalTransactions_PrepareBatchError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	prepareErr := errors.New("prepare batch failed")
+	tx := createTestInternalTransaction()
+
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(nil, prepareErr).
+		Once()
+
+	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{tx})
+	require.ErrorIs(t, err, prepareErr)
+	assert.Contains(t, err.Error(), "failed to prepare batch")
+
+	mockConn.AssertExpectations(t)
+}
+
+func TestInternalTransactionsRepository_BatchInsertInternalTransactions_ConvertError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	tx := createTestInternalTransaction()
+	tx.TransactionHash = "invalid_hash"
+
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{tx})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to convert internal transaction row")
+	assert.Contains(t, err.Error(), tx.TransactionHash)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestInternalTransactionsRepository_BatchInsertInternalTransactions_AppendStructError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	appendErr := errors.New("append failed")
+	tx := createTestInternalTransaction()
+
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			_, ok := row.(*chInternalTransactionRow)
+			return ok
+		})).
+		Return(appendErr).
+		Once()
+
+	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{tx})
+	require.ErrorIs(t, err, appendErr)
+	assert.Contains(t, err.Error(), "failed to append internal transaction")
+	assert.Contains(t, err.Error(), tx.TransactionHash)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestInternalTransactionsRepository_BatchInsertInternalTransactions_SendError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	sendErr := errors.New("send failed")
+	tx := createTestInternalTransaction()
+
+	expectTableInit(mockConn, "internal_transactions_local", "internal_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			_, ok := row.(*chInternalTransactionRow)
+			return ok
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(sendErr).
+		Once()
+
+	repo, err := NewInternalTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "internal_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{tx})
+	require.ErrorIs(t, err, sendErr)
+	assert.Contains(t, err.Error(), "failed to send batch")
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
