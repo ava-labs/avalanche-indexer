@@ -66,7 +66,7 @@ type chTransactionRow struct {
 	Input             string      `ch:"input"`
 	TxType            uint8       `ch:"type"`
 	TransactionIndex  uint64      `ch:"transaction_index"`
-	Success           uint8       `ch:"success"`
+	Success           uint64      `ch:"success"`
 	NumLogs           uint32      `ch:"num_logs"`
 }
 

@@ -256,7 +256,6 @@ func CorethTransactionToTransactionRow(
 		Input:            tx.Input,
 		Type:             tx.Type,
 		TransactionIndex: txIndex,
-		Success:          0, // TODO: Extract from transaction receipt when available in CorethBlock
 		NumLogs:          numLogs,
 	}
 
@@ -286,6 +285,16 @@ func CorethTransactionToTransactionRow(
 	// Handle nullable MaxPriorityFee
 	if tx.MaxPriorityFee != nil {
 		txRow.MaxPriorityFee = tx.MaxPriorityFee
+	}
+
+	if tx.Receipt != nil {
+		txRow.Success = tx.Receipt.Status
+		txRow.GasUsed = tx.Receipt.GasUsed
+		if tx.Receipt.EffectiveGasPrice != nil {
+			txRow.EffectiveGasPrice = tx.Receipt.EffectiveGasPrice
+		} else {
+			txRow.EffectiveGasPrice = big.NewInt(0)
+		}
 	}
 
 	return txRow, nil
