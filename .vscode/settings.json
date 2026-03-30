@@ -24,6 +24,7 @@
     "schemaregistry",
     "serde",
     "subnetevm",
+    "Txns",
     "Warnf",
     "Warnw"
   ]

@@ -36,8 +36,8 @@ const (
 	// oneEtherInWei represents 1 ETH in wei (10^18)
 	oneEtherInWei = 1000000000000000000
 
-	RoleDLQConsumer     = metrics.RoleDLQConsumer
-	RolePrimaryConsumer = metrics.RolePrimaryConsumer
+	RoleDLQConsumer      = metrics.RoleDLQConsumer
+	RolePrimaryConsumer  = metrics.RolePrimaryConsumer
 	producerFlushTimeout = 5000
 )
 

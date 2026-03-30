@@ -2,7 +2,10 @@ package evmrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
+	"time"
 
 	_ "embed"
 
@@ -14,6 +17,7 @@ import (
 type Logs interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteLog(ctx context.Context, log *LogRow) error
+	BatchInsertLogs(ctx context.Context, logs []*LogRow) error
 	DeleteLogs(ctx context.Context, chainID uint64) error
 }
 
@@ -26,6 +30,9 @@ var createLogsTableQuery string
 //go:embed queries/log/write-log.sql
 var writeLogQuery string
 
+//go:embed queries/log/batch-insert-logs.sql
+var batchInsertLogsQuery string
+
 //go:embed queries/log/delete-logs.sql
 var deleteLogsQuery string
 
@@ -34,6 +41,99 @@ type logs struct {
 	cluster   string
 	database  string
 	tableName string
+}
+
+// chLogRow holds ClickHouse-ready values; `ch` tags match batch INSERT columns for AppendStruct.
+type chLogRow struct {
+	BlockchainID interface{} `ch:"blockchain_id"`
+	EVMChainID   *big.Int    `ch:"evm_chain_id"`
+	BlockNumber  uint64      `ch:"block_number"`
+	BlockHash    string      `ch:"block_hash"`
+	BlockTime    time.Time   `ch:"block_time"`
+	TimestampMs  uint64      `ch:"timestamp_ms"`
+	TxHash       string      `ch:"tx_hash"`
+	TxIndex      uint32      `ch:"tx_index"`
+	Address      string      `ch:"address"`
+	Topic0       *string     `ch:"topic0"`
+	Topic1       *string     `ch:"topic1"`
+	Topic2       *string     `ch:"topic2"`
+	Topic3       *string     `ch:"topic3"`
+	Data         string      `ch:"data"`
+	LogIndex     uint32      `ch:"log_index"`
+	Removed      bool        `ch:"removed"`
+}
+
+func convertLogRowToChLogRow(log *LogRow) (*chLogRow, error) {
+	if log == nil {
+		return nil, errors.New("log is nil")
+	}
+
+	// Convert BlockchainID
+	var blockchainID interface{}
+	if log.BlockchainID != nil {
+		blockchainID = *log.BlockchainID
+	} else {
+		blockchainID = ""
+	}
+
+	// Convert EVMChainID to string for ClickHouse UInt256
+	evmChainIDBigInt := big.NewInt(0)
+	if log.EVMChainID != nil {
+		evmChainIDBigInt = log.EVMChainID
+	}
+
+	// Convert hex strings to bytes for FixedString fields
+	blockHashBytes, err := utils.HexToBytes32(log.BlockHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert block_hash to bytes: %w", err)
+	}
+
+	txHashBytes, err := utils.HexToBytes32(log.TxHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert tx_hash to bytes: %w", err)
+	}
+
+	addressBytes, err := utils.HexToBytes20(log.Address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert address to bytes: %w", err)
+	}
+
+	// Convert topic hex strings to bytes for Nullable FixedString fields
+	topic0, err := convertTopic0ToBytes(log.Topic0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert topic0 to bytes: %w", err)
+	}
+	topic1, err := convertTopicToBytes(log.Topic1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert topic1 to bytes: %w", err)
+	}
+	topic2, err := convertTopicToBytes(log.Topic2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert topic2 to bytes: %w", err)
+	}
+	topic3, err := convertTopicToBytes(log.Topic3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert topic3 to bytes: %w", err)
+	}
+
+	return &chLogRow{
+		BlockchainID: blockchainID,
+		EVMChainID:   evmChainIDBigInt,
+		BlockNumber:  log.BlockNumber,
+		BlockHash:    string(blockHashBytes[:]),
+		BlockTime:    log.BlockTime,
+		TimestampMs:  log.TimestampMs,
+		TxHash:       string(txHashBytes[:]),
+		TxIndex:      log.TxIndex,
+		Address:      string(addressBytes[:]),
+		Topic0:       topic0,
+		Topic1:       topic1,
+		Topic2:       topic2,
+		Topic3:       topic3,
+		Data:         string(log.Data),
+		LogIndex:     log.LogIndex,
+		Removed:      log.Removed,
+	}, nil
 }
 
 // NewLogs creates a new raw logs repository and initializes the table
@@ -75,71 +175,62 @@ func (r *logs) CreateTableIfNotExists(ctx context.Context) error {
 func (r *logs) WriteLog(ctx context.Context, log *LogRow) error {
 	query := fmt.Sprintf(writeLogQuery, r.database, r.tableName)
 
-	// Convert BlockchainID
-	var blockchainID interface{}
-	if log.BlockchainID != nil {
-		blockchainID = *log.BlockchainID
-	} else {
-		blockchainID = ""
+	row, err := convertLogRowToChLogRow(log)
+	if err != nil {
+		return fmt.Errorf("failed to convert log row of tx %s on index %d to ch row: %w", log.TxHash, log.LogIndex, err)
 	}
 
-	// Convert EVMChainID to string for ClickHouse UInt256
-	evmChainIDStr := log.EVMChainID.String()
-
-	// Convert hex strings to bytes for FixedString fields
-	blockHashBytes, err := utils.HexToBytes32(log.BlockHash)
-	if err != nil {
-		return fmt.Errorf("failed to convert block_hash to bytes: %w", err)
-	}
-
-	txHashBytes, err := utils.HexToBytes32(log.TxHash)
-	if err != nil {
-		return fmt.Errorf("failed to convert tx_hash to bytes: %w", err)
-	}
-
-	addressBytes, err := utils.HexToBytes20(log.Address)
-	if err != nil {
-		return fmt.Errorf("failed to convert address to bytes: %w", err)
-	}
-
-	// Convert topic hex strings to bytes for Nullable FixedString fields
-	topic0, err := convertTopic0ToBytes(log.Topic0)
-	if err != nil {
-		return fmt.Errorf("failed to convert topic0 to bytes: %w", err)
-	}
-	topic1, err := convertTopicToBytes(log.Topic1)
-	if err != nil {
-		return fmt.Errorf("failed to convert topic1 to bytes: %w", err)
-	}
-	topic2, err := convertTopicToBytes(log.Topic2)
-	if err != nil {
-		return fmt.Errorf("failed to convert topic2 to bytes: %w", err)
-	}
-	topic3, err := convertTopicToBytes(log.Topic3)
-	if err != nil {
-		return fmt.Errorf("failed to convert topic3 to bytes: %w", err)
+	evmChainIDStr := "0"
+	if log.EVMChainID != nil {
+		evmChainIDStr = log.EVMChainID.String()
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
-		blockchainID,
+		row.BlockchainID,
 		evmChainIDStr,
-		log.BlockNumber,
-		string(blockHashBytes[:]),
-		log.BlockTime,
-		log.TimestampMs,
-		string(txHashBytes[:]),
-		log.TxIndex,
-		string(addressBytes[:]),
-		topic0,
-		topic1,
-		topic2,
-		topic3,
-		string(log.Data),
-		log.LogIndex,
-		log.Removed,
+		row.BlockNumber,
+		row.BlockHash,
+		row.BlockTime,
+		row.TimestampMs,
+		row.TxHash,
+		row.TxIndex,
+		row.Address,
+		row.Topic0,
+		row.Topic1,
+		row.Topic2,
+		row.Topic3,
+		row.Data,
+		row.LogIndex,
+		row.Removed,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write log: %w", err)
+		return fmt.Errorf("failed to write log of tx %s on index %d: %w", log.TxHash, log.LogIndex, err)
+	}
+	return nil
+}
+
+func (r *logs) BatchInsertLogs(ctx context.Context, logs []*LogRow) error {
+	if len(logs) == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf(batchInsertLogsQuery, r.database, r.tableName)
+	batch, err := r.client.Conn().PrepareBatch(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to prepare batch: %w", err)
+	}
+
+	for _, log := range logs {
+		row, err := convertLogRowToChLogRow(log)
+		if err != nil {
+			return fmt.Errorf("failed to convert log row of tx %s on index %d to ch row: %w", log.TxHash, log.LogIndex, err)
+		}
+		if err := batch.AppendStruct(row); err != nil {
+			return fmt.Errorf("failed to append log of tx %s on index %d: %w", log.TxHash, log.LogIndex, err)
+		}
+	}
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("failed to send batch: %w", err)
 	}
 	return nil
 }

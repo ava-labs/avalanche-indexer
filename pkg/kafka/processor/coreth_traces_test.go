@@ -20,8 +20,9 @@ import (
 
 // Mock implementation for internal transactions repository
 type mockInternalTransactionsRepo struct {
-	writeInternalTransactionFunc   func(ctx context.Context, tx *evmrepo.InternalTransactionRow) error
-	deleteInternalTransactionsFunc func(ctx context.Context, chainID uint64) error
+	writeInternalTransactionFunc        func(ctx context.Context, tx *evmrepo.InternalTransactionRow) error
+	batchInsertInternalTransactionsFunc func(ctx context.Context, txs []*evmrepo.InternalTransactionRow) error
+	deleteInternalTransactionsFunc      func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockInternalTransactionsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -29,6 +30,13 @@ func (*mockInternalTransactionsRepo) CreateTableIfNotExists(context.Context) err
 func (m *mockInternalTransactionsRepo) WriteInternalTransaction(ctx context.Context, tx *evmrepo.InternalTransactionRow) error {
 	if m.writeInternalTransactionFunc != nil {
 		return m.writeInternalTransactionFunc(ctx, tx)
+	}
+	return nil
+}
+
+func (m *mockInternalTransactionsRepo) BatchInsertInternalTransactions(ctx context.Context, txs []*evmrepo.InternalTransactionRow) error {
+	if m.batchInsertInternalTransactionsFunc != nil {
+		return m.batchInsertInternalTransactionsFunc(ctx, txs)
 	}
 	return nil
 }
@@ -124,8 +132,8 @@ func TestCorethTracesProcessor_Process_Success_WithRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedTxs []*evmrepo.InternalTransactionRow
 	repo := &mockInternalTransactionsRepo{
-		writeInternalTransactionFunc: func(_ context.Context, tx *evmrepo.InternalTransactionRow) error {
-			capturedTxs = append(capturedTxs, tx)
+		batchInsertInternalTransactionsFunc: func(_ context.Context, txs []*evmrepo.InternalTransactionRow) error {
+			capturedTxs = append(capturedTxs, txs...)
 			return nil
 		},
 	}
@@ -165,7 +173,7 @@ func TestCorethTracesProcessor_Process_RepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write failed")
 	repo := &mockInternalTransactionsRepo{
-		writeInternalTransactionFunc: func(_ context.Context, _ *evmrepo.InternalTransactionRow) error {
+		batchInsertInternalTransactionsFunc: func(_ context.Context, _ []*evmrepo.InternalTransactionRow) error {
 			return expectedErr
 		},
 	}
@@ -185,7 +193,7 @@ func TestCorethTracesProcessor_Process_RepoFatalError(t *testing.T) {
 
 	chErr := &chdriver.Exception{Code: clickhouseErrAccessDenied, Message: "access denied"}
 	repo := &mockInternalTransactionsRepo{
-		writeInternalTransactionFunc: func(_ context.Context, _ *evmrepo.InternalTransactionRow) error {
+		batchInsertInternalTransactionsFunc: func(_ context.Context, _ []*evmrepo.InternalTransactionRow) error {
 			return chErr
 		},
 	}
@@ -206,7 +214,7 @@ func TestCorethTracesProcessor_Process_RepoRetryableError(t *testing.T) {
 
 	transientErr := errors.New("connection reset")
 	repo := &mockInternalTransactionsRepo{
-		writeInternalTransactionFunc: func(_ context.Context, _ *evmrepo.InternalTransactionRow) error {
+		batchInsertInternalTransactionsFunc: func(_ context.Context, _ []*evmrepo.InternalTransactionRow) error {
 			return transientErr
 		},
 	}
@@ -229,8 +237,8 @@ func TestCorethTracesProcessor_Process_EmptyTraces(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedTxs []*evmrepo.InternalTransactionRow
 	repo := &mockInternalTransactionsRepo{
-		writeInternalTransactionFunc: func(_ context.Context, tx *evmrepo.InternalTransactionRow) error {
-			capturedTxs = append(capturedTxs, tx)
+		batchInsertInternalTransactionsFunc: func(_ context.Context, txs []*evmrepo.InternalTransactionRow) error {
+			capturedTxs = append(capturedTxs, txs...)
 			return nil
 		},
 	}
@@ -261,8 +269,8 @@ func TestCorethTracesProcessor_Process_MultipleTraces(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedTxs []*evmrepo.InternalTransactionRow
 	repo := &mockInternalTransactionsRepo{
-		writeInternalTransactionFunc: func(_ context.Context, tx *evmrepo.InternalTransactionRow) error {
-			capturedTxs = append(capturedTxs, tx)
+		batchInsertInternalTransactionsFunc: func(_ context.Context, txs []*evmrepo.InternalTransactionRow) error {
+			capturedTxs = append(capturedTxs, txs...)
 			return nil
 		},
 	}

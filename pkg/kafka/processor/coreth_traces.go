@@ -89,6 +89,7 @@ func (p *CorethTracesProcessor) processTraces(
 	ctx context.Context,
 	blockTrace *kafkamsg.EVMBlockTrace,
 ) error {
+	var internalTransactions []*evmrepo.InternalTransactionRow
 	for _, rawTrace := range blockTrace.Traces {
 		txHash, traces, err := GetTracesForTransaction(rawTrace)
 		if err != nil {
@@ -116,10 +117,23 @@ func (p *CorethTracesProcessor) processTraces(
 				Output:          trace.Output,
 				CallIndex:       trace.CallIndex,
 			}
-			if err := p.internalTransactionsRepo.WriteInternalTransaction(ctx, txRow); err != nil {
-				return classifyWriteErr(fmt.Errorf("failed to write trace: %w", err))
-			}
+			internalTransactions = append(internalTransactions, txRow)
 		}
+	}
+
+	if len(internalTransactions) == 0 {
+		p.log.Debugw("no internal transactions to write",
+			"blockchainID", blockTrace.BlockchainID,
+			"evmChainID", blockTrace.EVMChainID,
+			"blockNumber", blockTrace.BlockNumber,
+			"traceCount", len(blockTrace.Traces),
+		)
+		return nil
+	}
+
+	err := p.internalTransactionsRepo.BatchInsertInternalTransactions(ctx, internalTransactions)
+	if err != nil {
+		return classifyWriteErr(fmt.Errorf("failed to batch insert internal transactions: %w", err))
 	}
 
 	p.log.Debugw("successfully wrote traces",

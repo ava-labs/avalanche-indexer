@@ -10,3 +10,4 @@ coverage.out
 .gocache/
 *.out
 *.html
+/scripts
