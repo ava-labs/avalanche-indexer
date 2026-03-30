@@ -56,7 +56,7 @@ func TestCorethTracesProcessor_Process_NilMessage(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethTracesProcessor(sugar, nil, nil)
+	proc := NewCorethTracesProcessor(sugar, nil, false, nil)
 
 	err := proc.Process(t.Context(), nil)
 	require.ErrorIs(t, err, ErrNilMessage)
@@ -67,7 +67,7 @@ func TestCorethTracesProcessor_Process_NilMessageValue(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethTracesProcessor(sugar, nil, nil)
+	proc := NewCorethTracesProcessor(sugar, nil, false, nil)
 
 	msg := &cKafka.Message{Value: nil}
 	err := proc.Process(t.Context(), msg)
@@ -79,7 +79,7 @@ func TestCorethTracesProcessor_Process_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethTracesProcessor(sugar, nil, nil)
+	proc := NewCorethTracesProcessor(sugar, nil, false, nil)
 
 	msg := &cKafka.Message{Value: []byte(`{invalid json}`)}
 	err := proc.Process(t.Context(), msg)
@@ -92,7 +92,7 @@ func TestCorethTracesProcessor_Process_MissingBlockchainID(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethTracesProcessor(sugar, nil, nil)
+	proc := NewCorethTracesProcessor(sugar, nil, false, nil)
 
 	blockTrace := &kafkamsg.EVMBlockTrace{
 		EVMChainID:     big.NewInt(43113),
@@ -115,7 +115,7 @@ func TestCorethTracesProcessor_Process_Success_NoRepo(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethTracesProcessor(sugar, nil, nil)
+	proc := NewCorethTracesProcessor(sugar, nil, false, nil)
 
 	blockTrace := createTestBlockTrace()
 	data, err := json.Marshal(blockTrace)
@@ -137,7 +137,7 @@ func TestCorethTracesProcessor_Process_Success_WithRepo(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethTracesProcessor(sugar, repo, nil)
+	proc := NewCorethTracesProcessor(sugar, repo, true, nil)
 
 	blockTrace := createTestBlockTrace()
 	data, err := json.Marshal(blockTrace)
@@ -177,7 +177,7 @@ func TestCorethTracesProcessor_Process_RepoError(t *testing.T) {
 			return expectedErr
 		},
 	}
-	proc := NewCorethTracesProcessor(sugar, repo, nil)
+	proc := NewCorethTracesProcessor(sugar, repo, true, nil)
 
 	blockTrace := createTestBlockTrace()
 	data, err := json.Marshal(blockTrace)
@@ -197,7 +197,7 @@ func TestCorethTracesProcessor_Process_RepoFatalError(t *testing.T) {
 			return chErr
 		},
 	}
-	proc := NewCorethTracesProcessor(zap.NewNop().Sugar(), repo, nil)
+	proc := NewCorethTracesProcessor(zap.NewNop().Sugar(), repo, true, nil)
 
 	blockTrace := createTestBlockTrace()
 	data, err := json.Marshal(blockTrace)
@@ -218,7 +218,7 @@ func TestCorethTracesProcessor_Process_RepoRetryableError(t *testing.T) {
 			return transientErr
 		},
 	}
-	proc := NewCorethTracesProcessor(zap.NewNop().Sugar(), repo, nil)
+	proc := NewCorethTracesProcessor(zap.NewNop().Sugar(), repo, true, nil)
 
 	blockTrace := createTestBlockTrace()
 	data, err := json.Marshal(blockTrace)
@@ -242,7 +242,7 @@ func TestCorethTracesProcessor_Process_EmptyTraces(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethTracesProcessor(sugar, repo, nil)
+	proc := NewCorethTracesProcessor(sugar, repo, false, nil)
 
 	blockchainID := testBlockchainID
 	blockTrace := &kafkamsg.EVMBlockTrace{
@@ -274,7 +274,7 @@ func TestCorethTracesProcessor_Process_MultipleTraces(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethTracesProcessor(sugar, repo, nil)
+	proc := NewCorethTracesProcessor(sugar, repo, true, nil)
 
 	blockTrace := createTestBlockTraceWithMultipleTransactions()
 	data, err := json.Marshal(blockTrace)

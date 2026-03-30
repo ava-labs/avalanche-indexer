@@ -242,7 +242,7 @@ func TestProcessBlockMessage_InvalidJSON(t *testing.T) {
 
 	invalidJSON := []byte(`{invalid json}`)
 	sugar := zap.NewNop().Sugar()
-	proc := processor.NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := processor.NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{
 		Value: invalidJSON,
@@ -267,7 +267,7 @@ func TestProcessBlockMessage_MissingChainID(t *testing.T) {
 	require.NoError(t, err)
 
 	sugar := zap.NewNop().Sugar()
-	proc := processor.NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := processor.NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{
 		Value: data,
