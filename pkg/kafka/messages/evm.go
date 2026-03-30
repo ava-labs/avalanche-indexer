@@ -43,15 +43,12 @@ func bigIntToRawJSON(v *big.Int) json.RawMessage {
 	return json.RawMessage(`"` + v.String() + `"`)
 }
 
-// parseBigIntFromRaw parses encodingjson.RawMessage into *big.Int, accepting both JSON strings and numbers.
-// Handles unquoted numbers (e.g., 1e+21, 1000000000000000000) and quoted strings (e.g., "1e+21", "1000000000000000000").
-// Returns nil for empty/null RawMessage.
 func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
 	if len(raw) == 0 || string(raw) == "null" || string(raw) == `""` {
 		return nil, nil
 	}
 
-	// Try as string first (e.g., "1000000000000000000" or "1e+21")
 	if raw[0] == '"' {
 		var s string
 		if err := jsonIter.Unmarshal(raw, &s); err != nil {
@@ -60,17 +57,7 @@ func parseBigIntFromRaw(raw json.RawMessage, fieldName string) (*big.Int, error)
 		return parseBigIntFromString(s, fieldName)
 	}
 
-	// Try as JSON number (e.g., 1000000000000000000 or 1e+21)
-	var f float64
-	if err := jsonIter.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("%w: failed to parse %s as number: %w", ErrParseBigInt, fieldName, err)
-	}
-
-	// Convert float to big.Int using big.Float for precision
-	bf := big.NewFloat(f)
-	bf.SetPrec(256) // High precision
-	result, _ := bf.Int(nil)
-	return result, nil
+	return parseBigIntFromString(string(raw), fieldName)
 }
 
 // parseBigIntFromString parses a string into *big.Int, supporting both decimal and scientific notation.
