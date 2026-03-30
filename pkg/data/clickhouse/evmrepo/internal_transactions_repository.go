@@ -149,6 +149,10 @@ func (r *internalTransactions) CreateTableIfNotExists(ctx context.Context) error
 
 // WriteInternalTransaction inserts an internal transaction into ClickHouse
 func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx *InternalTransactionRow) error {
+	if tx == nil {
+		return nil
+	}
+
 	query := fmt.Sprintf(writeInternalTransactionQuery, r.database, r.tableName)
 
 	row, err := convertInternalTxnRowToChInternalTxnRow(tx)
@@ -199,6 +203,10 @@ func (r *internalTransactions) BatchInsertInternalTransactions(ctx context.Conte
 	}
 
 	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+
 		row, err := convertInternalTxnRowToChInternalTxnRow(tx)
 		if err != nil {
 			return fmt.Errorf("failed to convert internal transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.TransactionHash, err)
