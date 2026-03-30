@@ -14,6 +14,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
+const testInvalidHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
@@ -295,7 +297,7 @@ func TestTransactionsRepository_BatchInsertTransactions_Success(t *testing.T) {
 	tx1 := createTestTransaction()
 	tx2 := createTestTransaction()
 	tx2.BlockNumber = 1648
-	tx2.Hash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	tx2.Hash = testInvalidHash
 
 	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
 

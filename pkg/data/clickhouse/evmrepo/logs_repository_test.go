@@ -454,7 +454,6 @@ func TestLogsRepository_BatchInsertLogs_ConvertError(t *testing.T) {
 	require.NoError(t, err)
 
 	err = repo.BatchInsertLogs(ctx, []*LogRow{log})
-	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to convert log row")
 	assert.Contains(t, err.Error(), log.TxHash)
 

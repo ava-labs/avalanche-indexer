@@ -670,7 +670,6 @@ func TestInternalTransactionsRepository_BatchInsertInternalTransactions_ConvertE
 	require.NoError(t, err)
 
 	err = repo.BatchInsertInternalTransactions(ctx, []*InternalTransactionRow{tx})
-	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to convert internal transaction row")
 	assert.Contains(t, err.Error(), tx.TransactionHash)
 
