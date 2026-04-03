@@ -442,6 +442,12 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"CLOUD_PROVIDER"},
 			Value:   "",
 		},
+		&cli.BoolFlag{
+			Name:    "enable-clickhouse-batch-writes",
+			Usage:   "Enable ClickHouse batch writes",
+			EnvVars: []string{"ENABLE_CLICKHOUSE_BATCH_WRITES"},
+			Value:   false,
+		},
 	}
 }
 

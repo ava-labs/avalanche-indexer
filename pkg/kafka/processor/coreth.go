@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
@@ -37,11 +38,12 @@ const (
 // If repositories are provided, persists blocks, transactions, and logs to ClickHouse.
 // Safe for concurrent use.
 type CorethProcessor struct {
-	log        *zap.SugaredLogger
-	blocksRepo evmrepo.Blocks
-	txsRepo    evmrepo.Transactions
-	logsRepo   evmrepo.Logs
-	metrics    *metrics.Metrics
+	log               *zap.SugaredLogger
+	blocksRepo        evmrepo.Blocks
+	txsRepo           evmrepo.Transactions
+	logsRepo          evmrepo.Logs
+	metrics           *metrics.Metrics
+	enableBatchWrites bool
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
@@ -51,17 +53,19 @@ func NewCorethProcessor(
 	blocksRepo evmrepo.Blocks,
 	txsRepo evmrepo.Transactions,
 	logsRepo evmrepo.Logs,
+	enableBatchWrites bool,
 	m *metrics.Metrics,
 ) *CorethProcessor {
 	if m == nil {
 		m = metrics.NewNoOp()
 	}
 	return &CorethProcessor{
-		log:        log,
-		blocksRepo: blocksRepo,
-		txsRepo:    txsRepo,
-		logsRepo:   logsRepo,
-		metrics:    m,
+		log:               log,
+		blocksRepo:        blocksRepo,
+		txsRepo:           txsRepo,
+		logsRepo:          logsRepo,
+		metrics:           m,
+		enableBatchWrites: enableBatchWrites,
 	}
 }
 
@@ -93,40 +97,28 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 		"hash", block.Hash,
 	)
 
-	// Persist block to ClickHouse if repository is configured
+	g, gctx := errgroup.WithContext(ctx)
+
 	if p.blocksRepo != nil {
-		blockRow, err := CorethBlockToBlockRow(&block)
-		if err != nil {
-			p.metrics.IncError("coreth_parse_error")
-			return NonRetryable(fmt.Errorf("failed to parse block for storage: %w", err))
-		}
-
-		writeStart := time.Now()
-		err = p.blocksRepo.WriteBlock(ctx, blockRow)
-		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawBlocksTableName, err, writeStart)
-		if err != nil {
-			p.metrics.IncError("coreth_write_error")
-			return classifyWriteErr(fmt.Errorf("failed to write block to ClickHouse: %w", err))
-		}
-
-		p.log.Debugw("successfully persisted block to ClickHouse",
-			"evmChainID", blockRow.EVMChainID,
-			"blockchainID", blockRow.BlockchainID,
-			"blockNumber", blockRow.BlockNumber,
-			"hash", blockRow.Hash,
-		)
+		g.Go(func() error {
+			return p.processBlock(gctx, &block)
+		})
 	}
 
 	if p.txsRepo != nil && len(block.Transactions) > 0 {
-		if err := p.processTransactions(ctx, &block); err != nil {
-			return err
-		}
+		g.Go(func() error {
+			return p.processTransactions(gctx, &block)
+		})
 	}
 
 	if p.logsRepo != nil && len(block.Transactions) > 0 {
-		if err := p.processLogs(ctx, &block); err != nil {
-			return err
-		}
+		g.Go(func() error {
+			return p.processLogs(gctx, &block)
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	// Record successful end-to-end processing duration (block + transactions + logs)
@@ -267,7 +259,6 @@ func CorethTransactionToTransactionRow(
 		Input:            tx.Input,
 		Type:             tx.Type,
 		TransactionIndex: txIndex,
-		Success:          0, // TODO: Extract from transaction receipt when available in CorethBlock
 		NumLogs:          numLogs,
 	}
 
@@ -299,7 +290,45 @@ func CorethTransactionToTransactionRow(
 		txRow.MaxPriorityFee = tx.MaxPriorityFee
 	}
 
+	if tx.Receipt != nil {
+		txRow.Success = tx.Receipt.Status
+		txRow.GasUsed = tx.Receipt.GasUsed
+		if tx.Receipt.EffectiveGasPrice != nil {
+			txRow.EffectiveGasPrice = tx.Receipt.EffectiveGasPrice
+		} else {
+			txRow.EffectiveGasPrice = big.NewInt(0)
+		}
+	}
+
 	return txRow, nil
+}
+
+// processBlock converts a kafkamsg.EVMBlock to BlockRow and writes it to ClickHouse
+func (p *CorethProcessor) processBlock(
+	ctx context.Context,
+	block *kafkamsg.EVMBlock,
+) error {
+	blockRow, err := CorethBlockToBlockRow(block)
+	if err != nil {
+		p.metrics.IncError("coreth_parse_error")
+		return NonRetryable(fmt.Errorf("failed to parse block for storage: %w", err))
+	}
+
+	writeStart := time.Now()
+	err = p.blocksRepo.WriteBlock(ctx, blockRow)
+	recordClickHouseWrite(p.metrics, clickhouse.DefaultRawBlocksTableName, err, writeStart)
+	if err != nil {
+		p.metrics.IncError("coreth_write_error")
+		return classifyWriteErr(fmt.Errorf("failed to write block to ClickHouse: %w", err))
+	}
+
+	p.log.Debugw("successfully persisted block to ClickHouse",
+		"evmChainID", blockRow.EVMChainID,
+		"blockchainID", blockRow.BlockchainID,
+		"blockNumber", blockRow.BlockNumber,
+		"hash", blockRow.Hash,
+	)
+	return nil
 }
 
 // processTransactions converts transactions from a kafkamsg.CorethBlock to TransactionRow and writes
@@ -308,24 +337,44 @@ func (p *CorethProcessor) processTransactions(
 	ctx context.Context,
 	block *kafkamsg.EVMBlock,
 ) error {
-	// TODO: Add batching (in a future PR)
 	totalLogs := 0
+	txs := make([]*evmrepo.TransactionRow, 0, len(block.Transactions))
 	for i, tx := range block.Transactions {
 		txRow, err := CorethTransactionToTransactionRow(tx, block, uint64(i))
 		if err != nil {
 			return NonRetryable(fmt.Errorf("failed to convert transaction %d: %w", i, err))
 		}
-
-		writeStart := time.Now()
-		err = p.txsRepo.WriteTransaction(ctx, txRow)
-		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawTransactionsTableName, err, writeStart)
-		if err != nil {
-			return classifyWriteErr(fmt.Errorf("failed to write transaction %s: %w", tx.Hash, err))
-		}
-
+		txs = append(txs, txRow)
 		// Count logs from this transaction's receipt
 		if tx.Receipt != nil {
 			totalLogs += len(tx.Receipt.Logs)
+		}
+	}
+
+	if len(txs) == 0 {
+		p.log.Debugw("no transactions to write",
+			"blockchainID", block.BlockchainID,
+			"evmChainID", block.EVMChainID,
+			"blockNumber", block.Number,
+		)
+		return nil
+	}
+
+	if p.enableBatchWrites {
+		writeStart := time.Now()
+		err := p.txsRepo.BatchInsertTransactions(ctx, txs)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawTransactionsTableName, err, writeStart)
+		if err != nil {
+			return classifyWriteErr(fmt.Errorf("failed to batch insert transactions: %w", err))
+		}
+	} else {
+		for _, tx := range txs {
+			writeStart := time.Now()
+			err := p.txsRepo.WriteTransaction(ctx, tx)
+			recordClickHouseWrite(p.metrics, clickhouse.DefaultRawTransactionsTableName, err, writeStart)
+			if err != nil {
+				return classifyWriteErr(fmt.Errorf("failed to write transaction: %w", err))
+			}
 		}
 	}
 
@@ -353,6 +402,7 @@ func (p *CorethProcessor) processLogs(
 	block *kafkamsg.EVMBlock,
 ) error {
 	totalLogs := 0
+	var logs []*evmrepo.LogRow
 	for _, tx := range block.Transactions {
 		if tx.Receipt == nil || len(tx.Receipt.Logs) == 0 {
 			continue
@@ -363,14 +413,35 @@ func (p *CorethProcessor) processLogs(
 			if err != nil {
 				return NonRetryable(fmt.Errorf("failed to convert log: %w", err))
 			}
+			logs = append(logs, logRow)
+			totalLogs++
+		}
+	}
 
+	if totalLogs == 0 {
+		p.log.Debugw("no logs to write",
+			"blockchainID", block.BlockchainID,
+			"evmChainID", block.EVMChainID,
+			"blockNumber", block.Number,
+		)
+		return nil
+	}
+
+	if p.enableBatchWrites {
+		writeStart := time.Now()
+		err := p.logsRepo.BatchInsertLogs(ctx, logs)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultRawLogsTableName, err, writeStart)
+		if err != nil {
+			return classifyWriteErr(fmt.Errorf("failed to batch insert logs: %w", err))
+		}
+	} else {
+		for _, log := range logs {
 			writeStart := time.Now()
-			err = p.logsRepo.WriteLog(ctx, logRow)
+			err := p.logsRepo.WriteLog(ctx, log)
 			recordClickHouseWrite(p.metrics, clickhouse.DefaultRawLogsTableName, err, writeStart)
 			if err != nil {
-				return classifyWriteErr(fmt.Errorf("failed to write log (tx: %s, index: %d): %w", tx.Hash, log.Index, err))
+				return classifyWriteErr(fmt.Errorf("failed to write log: %w", err))
 			}
-			totalLogs++
 		}
 	}
 

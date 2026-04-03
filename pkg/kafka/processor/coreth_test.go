@@ -28,14 +28,23 @@ const (
 
 // Mock implementations for testing
 type mockBlocksRepo struct {
-	writeBlockFunc   func(ctx context.Context, block *evmrepo.BlockRow) error
-	deleteBlocksFunc func(ctx context.Context, chainID uint64) error
+	writeBlockFunc        func(ctx context.Context, block *evmrepo.BlockRow) error
+	batchInsertBlocksFunc func(ctx context.Context, blocks []*evmrepo.BlockRow) error
+	deleteBlocksFunc      func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockBlocksRepo) CreateTableIfNotExists(context.Context) error { return nil }
+
 func (m *mockBlocksRepo) WriteBlock(ctx context.Context, block *evmrepo.BlockRow) error {
 	if m.writeBlockFunc != nil {
 		return m.writeBlockFunc(ctx, block)
+	}
+	return nil
+}
+
+func (m *mockBlocksRepo) BatchInsertBlocks(ctx context.Context, blocks []*evmrepo.BlockRow) error {
+	if m.batchInsertBlocksFunc != nil {
+		return m.batchInsertBlocksFunc(ctx, blocks)
 	}
 	return nil
 }
@@ -48,8 +57,9 @@ func (m *mockBlocksRepo) DeleteBlocks(ctx context.Context, chainID uint64) error
 }
 
 type mockTransactionsRepo struct {
-	writeTransactionFunc   func(ctx context.Context, tx *evmrepo.TransactionRow) error
-	deleteTransactionsFunc func(ctx context.Context, chainID uint64) error
+	writeTransactionFunc        func(ctx context.Context, tx *evmrepo.TransactionRow) error
+	batchInsertTransactionsFunc func(ctx context.Context, txs []*evmrepo.TransactionRow) error
+	deleteTransactionsFunc      func(ctx context.Context, chainID uint64) error
 }
 
 func (*mockTransactionsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -67,9 +77,17 @@ func (m *mockTransactionsRepo) DeleteTransactions(ctx context.Context, chainID u
 	return nil
 }
 
+func (m *mockTransactionsRepo) BatchInsertTransactions(ctx context.Context, txs []*evmrepo.TransactionRow) error {
+	if m.batchInsertTransactionsFunc != nil {
+		return m.batchInsertTransactionsFunc(ctx, txs)
+	}
+	return nil
+}
+
 type mockLogsRepo struct {
-	writeLogFunc   func(ctx context.Context, log *evmrepo.LogRow) error
-	deleteLogsFunc func(ctx context.Context, chainID uint64) error
+	writeLogFunc        func(ctx context.Context, log *evmrepo.LogRow) error
+	deleteLogsFunc      func(ctx context.Context, chainID uint64) error
+	batchInsertLogsFunc func(ctx context.Context, logs []*evmrepo.LogRow) error
 }
 
 func (*mockLogsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -83,6 +101,13 @@ func (m *mockLogsRepo) WriteLog(ctx context.Context, log *evmrepo.LogRow) error 
 func (m *mockLogsRepo) DeleteLogs(ctx context.Context, chainID uint64) error {
 	if m.deleteLogsFunc != nil {
 		return m.deleteLogsFunc(ctx, chainID)
+	}
+	return nil
+}
+
+func (m *mockLogsRepo) BatchInsertLogs(ctx context.Context, logs []*evmrepo.LogRow) error {
+	if m.batchInsertLogsFunc != nil {
+		return m.batchInsertLogsFunc(ctx, logs)
 	}
 	return nil
 }
@@ -476,7 +501,7 @@ func TestProcess_NilMessage(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	err := proc.Process(t.Context(), nil)
 	require.ErrorIs(t, err, ErrNilMessage)
@@ -486,7 +511,7 @@ func TestProcess_NilMessageValue(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{Value: nil}
 	err := proc.Process(t.Context(), msg)
@@ -497,7 +522,7 @@ func TestProcess_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{Value: []byte(`{invalid json}`)}
 	err := proc.Process(t.Context(), msg)
@@ -509,7 +534,7 @@ func TestProcess_MissingBlockchainID(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	block := &kafkamsg.EVMBlock{
 		Number:       big.NewInt(1647),
@@ -530,7 +555,7 @@ func TestProcess_Success_NoRepos(t *testing.T) {
 	t.Parallel()
 
 	sugar := zap.NewNop().Sugar()
-	proc := NewCorethProcessor(sugar, nil, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -552,7 +577,7 @@ func TestProcess_Success_WithBlocksRepo(t *testing.T) {
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -578,7 +603,7 @@ func TestProcess_BlocksRepoError(t *testing.T) {
 			return expectedErr
 		},
 	}
-	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(sugar, blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -595,12 +620,12 @@ func TestProcess_Success_WithTransactionsRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedTxs []*evmrepo.TransactionRow
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, tx *evmrepo.TransactionRow) error {
-			capturedTxs = append(capturedTxs, tx)
+		batchInsertTransactionsFunc: func(_ context.Context, txs []*evmrepo.TransactionRow) error {
+			capturedTxs = append(capturedTxs, txs...)
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, true, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -620,11 +645,11 @@ func TestProcess_TransactionsRepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write transaction failed")
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
+		batchInsertTransactionsFunc: func(_ context.Context, _ []*evmrepo.TransactionRow) error {
 			return expectedErr
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, nil)
+	proc := NewCorethProcessor(sugar, nil, txsRepo, nil, true, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -641,12 +666,12 @@ func TestProcess_Success_WithLogsRepo(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	var capturedLogs []*evmrepo.LogRow
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, lg *evmrepo.LogRow) error {
-			capturedLogs = append(capturedLogs, lg)
+		batchInsertLogsFunc: func(_ context.Context, logs []*evmrepo.LogRow) error {
+			capturedLogs = append(capturedLogs, logs...)
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, true, nil)
 
 	block := createTestBlockWithLogs()
 	data, err := json.Marshal(block)
@@ -665,11 +690,11 @@ func TestProcess_LogsRepoError(t *testing.T) {
 	sugar := zap.NewNop().Sugar()
 	expectedErr := errors.New("write log failed")
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
+		batchInsertLogsFunc: func(_ context.Context, _ []*evmrepo.LogRow) error {
 			return expectedErr
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, nil)
+	proc := NewCorethProcessor(sugar, nil, nil, logsRepo, true, nil)
 
 	block := createTestBlockWithLogs()
 	data, err := json.Marshal(block)
@@ -688,18 +713,18 @@ func TestProcess_NoTransactions_SkipsRepos(t *testing.T) {
 	logsRepoCalled := false
 
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
+		batchInsertTransactionsFunc: func(_ context.Context, _ []*evmrepo.TransactionRow) error {
 			txsRepoCalled = true
 			return nil
 		},
 	}
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
+		batchInsertLogsFunc: func(_ context.Context, _ []*evmrepo.LogRow) error {
 			logsRepoCalled = true
 			return nil
 		},
 	}
-	proc := NewCorethProcessor(sugar, nil, txsRepo, logsRepo, nil)
+	proc := NewCorethProcessor(sugar, nil, txsRepo, logsRepo, false, nil)
 
 	block := createTestBlock()
 	block.Transactions = []*kafkamsg.EVMTransaction{} // No transactions
@@ -930,7 +955,7 @@ func TestClassifyWriteErr_WrappedClickHouseError(t *testing.T) {
 func TestProcess_NilMessage_IsNonRetryable(t *testing.T) {
 	t.Parallel()
 
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, false, nil)
 
 	err := proc.Process(t.Context(), nil)
 	require.ErrorIs(t, err, ErrNilMessage)
@@ -940,7 +965,7 @@ func TestProcess_NilMessage_IsNonRetryable(t *testing.T) {
 func TestProcess_InvalidJSON_IsNonRetryable(t *testing.T) {
 	t.Parallel()
 
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, false, nil)
 
 	msg := &ckafka.Message{Value: []byte(`{bad}`)}
 	err := proc.Process(t.Context(), msg)
@@ -951,7 +976,7 @@ func TestProcess_InvalidJSON_IsNonRetryable(t *testing.T) {
 func TestProcess_MissingBlockchainID_IsNonRetryable(t *testing.T) {
 	t.Parallel()
 
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, nil, false, nil)
 
 	block := &kafkamsg.EVMBlock{
 		Number:       big.NewInt(1),
@@ -976,7 +1001,7 @@ func TestProcess_BlockWriteFatal(t *testing.T) {
 			return chErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -997,7 +1022,7 @@ func TestProcess_BlockWriteRetryable(t *testing.T) {
 			return transientErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), blocksRepo, nil, nil, false, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -1015,11 +1040,11 @@ func TestProcess_TransactionWriteFatal(t *testing.T) {
 
 	chErr := &chdriver.Exception{Code: clickhouseErrUnknownTable, Message: "unknown table"}
 	txsRepo := &mockTransactionsRepo{
-		writeTransactionFunc: func(_ context.Context, _ *evmrepo.TransactionRow) error {
+		batchInsertTransactionsFunc: func(_ context.Context, _ []*evmrepo.TransactionRow) error {
 			return chErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, txsRepo, nil, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, txsRepo, nil, true, nil)
 
 	block := createTestBlock()
 	data, err := json.Marshal(block)
@@ -1036,11 +1061,11 @@ func TestProcess_LogWriteFatal(t *testing.T) {
 
 	chErr := &chdriver.Exception{Code: clickhouseErrUnknownDatabase, Message: "unknown db"}
 	logsRepo := &mockLogsRepo{
-		writeLogFunc: func(_ context.Context, _ *evmrepo.LogRow) error {
+		batchInsertLogsFunc: func(_ context.Context, _ []*evmrepo.LogRow) error {
 			return chErr
 		},
 	}
-	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, logsRepo, nil)
+	proc := NewCorethProcessor(zap.NewNop().Sugar(), nil, nil, logsRepo, true, nil)
 
 	block := createTestBlockWithLogs()
 	data, err := json.Marshal(block)

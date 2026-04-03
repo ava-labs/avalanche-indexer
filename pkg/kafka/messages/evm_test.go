@@ -1819,3 +1819,496 @@ func TestEVMTransaction_MarshalNoScientificNotation(t *testing.T) {
 		})
 	}
 }
+
+func TestParseBigIntFromString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		input     string
+		fieldName string
+		expected  string
+		wantErr   bool
+	}{
+		{
+			name:      "decimal",
+			input:     "1000000000000000000",
+			fieldName: "value",
+			expected:  "1000000000000000000",
+		},
+		{
+			name:      "scientific_notation_integer",
+			input:     "1e+21",
+			fieldName: "value",
+			expected:  "1000000000000000000000",
+		},
+		{
+			name:      "scientific_notation_fractional",
+			input:     "1.5e18",
+			fieldName: "value",
+			expected:  "1500000000000000000",
+		},
+		{
+			name:      "zero",
+			input:     "0",
+			fieldName: "value",
+			expected:  "0",
+		},
+		{
+			name:      "invalid",
+			input:     "abc123",
+			fieldName: "value",
+			wantErr:   true,
+		},
+		{
+			name:      "invalid_scientific",
+			input:     "1.2.3e10",
+			fieldName: "value",
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseBigIntFromString(tt.input, tt.fieldName)
+			if tt.wantErr {
+				require.ErrorIs(t, err, ErrParseBigInt)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, tt.expected, got.String())
+		})
+	}
+}
+
+func TestEVMBlockTrace_MarshalUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	blockchainID := "blockchain-123"
+	trace1 := json.RawMessage(`{"type":"call","from":"0x1","to":"0x2"}`)
+	trace2 := json.RawMessage(`{"type":"create","from":"0x3"}`)
+
+	original := &EVMBlockTrace{
+		EVMChainID:     big.NewInt(43114),
+		BlockchainID:   &blockchainID,
+		BlockNumber:    12345,
+		BlockTimestamp: 1700000000,
+		TimestampMs:    1700000000123,
+		Traces:         []json.RawMessage{trace1, trace2},
+	}
+
+	data, err := jsonIter.Marshal(original)
+	require.NoError(t, err)
+
+	jsonStr := string(data)
+	assert.Contains(t, jsonStr, `"evmChainId":"43114"`)
+	assert.NotContains(t, jsonStr, "e+")
+	assert.NotContains(t, jsonStr, "E+")
+
+	var got EVMBlockTrace
+	err = jsonIter.Unmarshal(data, &got)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.EVMChainID)
+	require.NotNil(t, got.BlockchainID)
+	assert.Equal(t, original.EVMChainID.String(), got.EVMChainID.String())
+	assert.Equal(t, *original.BlockchainID, *got.BlockchainID)
+	assert.Equal(t, original.BlockNumber, got.BlockNumber)
+	assert.Equal(t, original.BlockTimestamp, got.BlockTimestamp)
+	assert.Equal(t, original.TimestampMs, got.TimestampMs)
+	assert.Equal(t, original.Traces, got.Traces)
+}
+
+func TestEVMBlockTrace_UnmarshalScientificNotation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		payload  string
+		expected string
+	}{
+		{
+			name:     "quoted_scientific",
+			payload:  `{"evmChainId":"1e+21","blockNumber":1,"blockTimestamp":2,"timestampMs":3,"traces":[]}`,
+			expected: "1000000000000000000000",
+		},
+		{
+			name:     "unquoted_scientific",
+			payload:  `{"evmChainId":1e+21,"blockNumber":1,"blockTimestamp":2,"timestampMs":3,"traces":[]}`,
+			expected: "1000000000000000000000",
+		},
+		{
+			name:     "decimal_string",
+			payload:  `{"evmChainId":"43114","blockNumber":1,"blockTimestamp":2,"timestampMs":3,"traces":[]}`,
+			expected: "43114",
+		},
+		{
+			name:     "unquoted_large_integer_precision",
+			payload:  `{"evmChainId":1000000000000000001,"blockNumber":1,"blockTimestamp":2,"timestampMs":3,"traces":[]}`,
+			expected: "1000000000000000001",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got EVMBlockTrace
+			err := jsonIter.Unmarshal([]byte(tt.payload), &got)
+			require.NoError(t, err)
+			require.NotNil(t, got.EVMChainID)
+			assert.Equal(t, tt.expected, got.EVMChainID.String())
+		})
+	}
+}
+
+func TestMarshalEVMBlockTrace(t *testing.T) {
+	t.Parallel()
+
+	blockchainID := "blockchain-abc"
+	traces := []json.RawMessage{
+		json.RawMessage(`{"foo":"bar"}`),
+	}
+
+	data, err := MarshalEVMBlockTrace(
+		999,
+		1700000000,
+		1700000000123,
+		traces,
+		big.NewInt(43114),
+		&blockchainID,
+	)
+	require.NoError(t, err)
+
+	var got EVMBlockTrace
+	err = jsonIter.Unmarshal(data, &got)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.EVMChainID)
+	require.NotNil(t, got.BlockchainID)
+	assert.Equal(t, "43114", got.EVMChainID.String())
+	assert.Equal(t, blockchainID, *got.BlockchainID)
+	assert.Equal(t, uint64(999), got.BlockNumber)
+	assert.Equal(t, uint64(1700000000), got.BlockTimestamp)
+	assert.Equal(t, uint64(1700000000123), got.TimestampMs)
+	assert.Equal(t, traces, got.Traces)
+}
+
+func TestEVMTxReceipt_MarshalUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		receipt *EVMTxReceipt
+	}{
+		{
+			name: "full_receipt",
+			receipt: &EVMTxReceipt{
+				ContractAddress:   common.HexToAddress("0x1234567890123456789012345678901234567890"),
+				Status:            1,
+				GasUsed:           53000,
+				EffectiveGasPrice: big.NewInt(50000000000),
+				Logs: []*EVMLog{
+					{
+						Address:     common.HexToAddress("0x1111111111111111111111111111111111111111"),
+						Topics:      []common.Hash{common.HexToHash("0x1")},
+						Data:        []byte{0x01, 0x02},
+						BlockNumber: 123,
+						TxHash:      common.HexToHash("0x2"),
+						TxIndex:     1,
+						BlockHash:   common.HexToHash("0x3"),
+						Index:       0,
+						Removed:     false,
+					},
+				},
+			},
+		},
+		{
+			name: "nil_effective_gas_price",
+			receipt: &EVMTxReceipt{
+				ContractAddress:   common.Address{},
+				Status:            0,
+				GasUsed:           21000,
+				EffectiveGasPrice: nil,
+				Logs:              nil,
+			},
+		},
+		{
+			name: "empty_logs",
+			receipt: &EVMTxReceipt{
+				ContractAddress:   common.Address{},
+				Status:            1,
+				GasUsed:           21000,
+				EffectiveGasPrice: big.NewInt(0),
+				Logs:              []*EVMLog{},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			data, err := jsonIter.Marshal(tt.receipt)
+			require.NoError(t, err)
+
+			jsonStr := string(data)
+			assert.NotContains(t, jsonStr, "e+")
+			assert.NotContains(t, jsonStr, "E+")
+
+			var got EVMTxReceipt
+			err = jsonIter.Unmarshal(data, &got)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.receipt.ContractAddress, got.ContractAddress)
+			assert.Equal(t, tt.receipt.Status, got.Status)
+			assert.Equal(t, tt.receipt.GasUsed, got.GasUsed)
+			assert.Len(t, got.Logs, len(tt.receipt.Logs))
+
+			if tt.receipt.EffectiveGasPrice == nil {
+				assert.Nil(t, got.EffectiveGasPrice)
+			} else {
+				require.NotNil(t, got.EffectiveGasPrice)
+				assert.Equal(t, tt.receipt.EffectiveGasPrice.String(), got.EffectiveGasPrice.String())
+			}
+		})
+	}
+}
+
+func TestEVMTxReceipt_UnmarshalScientificNotation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		payload  string
+		expected string
+	}{
+		{
+			name:     "quoted_scientific",
+			payload:  `{"contractAddress":"0x0000000000000000000000000000000000000000","status":1,"gasUsed":21000,"effectiveGasPrice":"5e+10","logs":[]}`,
+			expected: "50000000000",
+		},
+		{
+			name:     "unquoted_scientific",
+			payload:  `{"contractAddress":"0x0000000000000000000000000000000000000000","status":1,"gasUsed":21000,"effectiveGasPrice":5e+10,"logs":[]}`,
+			expected: "50000000000",
+		},
+		{
+			name:     "decimal_string",
+			payload:  `{"contractAddress":"0x0000000000000000000000000000000000000000","status":1,"gasUsed":21000,"effectiveGasPrice":"50000000000","logs":[]}`,
+			expected: "50000000000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var receipt EVMTxReceipt
+			err := jsonIter.Unmarshal([]byte(tt.payload), &receipt)
+			require.NoError(t, err)
+			require.NotNil(t, receipt.EffectiveGasPrice)
+			assert.Equal(t, tt.expected, receipt.EffectiveGasPrice.String())
+		})
+	}
+}
+
+func TestEVMTransaction_MarshalUnmarshal_WithReceipt(t *testing.T) {
+	t.Parallel()
+
+	original := &EVMTransaction{
+		Hash:           "0xtxhash",
+		From:           "0x1111111111111111111111111111111111111111",
+		To:             "0x2222222222222222222222222222222222222222",
+		Nonce:          7,
+		Value:          big.NewInt(123456789),
+		Gas:            42000,
+		GasPrice:       big.NewInt(50000000000),
+		MaxFeePerGas:   big.NewInt(70000000000),
+		MaxPriorityFee: big.NewInt(2000000000),
+		Input:          "0xdeadbeef",
+		Type:           2,
+		Receipt: &EVMTxReceipt{
+			ContractAddress:   common.HexToAddress("0x3333333333333333333333333333333333333333"),
+			Status:            1,
+			GasUsed:           30000,
+			EffectiveGasPrice: big.NewInt(45000000000),
+			Logs: []*EVMLog{
+				{
+					Address:     common.HexToAddress("0x4444444444444444444444444444444444444444"),
+					Topics:      []common.Hash{common.HexToHash("0x1")},
+					Data:        []byte{0xaa, 0xbb},
+					BlockNumber: 99,
+					TxHash:      common.HexToHash("0x5"),
+					TxIndex:     0,
+					BlockHash:   common.HexToHash("0x6"),
+					Index:       0,
+				},
+			},
+		},
+	}
+
+	data, err := jsonIter.Marshal(original)
+	require.NoError(t, err)
+
+	var got EVMTransaction
+	err = jsonIter.Unmarshal(data, &got)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.Receipt)
+	assert.Equal(t, original.Hash, got.Hash)
+	assert.Equal(t, original.Value.String(), got.Value.String())
+	assert.Equal(t, original.GasPrice.String(), got.GasPrice.String())
+	assert.Equal(t, original.MaxFeePerGas.String(), got.MaxFeePerGas.String())
+	assert.Equal(t, original.MaxPriorityFee.String(), got.MaxPriorityFee.String())
+	assert.Equal(t, original.Receipt.ContractAddress, got.Receipt.ContractAddress)
+	assert.Equal(t, original.Receipt.Status, got.Receipt.Status)
+	assert.Equal(t, original.Receipt.GasUsed, got.Receipt.GasUsed)
+	require.NotNil(t, got.Receipt.EffectiveGasPrice)
+	assert.Equal(t, original.Receipt.EffectiveGasPrice.String(), got.Receipt.EffectiveGasPrice.String())
+	require.Len(t, got.Receipt.Logs, 1)
+	assert.Equal(t, original.Receipt.Logs[0].Address, got.Receipt.Logs[0].Address)
+}
+
+func TestEVMBlock_UnmarshalScientificNotation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		payload        string
+		wantChainID    string
+		wantNumber     string
+		wantBaseFee    string
+		wantDifficulty string
+	}{
+		{
+			name: "quoted_scientific_fields",
+			payload: `{
+				"evmChainId":"43114",
+				"number":"1e+6",
+				"hash":"0x1",
+				"parentHash":"0x2",
+				"stateRoot":"0x3",
+				"transactionsRoot":"0x4",
+				"receiptsRoot":"0x5",
+				"sha3Uncles":"0x6",
+				"miner":"0x7",
+				"gasLimit":1000,
+				"gasUsed":500,
+				"baseFeePerGas":"5e+10",
+				"timestamp":123456,
+				"difficulty":"1e+3",
+				"withdrawals":[],
+				"transactions":[]
+			}`,
+			wantChainID:    "43114",
+			wantNumber:     "1000000",
+			wantBaseFee:    "50000000000",
+			wantDifficulty: "1000",
+		},
+		{
+			name: "unquoted_scientific_fields",
+			payload: `{
+				"evmChainId":43114,
+				"number":1e+6,
+				"hash":"0x1",
+				"parentHash":"0x2",
+				"stateRoot":"0x3",
+				"transactionsRoot":"0x4",
+				"receiptsRoot":"0x5",
+				"sha3Uncles":"0x6",
+				"miner":"0x7",
+				"gasLimit":1000,
+				"gasUsed":500,
+				"baseFeePerGas":5e+10,
+				"timestamp":123456,
+				"difficulty":1e+3,
+				"withdrawals":[],
+				"transactions":[]
+			}`,
+			wantChainID:    "43114",
+			wantNumber:     "1000000",
+			wantBaseFee:    "50000000000",
+			wantDifficulty: "1000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var block EVMBlock
+			err := jsonIter.Unmarshal([]byte(tt.payload), &block)
+			require.NoError(t, err)
+
+			require.NotNil(t, block.EVMChainID)
+			require.NotNil(t, block.Number)
+			require.NotNil(t, block.BaseFee)
+			require.NotNil(t, block.Difficulty)
+
+			assert.Equal(t, tt.wantChainID, block.EVMChainID.String())
+			assert.Equal(t, tt.wantNumber, block.Number.String())
+			assert.Equal(t, tt.wantBaseFee, block.BaseFee.String())
+			assert.Equal(t, tt.wantDifficulty, block.Difficulty.String())
+		})
+	}
+}
+
+func TestEVMBlock_MarshalNoScientificNotation(t *testing.T) {
+	t.Parallel()
+
+	block := &EVMBlock{
+		EVMChainID:       func() *big.Int { v, _ := new(big.Int).SetString("4311400000000000000000", 10); return v }(),
+		Number:           func() *big.Int { v, _ := new(big.Int).SetString("1000000000000000000000", 10); return v }(),
+		Hash:             "0x1",
+		ParentHash:       "0x2",
+		StateRoot:        "0x3",
+		TransactionsRoot: "0x4",
+		ReceiptsRoot:     "0x5",
+		UncleHash:        "0x6",
+		Miner:            "0x7",
+		GasLimit:         1000,
+		GasUsed:          500,
+		BaseFee:          func() *big.Int { v, _ := new(big.Int).SetString("500000000000000000000", 10); return v }(),
+		Timestamp:        123456,
+		Difficulty:       func() *big.Int { v, _ := new(big.Int).SetString("999999999999999999999999", 10); return v }(),
+		Withdrawals:      []*EVMWithdrawal{},
+		Transactions:     []*EVMTransaction{},
+	}
+
+	data, err := jsonIter.Marshal(block)
+	require.NoError(t, err)
+
+	jsonStr := string(data)
+	assert.NotContains(t, jsonStr, "e+")
+	assert.NotContains(t, jsonStr, "E+")
+	assert.NotContains(t, jsonStr, "e-")
+	assert.NotContains(t, jsonStr, "E-")
+
+	assert.Contains(t, jsonStr, `"evmChainId":"4311400000000000000000"`)
+	assert.Contains(t, jsonStr, `"number":"1000000000000000000000"`)
+	assert.Contains(t, jsonStr, `"baseFeePerGas":"500000000000000000000"`)
+	assert.Contains(t, jsonStr, `"difficulty":"999999999999999999999999"`)
+}
+
+func TestEVMBlockFromLibevmCoreth_BlockchainIDPropagation(t *testing.T) {
+	initCustomTypes()
+	t.Parallel()
+
+	chainID := big.NewInt(43114)
+	blockchainID := "blockchain-id-xyz"
+
+	header := newTestHeader()
+	block := libevmtypes.NewBlock(header, nil, nil, nil, newTestHasher())
+
+	got, err := EVMBlockFromLibevmCoreth(block, chainID, &blockchainID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.NotNil(t, got.BlockchainID)
+
+	assert.Equal(t, blockchainID, *got.BlockchainID)
+	assert.Equal(t, chainID, got.EVMChainID)
+}

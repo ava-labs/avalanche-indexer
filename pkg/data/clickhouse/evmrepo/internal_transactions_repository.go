@@ -2,7 +2,10 @@ package evmrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
+	"time"
 
 	_ "embed"
 
@@ -14,6 +17,7 @@ import (
 type InternalTransactions interface {
 	CreateTableIfNotExists(ctx context.Context) error
 	WriteInternalTransaction(ctx context.Context, tx *InternalTransactionRow) error
+	BatchInsertInternalTransactions(ctx context.Context, txs []*InternalTransactionRow) error
 	DeleteInternalTransactions(ctx context.Context, chainID uint64) error
 }
 
@@ -26,6 +30,9 @@ var createInternalTransactionsTableQuery string
 //go:embed queries/internal_transaction/write-internal-transaction.sql
 var writeInternalTransactionQuery string
 
+//go:embed queries/internal_transaction/batch-insert-internal-transactions.sql
+var batchInsertInternalTransactionsQuery string
+
 //go:embed queries/internal_transaction/delete-internal-transactions.sql
 var deleteInternalTransactionsQuery string
 
@@ -34,6 +41,75 @@ type internalTransactions struct {
 	cluster   string
 	database  string
 	tableName string
+}
+
+// chInternalTransactionRow holds ClickHouse-ready values; `ch` tags match batch INSERT columns for AppendStruct.
+type chInternalTransactionRow struct {
+	BlockchainID    interface{} `ch:"blockchain_id"`
+	EVMChainID      *big.Int    `ch:"evm_chain_id"`
+	BlockNumber     uint64      `ch:"block_number"`
+	BlockTime       time.Time   `ch:"block_time"`
+	TimestampMs     uint64      `ch:"timestamp_ms"`
+	TransactionHash string      `ch:"transaction_hash"`
+	TransactionType string      `ch:"type"`
+	FromAddress     string      `ch:"from_address"`
+	ToAddress       string      `ch:"to_address"`
+	Value           string      `ch:"value"`
+	Gas             string      `ch:"gas"`
+	GasUsed         string      `ch:"gas_used"`
+	Revert          bool        `ch:"revert"`
+	ErrorText       string      `ch:"error"`
+	RevertReason    string      `ch:"revert_reason"`
+	Input           string      `ch:"input"`
+	Output          string      `ch:"output"`
+	CallIndex       string      `ch:"call_index"`
+}
+
+func convertInternalTxnRowToChInternalTxnRow(tx *InternalTransactionRow) (*chInternalTransactionRow, error) {
+	if tx == nil {
+		return nil, errors.New("internal transaction is nil")
+	}
+
+	// Convert BlockchainID
+	var blockchainID interface{}
+	if tx.BlockchainID != nil {
+		blockchainID = *tx.BlockchainID
+	} else {
+		blockchainID = ""
+	}
+
+	// Convert EVMChainID to string for ClickHouse UInt256
+	evmChainIDBigInt := big.NewInt(0)
+	if tx.EVMChainID != nil {
+		evmChainIDBigInt = tx.EVMChainID
+	}
+
+	// Convert transaction hash hex string to bytes
+	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert transaction_hash to bytes: %w", err)
+	}
+
+	return &chInternalTransactionRow{
+		BlockchainID:    blockchainID,
+		EVMChainID:      evmChainIDBigInt,
+		BlockNumber:     tx.BlockNumber,
+		BlockTime:       tx.BlockTime,
+		TimestampMs:     tx.TimestampMs,
+		TransactionHash: string(txHashBytes[:]),
+		TransactionType: tx.Type,
+		FromAddress:     string(tx.From[:]),
+		ToAddress:       string(tx.To[:]),
+		Value:           tx.Value,
+		Gas:             tx.Gas,
+		GasUsed:         tx.GasUsed,
+		Revert:          tx.Revert,
+		ErrorText:       tx.Error,
+		RevertReason:    tx.RevertReason,
+		Input:           tx.Input,
+		Output:          tx.Output,
+		CallIndex:       tx.CallIndex,
+	}, nil
 }
 
 // NewInternalTransactions creates a new internal transactions repository and initializes the table
@@ -73,51 +149,77 @@ func (r *internalTransactions) CreateTableIfNotExists(ctx context.Context) error
 
 // WriteInternalTransaction inserts an internal transaction into ClickHouse
 func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx *InternalTransactionRow) error {
+	if tx == nil {
+		return nil
+	}
+
 	query := fmt.Sprintf(writeInternalTransactionQuery, r.database, r.tableName)
 
-	// Convert BlockchainID
-	var blockchainID interface{}
-	if tx.BlockchainID != nil {
-		blockchainID = *tx.BlockchainID
-	} else {
-		blockchainID = ""
-	}
-
-	// Convert EVMChainID to string for ClickHouse UInt256
-	evmChainIDStr := "0"
-	if tx.EVMChainID != nil {
-		evmChainIDStr = tx.EVMChainID.String()
-	}
-
-	// Convert transaction hash hex string to bytes
-	txHashBytes, err := utils.HexToBytes32(tx.TransactionHash)
+	row, err := convertInternalTxnRowToChInternalTxnRow(tx)
 	if err != nil {
-		return fmt.Errorf("failed to convert transaction_hash to bytes: %w", err)
+		return fmt.Errorf("failed to convert internal transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.TransactionHash, err)
+	}
+
+	evmChainIDStr := "0"
+	if row.EVMChainID != nil {
+		evmChainIDStr = row.EVMChainID.String()
 	}
 
 	err = r.client.Conn().Exec(ctx, query,
-		blockchainID,
+		row.BlockchainID,
 		evmChainIDStr,
-		tx.BlockNumber,
-		tx.BlockTime,
-		tx.TimestampMs,
-		string(txHashBytes[:]),
-		tx.Type,
-		string(tx.From[:]),
-		string(tx.To[:]),
-		tx.Value,
-		tx.Gas,
-		tx.GasUsed,
-		tx.Revert,
-		tx.Error,
-		tx.RevertReason,
-		tx.Input,
-		tx.Output,
-		tx.CallIndex,
+		row.BlockNumber,
+		row.BlockTime,
+		row.TimestampMs,
+		row.TransactionHash,
+		row.TransactionType,
+		row.FromAddress,
+		row.ToAddress,
+		row.Value,
+		row.Gas,
+		row.GasUsed,
+		row.Revert,
+		row.ErrorText,
+		row.RevertReason,
+		row.Input,
+		row.Output,
+		row.CallIndex,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to write internal transaction: %w", err)
+		return fmt.Errorf("failed to write internal transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.TransactionHash, err)
 	}
+	return nil
+}
+
+func (r *internalTransactions) BatchInsertInternalTransactions(ctx context.Context, txs []*InternalTransactionRow) error {
+	if len(txs) == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf(batchInsertInternalTransactionsQuery, r.database, r.tableName)
+	batch, err := r.client.Conn().PrepareBatch(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to prepare batch: %w", err)
+	}
+
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+
+		row, err := convertInternalTxnRowToChInternalTxnRow(tx)
+		if err != nil {
+			return fmt.Errorf("failed to convert internal transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.TransactionHash, err)
+		}
+		if err := batch.AppendStruct(row); err != nil {
+			return fmt.Errorf("failed to append internal transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.TransactionHash, err)
+		}
+	}
+
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("failed to send batch: %w", err)
+	}
+
 	return nil
 }
 
