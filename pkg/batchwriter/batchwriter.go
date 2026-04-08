@@ -2,6 +2,7 @@ package batchwriter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -93,7 +94,7 @@ func New(cfg Config, repos Repositories, log *zap.SugaredLogger, m *metrics.Metr
 func (w *Writer) Submit(ctx context.Context, req *WriteRequest) <-chan error {
 	if req == nil {
 		ch := make(chan error, 1)
-		ch <- fmt.Errorf("batchwriter: nil WriteRequest")
+		ch <- errors.New("batchwriter: nil WriteRequest")
 		close(ch)
 		return ch
 	}
