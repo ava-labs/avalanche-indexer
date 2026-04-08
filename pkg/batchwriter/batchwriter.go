@@ -140,6 +140,7 @@ func (w *Writer) runDispatcher(ctx context.Context, sem *semaphore.Weighted, inf
 	for {
 		select {
 		case <-ctx.Done():
+			w.log.Infof("context cancelled, draining %d requests", len(pending))
 			w.signalAll(pending, ctx.Err())
 			return
 
@@ -153,6 +154,7 @@ func (w *Writer) runDispatcher(ctx context.Context, sem *semaphore.Weighted, inf
 				timer.Reset(w.cfg.FlushTimeout)
 			}
 			if len(pending) >= maxBlocks {
+				w.log.Infof("max blocks reached, flushing %d requests", len(pending))
 				stopAndDrainTimer(timer)
 				batch := takeBatch(&pending)
 				w.spawnFlush(ctx, sem, inflight, batch)
@@ -160,8 +162,10 @@ func (w *Writer) runDispatcher(ctx context.Context, sem *semaphore.Weighted, inf
 
 		case <-timer.C:
 			if len(pending) == 0 {
+				w.log.Debugf("no requests to flush on timeout")
 				continue
 			}
+			w.log.Infof("flush timeout reached, flushing %d requests", len(pending))
 			stopAndDrainTimer(timer)
 			batch := takeBatch(&pending)
 			w.spawnFlush(ctx, sem, inflight, batch)
