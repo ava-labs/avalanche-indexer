@@ -65,7 +65,8 @@ bin/consumerindexer run \
   --clickhouse-hosts localhost:9000 \
   --clickhouse-cluster default \
   --clickhouse-database default \
-  --clickhouse-username default
+  --clickhouse-username default \
+  --metrics-port 9099
 ```
 
 #### Traces Mode
@@ -170,10 +171,30 @@ All flags have environment variable equivalents:
 - `--kafka-dlq-topic-replication-factor` → `KAFKA_DLQ_TOPIC_REPLICATION_FACTOR` (default: 1, DLQ topic replication factor)
 - `--kafka-dlq-topic-retention-ms` → `KAFKA_DLQ_TOPIC_RETENTION_MS` (default: 604800000 / 7 days, DLQ topic retention time in milliseconds)
 - `--kafka-dlq-topic-retention-bytes` → `KAFKA_DLQ_TOPIC_RETENTION_BYTES` (default: 161061273600 / 150GB, DLQ topic retention size in bytes)
+- `--kafka-topic-message-max-bytes` → `KAFKA_TOPIC_MESSAGE_MAX_BYTES` (optional, max message size for main and DLQ topics when creating/updating; unset uses broker default)
+
+**Primary consumer retry policy:**
+- `--consumer-retry-max-retries` → `CONSUMER_RETRY_MAX_RETRIES` (default: 3; `-1` = infinite, `0` = disabled)
+- `--consumer-retry-base-delay` → `CONSUMER_RETRY_BASE_DELAY` (default: 500ms, initial backoff between retries)
+- `--consumer-retry-max-delay` → `CONSUMER_RETRY_MAX_DELAY` (default: 2s, cap on backoff delay)
+
+**Kafka SASL flags:**
 - `--kafka-sasl-username` → `KAFKA_SASL_USERNAME` (optional, SASL username for authenticated Kafka)
 - `--kafka-sasl-password` → `KAFKA_SASL_PASSWORD` (optional, SASL password for authenticated Kafka)
 - `--kafka-sasl-mechanism` → `KAFKA_SASL_MECHANISM` (default: SCRAM-SHA-512, SASL mechanism: SCRAM-SHA-256, SCRAM-SHA-512, or PLAIN)
 - `--kafka-security-protocol` → `KAFKA_SECURITY_PROTOCOL` (default: SASL_SSL, security protocol: SASL_SSL or SASL_PLAINTEXT)
+
+**DLQ consumer (secondary consumer on the DLQ topic):**
+- `--enable-dlq-consumer` → `ENABLE_DLQ_CONSUMER` (default: false, run a second consumer group that reads the DLQ and retries indefinitely)
+- `--dlq-consumer-group-id` → `KAFKA_DLQ_CONSUMER_GROUP_ID` (required when DLQ consumer is enabled; must differ from `--group-id`)
+- `--dlq-consumer-concurrency` → `KAFKA_DLQ_CONSUMER_CONCURRENCY` (default: 1, keep low; DLQ path retries without cap)
+- `--dlq-consumer-offset-commit-interval` → `KAFKA_DLQ_CONSUMER_OFFSET_COMMIT_INTERVAL` (default: 10s)
+- `--dlq-consumer-session-timeout` → `KAFKA_DLQ_CONSUMER_SESSION_TIMEOUT` (default: 240s)
+- `--dlq-consumer-max-poll-interval` → `KAFKA_DLQ_CONSUMER_MAX_POLL_INTERVAL` (default: 3400s)
+- `--dlq-consumer-goroutine-wait-timeout` → `KAFKA_DLQ_CONSUMER_GOROUTINE_WAIT_TIMEOUT` (default: 30s, in-flight wait on shutdown)
+- `--dlq-consumer-poll-interval` → `KAFKA_DLQ_CONSUMER_POLL_INTERVAL` (default: 100ms)
+- `--dlq-consumer-retry-base-delay` → `DLQ_CONSUMER_RETRY_BASE_DELAY` (default: 1s)
+- `--dlq-consumer-retry-max-delay` → `DLQ_CONSUMER_RETRY_MAX_DELAY` (default: 5m)
 
 **ClickHouse flags:**
 - `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000", comma-separated)
@@ -183,6 +204,17 @@ All flags have environment variable equivalents:
 - `--clickhouse-password` → `CLICKHOUSE_PASSWORD` (default: "")
 - `--clickhouse-debug` → `CLICKHOUSE_DEBUG` (default: false)
 - `--clickhouse-insecure-skip-verify` → `CLICKHOUSE_INSECURE_SKIP_VERIFY` (default: true)
+- `--clickhouse-max-execution-time` → `CLICKHOUSE_MAX_EXECUTION_TIME` (default: 60, seconds)
+- `--clickhouse-dial-timeout` → `CLICKHOUSE_DIAL_TIMEOUT` (default: 30, seconds)
+- `--clickhouse-max-open-conns` → `CLICKHOUSE_MAX_OPEN_CONNS` (default: 5)
+- `--clickhouse-max-idle-conns` → `CLICKHOUSE_MAX_IDLE_CONNS` (default: 5)
+- `--clickhouse-conn-max-lifetime` → `CLICKHOUSE_CONN_MAX_LIFETIME` (default: 10, minutes)
+- `--clickhouse-block-buffer-size` → `CLICKHOUSE_BLOCK_BUFFER_SIZE` (default: 10)
+- `--clickhouse-max-block-size` → `CLICKHOUSE_MAX_BLOCK_SIZE` (default: 1000, recommended max rows per block)
+- `--clickhouse-max-compression-buffer` → `CLICKHOUSE_MAX_COMPRESSION_BUFFER` (default: 10240, bytes)
+- `--clickhouse-client-name` → `CLICKHOUSE_CLIENT_NAME` (default: "ac-client-name", ClientInfo)
+- `--clickhouse-client-version` → `CLICKHOUSE_CLIENT_VERSION` (default: "1.0", ClientInfo)
+- `--clickhouse-use-http` → `CLICKHOUSE_USE_HTTP` (default: false, use HTTP instead of native protocol)
 
 **Table name flags:**
 - `--raw-blocks-table-name` → `CLICKHOUSE_RAW_BLOCKS_TABLE_NAME` (default: "raw_blocks", used in blocks mode)
@@ -190,7 +222,13 @@ All flags have environment variable equivalents:
 - `--raw-logs-table-name` → `CLICKHOUSE_RAW_LOGS_TABLE_NAME` (default: "raw_logs", used in blocks mode)
 - `--internal-transactions-table-name` → `CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME` (default: "internal_transactions", used in traces mode)
 
-Tables are automatically created if they don't exist. See `--help` for additional ClickHouse connection tuning parameters.
+Tables are automatically created if they don't exist.
+
+**Batch writer (optional, aggregates block writes to ClickHouse):**
+- `--enable-clickhouse-batch-writes` → `ENABLE_CLICKHOUSE_BATCH_WRITES` (default: false; when true, processors enqueue rows and a background writer batches inserts)
+- `--batch-writer-workers` → `BATCH_WRITER_WORKERS` (default: 1, max concurrent flush goroutines to ClickHouse)
+- `--batch-writer-max-blocks` → `BATCH_WRITER_MAX_BLOCKS` (default: 10, max blocks per batch before flush)
+- `--batch-writer-flush-timeout` → `BATCH_WRITER_FLUSH_TIMEOUT` (default: 1s, max wait after first block in a batch before flushing)
 
 **Metrics flags:**
 - `--metrics-host` → `METRICS_HOST` (default: "" for all interfaces)
@@ -296,6 +334,15 @@ docker run --rm \
 - `latest`: Process only new messages (real-time)
 - `none`: Fail if no committed offset exists
 
+**Primary consumer retries:**
+- Tune `--consumer-retry-max-retries`, `--consumer-retry-base-delay`, and `--consumer-retry-max-delay` for transient ClickHouse or parsing failures before DLQ or permanent failure.
+
+**ClickHouse batch writes:**
+- Enable with `--enable-clickhouse-batch-writes` to batch inserts across blocks (see `--batch-writer-*` flags). Useful for higher throughput; ensure `--batch-writer-max-blocks` and `--batch-writer-flush-timeout` match latency and memory goals.
+
+**DLQ consumer:**
+- Requires `--publish-to-dlq`, a `--dlq-topic`, and `--enable-dlq-consumer` with a distinct `--dlq-consumer-group-id`. The DLQ consumer reprocesses failed messages with infinite retry semantics (separate from primary consumer retries).
+
 ### Exit Behavior
 - Gracefully handles `SIGTERM`/`SIGINT`
 - Waits up to `--goroutine-wait-timeout` (default: 30s) for in-flight messages to complete
@@ -313,3 +360,29 @@ This will delete data from all tables:
 - `raw_transactions`
 - `raw_logs`
 - `internal_transactions`
+
+**`remove` flags** (same environment variable names as `run` where applicable):
+
+- `--evm-chain-id` / `-C` → `EVM_CHAIN_ID` (**required**, chain ID to delete)
+- `--clickhouse-hosts` → `CLICKHOUSE_HOSTS` (default: "localhost:9000")
+- `--clickhouse-cluster` → `CLICKHOUSE_CLUSTER` (default: "default")
+- `--clickhouse-database` → `CLICKHOUSE_DATABASE` (default: "default")
+- `--clickhouse-username` → `CLICKHOUSE_USERNAME` (default: "default")
+- `--clickhouse-password` → `CLICKHOUSE_PASSWORD` (default: "")
+- `--clickhouse-debug` → `CLICKHOUSE_DEBUG`
+- `--clickhouse-insecure-skip-verify` → `CLICKHOUSE_INSECURE_SKIP_VERIFY` (default: true)
+- `--clickhouse-max-execution-time` → `CLICKHOUSE_MAX_EXECUTION_TIME` (default: 60)
+- `--clickhouse-dial-timeout` → `CLICKHOUSE_DIAL_TIMEOUT` (default: 30)
+- `--clickhouse-max-open-conns` → `CLICKHOUSE_MAX_OPEN_CONNS` (default: 5)
+- `--clickhouse-max-idle-conns` → `CLICKHOUSE_MAX_IDLE_CONNS` (default: 5)
+- `--clickhouse-conn-max-lifetime` → `CLICKHOUSE_CONN_MAX_LIFETIME` (default: 10)
+- `--clickhouse-block-buffer-size` → `CLICKHOUSE_BLOCK_BUFFER_SIZE` (default: 10)
+- `--clickhouse-max-block-size` → `CLICKHOUSE_MAX_BLOCK_SIZE` (default: 1000)
+- `--clickhouse-max-compression-buffer` → `CLICKHOUSE_MAX_COMPRESSION_BUFFER` (default: 10240)
+- `--clickhouse-client-name` → `CLICKHOUSE_CLIENT_NAME` (default: "ac-client-name")
+- `--clickhouse-client-version` → `CLICKHOUSE_CLIENT_VERSION` (default: "1.0")
+- `--clickhouse-use-http` → `CLICKHOUSE_USE_HTTP` (default: false)
+- `--raw-blocks-table-name` → `CLICKHOUSE_RAW_BLOCKS_TABLE_NAME`
+- `--raw-transactions-table-name` → `CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME`
+- `--raw-logs-table-name` → `CLICKHOUSE_RAW_LOGS_TABLE_NAME`
+- `--internal-transactions-table-name` → `CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME` (default: "internal_transactions")

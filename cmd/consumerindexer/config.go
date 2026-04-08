@@ -92,6 +92,10 @@ type Config struct {
 	ConsumerRetryMaxDelay       time.Duration
 	EnableClickHouseBatchWrites bool
 
+	BatchWriterWorkers      int
+	BatchWriterMaxBlocks    int
+	BatchWriterFlushTimeout time.Duration
+
 	// DLQ consumer settings
 	EnableDLQConsumer               bool
 	DLQConsumerGroupID              string
@@ -213,6 +217,9 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		Region:                        c.String("region"),
 		CloudProvider:                 c.String("cloud-provider"),
 		EnableClickHouseBatchWrites:   c.Bool("enable-clickhouse-batch-writes"),
+		BatchWriterWorkers:            c.Int("batch-writer-workers"),
+		BatchWriterMaxBlocks:          c.Int("batch-writer-max-blocks"),
+		BatchWriterFlushTimeout:       c.Duration("batch-writer-flush-timeout"),
 	}, nil
 }
 

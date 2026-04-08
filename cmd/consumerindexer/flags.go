@@ -448,6 +448,25 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"ENABLE_CLICKHOUSE_BATCH_WRITES"},
 			Value:   false,
 		},
+		// Batch writer service flags
+		&cli.IntFlag{
+			Name:    "batch-writer-workers",
+			Usage:   "Number of goroutines the batch writer spawns to flush accumulated writes to ClickHouse",
+			EnvVars: []string{"BATCH_WRITER_WORKERS"},
+			Value:   3,
+		},
+		&cli.IntFlag{
+			Name:    "batch-writer-max-blocks",
+			Usage:   "Maximum number of blocks a single batch writer worker accumulates before flushing",
+			EnvVars: []string{"BATCH_WRITER_MAX_BLOCKS"},
+			Value:   1000,
+		},
+		&cli.DurationFlag{
+			Name:    "batch-writer-flush-timeout",
+			Usage:   "Maximum time a batch writer worker waits before flushing whatever has accumulated",
+			EnvVars: []string{"BATCH_WRITER_FLUSH_TIMEOUT"},
+			Value:   120 * time.Second,
+		},
 	}
 }
 

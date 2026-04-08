@@ -121,7 +121,7 @@ func TestE2EConsumerIndexer(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -226,7 +226,7 @@ func TestE2EConsumerIndexerWithDLQ(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -580,7 +580,7 @@ func TestE2EConsumerIndexerConcurrency(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -714,7 +714,7 @@ func TestE2EConsumerIndexerOffsetManagement(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -919,7 +919,7 @@ func TestE2EConsumerIndexerLargePayload(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1261,7 +1261,7 @@ func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
 	require.NoError(t, err)
 
 	// ---- Phase 1: Primary consumer with DLQ publishing ----
-	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, true, primaryMetrics)
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, primaryMetrics)
 
 	primaryCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1291,7 +1291,7 @@ func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
 	dlqBlocks := createTestBlocksStartingFrom(evmChainID, blockchainID, 2000, 2)
 	produceBlocksToKafka(t, kafkaBrokers, dlqTopic, dlqBlocks)
 
-	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, true, dlqMetrics)
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, dlqMetrics)
 
 	dlqCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1410,7 +1410,7 @@ func TestE2EConsumerIndexerMetricsIsolation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, true, primaryMetrics)
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, primaryMetrics)
 	primaryCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-metrics-primary-%d", testID),
@@ -1428,7 +1428,7 @@ func TestE2EConsumerIndexerMetricsIsolation(t *testing.T) {
 	primaryConsumer, err := kafka.NewConsumer(ctx, log.Named(RolePrimaryConsumer), primaryCfg, primaryProc, primaryMetrics)
 	require.NoError(t, err)
 
-	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, true, dlqMetrics)
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, dlqMetrics)
 	dlqCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-metrics-dlq-%d", testID),
@@ -1551,7 +1551,7 @@ func TestE2EConsumerIndexerErrgroupShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	// Primary consumer: PublishToDLQ=false so processing failures go to errCh -> loopErr -> Start() returns error
-	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, true, primaryMetrics)
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, primaryMetrics)
 	primaryCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-errgroup-primary-%d", testID),
@@ -1569,7 +1569,7 @@ func TestE2EConsumerIndexerErrgroupShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	// DLQ consumer: no messages to process, just waiting
-	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, true, dlqMetrics)
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, dlqMetrics)
 	dlqCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-errgroup-dlq-%d", testID),
@@ -1683,7 +1683,7 @@ func TestE2EConsumerIndexerNonRetryableBypassesRetries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1789,7 +1789,7 @@ func TestE2EConsumerIndexerFatalStopsConsumer(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
