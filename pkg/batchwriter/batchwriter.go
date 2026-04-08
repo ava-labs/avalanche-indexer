@@ -141,7 +141,7 @@ func (w *Writer) runDispatcher(ctx context.Context, sem *semaphore.Weighted, inf
 		select {
 		case <-ctx.Done():
 			w.log.Infof("context cancelled, draining %d requests", len(pending))
-			w.signalAll(pending, ctx.Err())
+			signalAll(pending, ctx.Err())
 			return
 
 		case req := <-w.requests:
@@ -190,10 +190,9 @@ func (w *Writer) spawnFlush(ctx context.Context, sem *semaphore.Weighted, inflig
 	if len(batch) == 0 {
 		return
 	}
-
 	err := sem.Acquire(ctx, 1)
 	if err != nil {
-		w.signalAll(batch, err)
+		signalAll(batch, err)
 		return
 	}
 
@@ -204,9 +203,8 @@ func (w *Writer) spawnFlush(ctx context.Context, sem *semaphore.Weighted, inflig
 		defer sem.Release(1)
 
 		err := w.flush(ctx, batch)
-		w.signalAll(batch, err)
+		signalAll(batch, err)
 	}(batch)
-
 }
 
 // stopAndDrainTimer stops t and drains its channel if Stop did not succeed.
@@ -220,7 +218,7 @@ func stopAndDrainTimer(t *time.Timer) {
 }
 
 // signalAll sends err on each request's done channel and closes it.
-func (w *Writer) signalAll(requests []*WriteRequest, err error) {
+func signalAll(requests []*WriteRequest, err error) {
 	for _, req := range requests {
 		if req.done != nil {
 			req.done <- err

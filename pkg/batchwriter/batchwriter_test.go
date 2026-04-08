@@ -38,11 +38,11 @@ type fakeBlocks struct {
 	blockFirstFlush chan struct{}
 }
 
-func (f *fakeBlocks) CreateTableIfNotExists(ctx context.Context) error { return nil }
-func (f *fakeBlocks) WriteBlock(ctx context.Context, block *evmrepo.BlockRow) error {
+func (*fakeBlocks) CreateTableIfNotExists(_ context.Context) error { return nil }
+func (*fakeBlocks) WriteBlock(_ context.Context, _ *evmrepo.BlockRow) error {
 	return nil
 }
-func (f *fakeBlocks) DeleteBlocks(ctx context.Context, chainID uint64) error { return nil }
+func (*fakeBlocks) DeleteBlocks(_ context.Context, _ uint64) error { return nil }
 
 func (f *fakeBlocks) BatchInsertBlocks(ctx context.Context, blocks []*evmrepo.BlockRow) error {
 	if f.blockFirstFlush != nil {
@@ -112,7 +112,7 @@ func TestWriter_FlushOnMaxBlocks(t *testing.T) {
 		FlushTimeout: time.Hour,
 	}, Repositories{Blocks: fb}, zap.NewNop().Sugar(), metrics.NewNoOp())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	doneStart := make(chan struct{})
@@ -123,7 +123,7 @@ func TestWriter_FlushOnMaxBlocks(t *testing.T) {
 	<-doneStart
 	time.Sleep(20 * time.Millisecond)
 
-	bg := context.Background()
+	bg := t.Context()
 	req1 := &WriteRequest{Block: testBlock("h1")}
 	ch1 := w.Submit(bg, req1)
 	req2 := &WriteRequest{Block: testBlock("h2")}
@@ -133,13 +133,13 @@ func TestWriter_FlushOnMaxBlocks(t *testing.T) {
 	case err := <-ch1:
 		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for first write")
+		require.FailNow(t, "timeout waiting for first write")
 	}
 	select {
 	case err := <-ch2:
 		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for second write")
+		require.FailNow(t, "timeout waiting for second write")
 	}
 
 	cancel()
@@ -159,20 +159,20 @@ func TestWriter_FlushOnTimeout(t *testing.T) {
 		FlushTimeout: 150 * time.Millisecond,
 	}, Repositories{Blocks: fb}, zap.NewNop().Sugar(), metrics.NewNoOp())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	go func() { _ = w.Start(ctx) }()
 	time.Sleep(20 * time.Millisecond)
 
 	req := &WriteRequest{Block: testBlock("solo")}
-	ch := w.Submit(context.Background(), req)
+	ch := w.Submit(t.Context(), req)
 
 	select {
 	case err := <-ch:
 		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for flush")
+		require.FailNow(t, "timeout waiting for flush")
 	}
 
 	cancel()
@@ -193,19 +193,19 @@ func TestWriter_FlushErrorPropagates(t *testing.T) {
 		FlushTimeout: time.Hour,
 	}, Repositories{Blocks: fb}, zap.NewNop().Sugar(), metrics.NewNoOp())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	go func() { _ = w.Start(ctx) }()
 	time.Sleep(20 * time.Millisecond)
 
-	ch := w.Submit(context.Background(), &WriteRequest{Block: testBlock("x")})
+	ch := w.Submit(t.Context(), &WriteRequest{Block: testBlock("x")})
 
 	select {
 	case err := <-ch:
 		require.ErrorIs(t, err, wantErr)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout")
+		require.FailNow(t, "timeout")
 	}
 
 	cancel()
@@ -221,7 +221,7 @@ func TestWriter_ShutdownSignalsPending(t *testing.T) {
 		FlushTimeout: time.Hour,
 	}, Repositories{Blocks: fb}, zap.NewNop().Sugar(), metrics.NewNoOp())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	started := make(chan struct{})
 	go func() {
@@ -233,7 +233,7 @@ func TestWriter_ShutdownSignalsPending(t *testing.T) {
 
 	// One block in pending, no timeout flush yet — cancel before timer fires.
 	req := &WriteRequest{Block: testBlock("orphan")}
-	ch := w.Submit(context.Background(), req)
+	ch := w.Submit(t.Context(), req)
 
 	cancel()
 
@@ -241,7 +241,7 @@ func TestWriter_ShutdownSignalsPending(t *testing.T) {
 	case err := <-ch:
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for shutdown signal")
+		require.FailNow(t, "timeout waiting for shutdown signal")
 	}
 }
 
@@ -259,17 +259,17 @@ func TestSubmit_ContextCancelledBeforeEnqueue(t *testing.T) {
 		FlushTimeout: time.Hour,
 	}, Repositories{Blocks: fb}, zap.NewNop().Sugar(), metrics.NewNoOp())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	go func() { _ = w.Start(ctx) }()
 	time.Sleep(30 * time.Millisecond)
 
-	bg := context.Background()
+	bg := t.Context()
 	_ = w.Submit(bg, &WriteRequest{Block: testBlock("a")})
 	_ = w.Submit(bg, &WriteRequest{Block: testBlock("b")})
 
-	ctx3, cancel3 := context.WithCancel(context.Background())
+	ctx3, cancel3 := context.WithCancel(t.Context())
 	cancel3()
 	ch3 := w.Submit(ctx3, &WriteRequest{Block: testBlock("c")})
 
@@ -277,7 +277,7 @@ func TestSubmit_ContextCancelledBeforeEnqueue(t *testing.T) {
 	case err := <-ch3:
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(5 * time.Second):
-		t.Fatal("expected immediate cancel on Submit")
+		require.FailNow(t, "expected immediate cancel on Submit")
 	}
 
 	close(unblock)
@@ -294,18 +294,18 @@ func TestWriter_NilMetricsUsesNoOp(t *testing.T) {
 		FlushTimeout: time.Millisecond,
 	}, Repositories{Blocks: fb}, zap.NewNop().Sugar(), nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	go func() { _ = w.Start(ctx) }()
 	time.Sleep(30 * time.Millisecond)
 
-	ch := w.Submit(context.Background(), &WriteRequest{Block: testBlock("m")})
+	ch := w.Submit(t.Context(), &WriteRequest{Block: testBlock("m")})
 	select {
 	case err := <-ch:
 		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout")
+		require.FailNow(t, "timeout")
 	}
 	cancel()
 }
