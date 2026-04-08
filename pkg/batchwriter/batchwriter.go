@@ -91,6 +91,12 @@ func New(cfg Config, repos Repositories, log *zap.SugaredLogger, m *metrics.Metr
 // to the calling processor. If ctx is cancelled before the request is
 // enqueued, the returned channel contains ctx.Err() immediately.
 func (w *Writer) Submit(ctx context.Context, req *WriteRequest) <-chan error {
+	if req == nil {
+		ch := make(chan error, 1)
+		ch <- fmt.Errorf("batchwriter: nil WriteRequest")
+		close(ch)
+		return ch
+	}
 	req.done = make(chan error, 1)
 
 	select {
@@ -128,11 +134,12 @@ func (w *Writer) Start(ctx context.Context) error {
 // runDispatcher is the main loop: read requests, accumulate, flush on max
 // size or timeout by spawning async flushes gated by the semaphore.
 func (w *Writer) runDispatcher(ctx context.Context, sem *semaphore.Weighted, inflight *sync.WaitGroup) {
-	pending := make([]*WriteRequest, 0, w.cfg.MaxBlocks)
 	maxBlocks := w.cfg.MaxBlocks
 	if maxBlocks < 1 {
 		maxBlocks = 1
 	}
+
+	pending := make([]*WriteRequest, 0, maxBlocks)
 
 	timer := time.NewTimer(w.cfg.FlushTimeout)
 	stopAndDrainTimer(timer)

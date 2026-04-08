@@ -125,10 +125,13 @@ func run(c *cli.Context) error {
 	primaryLog := sugar.Named("primary_consumer")
 	dlqLog := sugar.Named("dlq_consumer")
 
-	// Build the batch writer if enabled
+	// Build the batch writer if enabled (repos are reused by newProcessor to avoid
+	// a second round of repository init / migrations against ClickHouse).
 	var bw *batchwriter.Writer
+	var bwRepos batchwriter.Repositories
 	if cfg.EnableClickHouseBatchWrites {
-		bwRepos, err := buildBatchWriterRepos(ctx, mode, chClient, cfg)
+		var err error
+		bwRepos, err = buildBatchWriterRepos(ctx, mode, chClient, cfg)
 		if err != nil {
 			return fmt.Errorf("failed to build batch writer repos: %w", err)
 		}
@@ -145,7 +148,7 @@ func run(c *cli.Context) error {
 		)
 	}
 
-	proc, err := newProcessor(ctx, mode, primaryLog, chClient, cfg, m, bw)
+	proc, err := newProcessor(ctx, mode, primaryLog, chClient, cfg, m, bw, bwRepos)
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
@@ -310,8 +313,10 @@ func run(c *cli.Context) error {
 // newProcessor creates a processor.Processor for the given mode, wired with
 // the provided logger, ClickHouse client, config, and metrics. If bw is
 // non-nil the processor delegates writes to the batch writer instead of
-// calling repositories directly. Both the primary and DLQ consumers use
-// this to avoid duplicating the repository and processor initialization logic.
+// calling repositories directly; bwRepos must be the same repository set
+// passed to that writer so ClickHouse repos are not constructed twice.
+// Both the primary and DLQ consumers use this to avoid duplicating the
+// repository and processor initialization logic.
 func newProcessor(
 	ctx context.Context,
 	mode string,
@@ -320,27 +325,52 @@ func newProcessor(
 	cfg *Config,
 	m *metrics.Metrics,
 	bw *batchwriter.Writer,
+	bwRepos batchwriter.Repositories,
 ) (processor.Processor, error) {
 	switch mode {
 	case blocksMode:
-		blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
-		if err != nil {
-			return nil, fmt.Errorf("blocks repository: %w", err)
-		}
-		transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
-		if err != nil {
-			return nil, fmt.Errorf("transactions repository: %w", err)
-		}
-		logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
-		if err != nil {
-			return nil, fmt.Errorf("logs repository: %w", err)
+		var (
+			blocksRepo       evmrepo.Blocks
+			transactionsRepo evmrepo.Transactions
+			logsRepo         evmrepo.Logs
+		)
+		if bw != nil {
+			blocksRepo = bwRepos.Blocks
+			transactionsRepo = bwRepos.Transactions
+			logsRepo = bwRepos.Logs
+			if blocksRepo == nil || transactionsRepo == nil || logsRepo == nil {
+				return nil, errors.New("batch writer enabled but blocks/transactions/logs repositories are missing")
+			}
+		} else {
+			var err error
+			blocksRepo, err = evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
+			if err != nil {
+				return nil, fmt.Errorf("blocks repository: %w", err)
+			}
+			transactionsRepo, err = evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
+			if err != nil {
+				return nil, fmt.Errorf("transactions repository: %w", err)
+			}
+			logsRepo, err = evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
+			if err != nil {
+				return nil, fmt.Errorf("logs repository: %w", err)
+			}
 		}
 		proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, bw, cfg.EnableClickHouseBatchWrites, m)
 		return proc, nil
 	case tracesMode:
-		internalTxRepo, err := evmrepo.NewInternalTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.InternalTransactionsTableName)
-		if err != nil {
-			return nil, fmt.Errorf("internal transactions repository: %w", err)
+		var internalTxRepo evmrepo.InternalTransactions
+		if bw != nil {
+			internalTxRepo = bwRepos.InternalTransactions
+			if internalTxRepo == nil {
+				return nil, errors.New("batch writer enabled but internal transactions repository is missing")
+			}
+		} else {
+			var err error
+			internalTxRepo, err = evmrepo.NewInternalTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.InternalTransactionsTableName)
+			if err != nil {
+				return nil, fmt.Errorf("internal transactions repository: %w", err)
+			}
 		}
 		proc := processor.NewCorethTracesProcessor(log, internalTxRepo, bw, cfg.EnableClickHouseBatchWrites, m)
 		return proc, nil
@@ -419,7 +449,7 @@ func newDLQConsumer(
 		return nil, fmt.Errorf("DLQ metrics: %w", err)
 	}
 
-	dlqProc, err := newProcessor(ctx, mode, log, chClient, cfg, dlqMetrics, nil)
+	dlqProc, err := newProcessor(ctx, mode, log, chClient, cfg, dlqMetrics, nil, batchwriter.Repositories{})
 	if err != nil {
 		return nil, fmt.Errorf("DLQ processor: %w", err)
 	}
