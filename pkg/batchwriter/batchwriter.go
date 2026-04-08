@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
@@ -257,7 +258,7 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		g.Go(func() error {
 			start := time.Now()
 			err := w.repos.Blocks.BatchInsertBlocks(gctx, blocks)
-			w.metrics.RecordClickHouseWrite("raw_blocks", err, time.Since(start).Seconds())
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultRawBlocksTableName, err, time.Since(start).Seconds())
 			if err != nil {
 				return fmt.Errorf("batch insert blocks (%d rows): %w", len(blocks), err)
 			}
@@ -269,7 +270,7 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		g.Go(func() error {
 			start := time.Now()
 			err := w.repos.Transactions.BatchInsertTransactions(gctx, txs)
-			w.metrics.RecordClickHouseWrite("raw_transactions", err, time.Since(start).Seconds())
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultRawTransactionsTableName, err, time.Since(start).Seconds())
 			if err != nil {
 				return fmt.Errorf("batch insert transactions (%d rows): %w", len(txs), err)
 			}
@@ -281,7 +282,7 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		g.Go(func() error {
 			start := time.Now()
 			err := w.repos.Logs.BatchInsertLogs(gctx, logs)
-			w.metrics.RecordClickHouseWrite("raw_logs", err, time.Since(start).Seconds())
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultRawLogsTableName, err, time.Since(start).Seconds())
 			if err != nil {
 				return fmt.Errorf("batch insert logs (%d rows): %w", len(logs), err)
 			}
@@ -293,7 +294,7 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		g.Go(func() error {
 			start := time.Now()
 			err := w.repos.InternalTransactions.BatchInsertInternalTransactions(gctx, intTxns)
-			w.metrics.RecordClickHouseWrite("internal_transactions", err, time.Since(start).Seconds())
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultRawInternalTransactionsTableName, err, time.Since(start).Seconds())
 			if err != nil {
 				return fmt.Errorf("batch insert internal transactions (%d rows): %w", len(intTxns), err)
 			}
@@ -312,7 +313,7 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		return err
 	}
 
-	w.log.Debugw("batch flush completed",
+	w.log.Infow("batch flush completed",
 		"blocks", len(blocks),
 		"transactions", len(txs),
 		"logs", len(logs),

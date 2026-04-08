@@ -226,9 +226,9 @@ Tables are automatically created if they don't exist.
 
 **Batch writer (optional, aggregates block writes to ClickHouse):**
 - `--enable-clickhouse-batch-writes` → `ENABLE_CLICKHOUSE_BATCH_WRITES` (default: false; when true, processors enqueue rows and a background writer batches inserts)
-- `--batch-writer-workers` → `BATCH_WRITER_WORKERS` (default: 1, max concurrent flush goroutines to ClickHouse)
-- `--batch-writer-max-blocks` → `BATCH_WRITER_MAX_BLOCKS` (default: 10, max blocks per batch before flush)
-- `--batch-writer-flush-timeout` → `BATCH_WRITER_FLUSH_TIMEOUT` (default: 1s, max wait after first block in a batch before flushing)
+- `--batch-writer-workers` → `BATCH_WRITER_WORKERS` (default: 3, max concurrent flush goroutines to ClickHouse)
+- `--batch-writer-max-blocks` → `BATCH_WRITER_MAX_BLOCKS` (default: 1000, max blocks per batch before flush)
+- `--batch-writer-flush-timeout` → `BATCH_WRITER_FLUSH_TIMEOUT` (default: 120s, max wait after first block in a batch before flushing)
 
 **Metrics flags:**
 - `--metrics-host` → `METRICS_HOST` (default: "" for all interfaces)

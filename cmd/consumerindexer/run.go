@@ -383,6 +383,8 @@ func buildBatchWriterRepos(
 			return repos, fmt.Errorf("internal transactions repository: %w", err)
 		}
 		repos.InternalTransactions = intTxRepo
+	default:
+		return repos, fmt.Errorf("invalid mode %q", mode)
 	}
 
 	return repos, nil
