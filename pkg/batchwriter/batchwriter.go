@@ -34,6 +34,14 @@ type Config struct {
 }
 
 // Repositories groups the ClickHouse repositories the batch writer flushes to.
+//
+// Not every field is used in every deployment mode (e.g. blocks mode uses
+// Blocks/Transactions/Logs; traces mode uses InternalTransactions). Callers
+// populate only the fields relevant to their mode.
+//
+// When adding a new repository or extending what the batch writer persists,
+// extend this struct, the flush path in this package, and the wiring in
+// cmd/consumerindexer (see newProcessor)—those places must stay in sync.
 type Repositories struct {
 	Blocks               evmrepo.Blocks
 	Transactions         evmrepo.Transactions

@@ -293,8 +293,14 @@ func run(c *cli.Context) error {
 // Repositories are created once per mode. When buildBatchWriter is true and
 // cfg.EnableClickHouseBatchWrites is set, a batchwriter.Writer is constructed
 // from those same repository instances (no second round of New* / migrations).
-// rootLog is used only to name the batch writer logger (e.g. sugar.Named("batch_writer"))
-// so it stays a sibling of the primary consumer logger.
+//
+// Maintenance: each mode branch explicitly lists which repositories are created
+// and passed into [batchwriter.Repositories]. That coupling is intentional—it
+// keeps wiring straightforward. If you add a new repository type for a mode (or
+// a new entity the batch writer flushes), update this function, [batchwriter.Repositories],
+// and the batch writer flush logic together. A more generic design (e.g. pluggable
+// flush handlers per entity) would avoid central listing here but was deferred
+// for simplicity.
 //
 // When buildBatchWriter is false (DLQ consumer), no batch writer is created even
 // if the global config enables batch writes.
