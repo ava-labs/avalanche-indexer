@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/batchwriter"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
@@ -121,7 +122,7 @@ func TestE2EConsumerIndexer(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -161,6 +162,115 @@ func TestE2EConsumerIndexer(t *testing.T) {
 	require.NoError(t, err, "consumer should shutdown gracefully")
 
 	log.Info("Consumer indexer e2e test completed successfully")
+}
+
+// TestE2EConsumerIndexerBatchWriter exercises the pkg/batchwriter.Writer path: processors
+// submit WriteRequests and a background writer batches inserts to ClickHouse. Existing e2e
+// tests pass batchWriter=nil and use repository BatchInsert* directly inside the processor.
+func TestE2EConsumerIndexerBatchWriter(t *testing.T) {
+	evmChainID := uint64(getEnvUint64("CHAIN_ID", 43113))
+	blockchainID := getEnvStr("BC_ID", "11111111111111111111111111111111LpoYY")
+	kafkaBrokers := getEnvStr("KAFKA_BROKERS", "localhost:9092")
+	testID := time.Now().UnixNano()
+	kafkaTopic := fmt.Sprintf("blocks_consumer_batchwriter_e2e_%d", testID)
+	groupID := fmt.Sprintf("e2e-consumerindexer-batchwriter-%d", testID)
+	blocksTable := getEnvStr("BLOCKS_TABLE_BATCH", "raw_blocks_e2e_batch")
+	transactionsTable := getEnvStr("TRANSACTIONS_TABLE_BATCH", "raw_transactions_e2e_batch")
+	logsTable := getEnvStr("LOGS_TABLE_BATCH", "raw_logs_e2e_batch")
+	concurrency := int64(3)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	log, err := utils.NewSugaredLogger(true)
+	require.NoError(t, err)
+	defer log.Desugar().Sync() //nolint:errcheck
+
+	chClient, err := clickhouse.New(clickhouseTestConfig, log)
+	require.NoError(t, err, "clickhouse connection failed (is docker-compose up?)")
+	defer chClient.Close()
+
+	blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, "default", "default", blocksTable)
+	require.NoError(t, err)
+
+	transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, "default", "default", transactionsTable)
+	require.NoError(t, err)
+
+	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", logsTable)
+	require.NoError(t, err)
+
+	for _, tbl := range []string{blocksTable, transactionsTable, logsTable} {
+		err = chClient.Conn().Exec(ctx, fmt.Sprintf("TRUNCATE TABLE IF EXISTS %s", tbl))
+		require.NoError(t, err, "truncate %s", tbl)
+	}
+
+	var count uint64
+	err = chClient.Conn().QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", blocksTable)).Scan(&count)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), count)
+
+	testBlocks := createTestBlocks(evmChainID, blockchainID, 5)
+	produceBlocksToKafka(t, kafkaBrokers, kafkaTopic, testBlocks)
+
+	registry := prometheus.NewRegistry()
+	m, err := metrics.NewWithLabels(registry, metrics.Labels{
+		EVMChainID:    evmChainID,
+		Environment:   "test",
+		Region:        "local",
+		CloudProvider: "local",
+	})
+	require.NoError(t, err)
+
+	bw := batchwriter.New(batchwriter.Config{
+		Workers:      1,
+		MaxBlocks:    5,
+		FlushTimeout: 2 * time.Second,
+	}, batchwriter.Repositories{
+		Blocks:       blocksRepo,
+		Transactions: transactionsRepo,
+		Logs:         logsRepo,
+	}, log.Named("batch_writer_e2e"), m)
+
+	// enableBatchWrites is ignored when batchWriter is non-nil; processor uses submitToBatchWriter.
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, bw, false, m)
+
+	consumerCfg := kafka.ConsumerConfig{
+		BootstrapServers:            kafkaBrokers,
+		GroupID:                     groupID,
+		Topic:                       kafkaTopic,
+		AutoOffsetReset:             "earliest",
+		Concurrency:                 concurrency,
+		OffsetManagerCommitInterval: 2 * time.Second,
+		PublishToDLQ:                false,
+		EnableLogs:                  false,
+		SessionTimeout:              durationPtr(10 * time.Second),
+		MaxPollInterval:             durationPtr(30 * time.Second),
+	}
+
+	consumer, err := kafka.NewConsumer(ctx, log, consumerCfg, proc, nil)
+	require.NoError(t, err)
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return bw.Start(gctx)
+	})
+	g.Go(func() error {
+		return consumer.Start(gctx)
+	})
+
+	time.Sleep(12 * time.Second)
+
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer verifyCancel()
+
+	verifyBlocksInClickHouse(t, verifyCtx, chClient, blocksTable, testBlocks)
+	verifyTransactionsInClickHouse(t, verifyCtx, chClient, transactionsTable, testBlocks)
+
+	cancel()
+	err = g.Wait()
+	require.NoError(t, err, "batch writer and consumer should shutdown cleanly")
+
+	log.Info("Consumer indexer batch-writer e2e test completed successfully")
 }
 
 // TestE2EConsumerIndexerWithDLQ tests consumer indexer with DLQ enabled
@@ -226,7 +336,7 @@ func TestE2EConsumerIndexerWithDLQ(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -580,7 +690,7 @@ func TestE2EConsumerIndexerConcurrency(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -714,7 +824,7 @@ func TestE2EConsumerIndexerOffsetManagement(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -919,7 +1029,7 @@ func TestE2EConsumerIndexerLargePayload(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1261,7 +1371,7 @@ func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
 	require.NoError(t, err)
 
 	// ---- Phase 1: Primary consumer with DLQ publishing ----
-	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, true, primaryMetrics)
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, primaryMetrics)
 
 	primaryCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1291,7 +1401,7 @@ func TestE2EConsumerIndexerDLQConsumerPipeline(t *testing.T) {
 	dlqBlocks := createTestBlocksStartingFrom(evmChainID, blockchainID, 2000, 2)
 	produceBlocksToKafka(t, kafkaBrokers, dlqTopic, dlqBlocks)
 
-	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, true, dlqMetrics)
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, dlqMetrics)
 
 	dlqCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1410,7 +1520,7 @@ func TestE2EConsumerIndexerMetricsIsolation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, true, primaryMetrics)
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, primaryMetrics)
 	primaryCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-metrics-primary-%d", testID),
@@ -1428,7 +1538,7 @@ func TestE2EConsumerIndexerMetricsIsolation(t *testing.T) {
 	primaryConsumer, err := kafka.NewConsumer(ctx, log.Named(RolePrimaryConsumer), primaryCfg, primaryProc, primaryMetrics)
 	require.NoError(t, err)
 
-	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, true, dlqMetrics)
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, dlqMetrics)
 	dlqCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-metrics-dlq-%d", testID),
@@ -1551,7 +1661,7 @@ func TestE2EConsumerIndexerErrgroupShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	// Primary consumer: PublishToDLQ=false so processing failures go to errCh -> loopErr -> Start() returns error
-	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, true, primaryMetrics)
+	primaryProc := processor.NewCorethProcessor(log.Named(RolePrimaryConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, primaryMetrics)
 	primaryCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-errgroup-primary-%d", testID),
@@ -1569,7 +1679,7 @@ func TestE2EConsumerIndexerErrgroupShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	// DLQ consumer: no messages to process, just waiting
-	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, true, dlqMetrics)
+	dlqProc := processor.NewCorethProcessor(log.Named(RoleDLQConsumer), blocksRepo, transactionsRepo, logsRepo, nil, true, dlqMetrics)
 	dlqCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
 		GroupID:                     fmt.Sprintf("e2e-errgroup-dlq-%d", testID),
@@ -1683,7 +1793,7 @@ func TestE2EConsumerIndexerNonRetryableBypassesRetries(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,
@@ -1789,7 +1899,7 @@ func TestE2EConsumerIndexerFatalStopsConsumer(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := kafka.ConsumerConfig{
 		BootstrapServers:            kafkaBrokers,

@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/batchwriter"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
@@ -44,15 +45,19 @@ type CorethProcessor struct {
 	logsRepo          evmrepo.Logs
 	metrics           *metrics.Metrics
 	enableBatchWrites bool
+	batchWriter       *batchwriter.Writer
 }
 
 // NewCorethProcessor creates a new CorethProcessor with the given logger.
 // If repositories are provided, blocks, transactions, and logs will be persisted to ClickHouse.
+// When bw is non-nil, Process delegates to the batch writer; otherwise enableBatchWrites
+// selects per-table BatchInsert* vs single-row writes when batchWriter is nil.
 func NewCorethProcessor(
 	log *zap.SugaredLogger,
 	blocksRepo evmrepo.Blocks,
 	txsRepo evmrepo.Transactions,
 	logsRepo evmrepo.Logs,
+	bw *batchwriter.Writer,
 	enableBatchWrites bool,
 	m *metrics.Metrics,
 ) *CorethProcessor {
@@ -65,6 +70,7 @@ func NewCorethProcessor(
 		txsRepo:           txsRepo,
 		logsRepo:          logsRepo,
 		metrics:           m,
+		batchWriter:       bw,
 		enableBatchWrites: enableBatchWrites,
 	}
 }
@@ -97,6 +103,10 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 		"hash", block.Hash,
 	)
 
+	if p.batchWriter != nil {
+		return p.submitToBatchWriter(ctx, start, &block)
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 
 	if p.blocksRepo != nil {
@@ -125,6 +135,60 @@ func (p *CorethProcessor) Process(ctx context.Context, msg *ckafka.Message) erro
 	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 
 	return nil
+}
+
+// submitToBatchWriter converts all block data into rows and submits them as a
+// single WriteRequest. It blocks until the batch writer signals completion.
+func (p *CorethProcessor) submitToBatchWriter(
+	ctx context.Context,
+	start time.Time,
+	block *kafkamsg.EVMBlock,
+) error {
+	blockRow, err := CorethBlockToBlockRow(block)
+	if err != nil {
+		p.metrics.IncError("coreth_parse_error")
+		return NonRetryable(fmt.Errorf("failed to parse block for storage: %w", err))
+	}
+
+	txRows := make([]*evmrepo.TransactionRow, 0, len(block.Transactions))
+	var logRows []*evmrepo.LogRow
+
+	for i, tx := range block.Transactions {
+		txRow, err := CorethTransactionToTransactionRow(tx, block, uint64(i))
+		if err != nil {
+			return NonRetryable(fmt.Errorf("failed to convert transaction %d: %w", i, err))
+		}
+		txRows = append(txRows, txRow)
+
+		if tx.Receipt != nil {
+			for _, l := range tx.Receipt.Logs {
+				logRow, err := CorethLogToLogRow(l, block)
+				if err != nil {
+					return NonRetryable(fmt.Errorf("failed to convert log: %w", err))
+				}
+				logRows = append(logRows, logRow)
+			}
+		}
+	}
+
+	req := &batchwriter.WriteRequest{
+		Block:        blockRow,
+		Transactions: txRows,
+		Logs:         logRows,
+	}
+
+	result := p.batchWriter.Submit(ctx, req)
+	select {
+	case err := <-result:
+		if err != nil {
+			return classifyWriteErr(fmt.Errorf("batch writer flush: %w", err))
+		}
+		p.metrics.AddLogsProcessed(len(logRows))
+		p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // CorethBlockToBlockRow converts a kafkamsg.EVMBlock to BlockRow.
