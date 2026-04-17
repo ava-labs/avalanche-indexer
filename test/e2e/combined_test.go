@@ -110,7 +110,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 	logsRepo, err := evmrepo.NewLogs(ctx, chClient, "default", "default", rawLogsTable)
 	require.NoError(t, err)
-	proc := processor.NewCorethProcessor(log, blocksRepo, txsRepo, logsRepo, true, m)
+	proc := processor.NewCorethProcessor(log, blocksRepo, txsRepo, logsRepo, nil, true, m)
 
 	consumerCfg := stream.ConsumerConfig{
 		Topic:                       kafkaTopic,

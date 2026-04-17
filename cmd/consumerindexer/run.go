@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/batchwriter"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
@@ -124,7 +125,7 @@ func run(c *cli.Context) error {
 	primaryLog := sugar.Named("primary_consumer")
 	dlqLog := sugar.Named("dlq_consumer")
 
-	proc, err := newProcessor(ctx, mode, primaryLog, chClient, cfg, m)
+	proc, bw, err := newProcessor(ctx, mode, primaryLog, chClient, cfg, m, true)
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
@@ -220,8 +221,14 @@ func run(c *cli.Context) error {
 		"concurrency", cfg.Concurrency,
 	)
 
-	// Run consumer and metrics server error handling concurrently using errgroup
+	// Run consumer, batch writer, and metrics server concurrently using errgroup.
 	g, gctx := errgroup.WithContext(ctx)
+
+	if bw != nil {
+		g.Go(func() error {
+			return bw.Start(gctx)
+		})
+	}
 
 	if cfg.EnableDLQConsumer {
 		dlqConsumer, err := newDLQConsumer(ctx, cfg, baseLabels, registry, mode, dlqLog, chClient)
@@ -281,9 +288,22 @@ func run(c *cli.Context) error {
 }
 
 // newProcessor creates a processor.Processor for the given mode, wired with
-// the provided logger, ClickHouse client, config, and metrics. Both the
-// primary and DLQ consumers use this to avoid duplicating the repository
-// and processor initialization logic.
+// the provided logger, ClickHouse client, config, and metrics.
+//
+// Repositories are created once per mode. When buildBatchWriter is true and
+// cfg.EnableClickHouseBatchWrites is set, a batchwriter.Writer is constructed
+// from those same repository instances (no second round of New* / migrations).
+//
+// Maintenance: each mode branch explicitly lists which repositories are created
+// and passed into [batchwriter.Repositories]. That coupling is intentional—it
+// keeps wiring straightforward. If you add a new repository type for a mode (or
+// a new entity the batch writer flushes), update this function, [batchwriter.Repositories],
+// and the batch writer flush logic together. A more generic design (e.g. pluggable
+// flush handlers per entity) would avoid central listing here but was deferred
+// for simplicity.
+//
+// When buildBatchWriter is false (DLQ consumer), no batch writer is created even
+// if the global config enables batch writes.
 func newProcessor(
 	ctx context.Context,
 	mode string,
@@ -291,30 +311,73 @@ func newProcessor(
 	chClient clickhouse.Client,
 	cfg *Config,
 	m *metrics.Metrics,
-) (processor.Processor, error) {
+	buildBatchWriter bool,
+) (processor.Processor, *batchwriter.Writer, error) {
+	var bw *batchwriter.Writer
+
 	switch mode {
 	case blocksMode:
 		blocksRepo, err := evmrepo.NewBlocks(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawBlocksTableName)
 		if err != nil {
-			return nil, fmt.Errorf("blocks repository: %w", err)
+			return nil, nil, fmt.Errorf("blocks repository: %w", err)
 		}
 		transactionsRepo, err := evmrepo.NewTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawTransactionsTableName)
 		if err != nil {
-			return nil, fmt.Errorf("transactions repository: %w", err)
+			return nil, nil, fmt.Errorf("transactions repository: %w", err)
 		}
 		logsRepo, err := evmrepo.NewLogs(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.RawLogsTableName)
 		if err != nil {
-			return nil, fmt.Errorf("logs repository: %w", err)
+			return nil, nil, fmt.Errorf("logs repository: %w", err)
 		}
-		return processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, cfg.EnableClickHouseBatchWrites, m), nil
+
+		if buildBatchWriter && cfg.EnableClickHouseBatchWrites {
+			bw = batchwriter.New(batchwriter.Config{
+				Workers:      cfg.BatchWriterWorkers,
+				MaxBlocks:    cfg.BatchWriterMaxBlocks,
+				FlushTimeout: cfg.BatchWriterFlushTimeout,
+			}, batchwriter.Repositories{
+				Blocks:       blocksRepo,
+				Transactions: transactionsRepo,
+				Logs:         logsRepo,
+			}, log.Named("batch_writer"), m)
+
+			log.Infow("batch writer enabled",
+				"workers", cfg.BatchWriterWorkers,
+				"maxBlocks", cfg.BatchWriterMaxBlocks,
+				"flushTimeout", cfg.BatchWriterFlushTimeout,
+			)
+		}
+
+		proc := processor.NewCorethProcessor(log, blocksRepo, transactionsRepo, logsRepo, bw, cfg.EnableClickHouseBatchWrites, m)
+		return proc, bw, nil
+
 	case tracesMode:
 		internalTxRepo, err := evmrepo.NewInternalTransactions(ctx, chClient, cfg.ClickHouse.Cluster, cfg.ClickHouse.Database, cfg.InternalTransactionsTableName)
 		if err != nil {
-			return nil, fmt.Errorf("internal transactions repository: %w", err)
+			return nil, nil, fmt.Errorf("internal transactions repository: %w", err)
 		}
-		return processor.NewCorethTracesProcessor(log, internalTxRepo, cfg.EnableClickHouseBatchWrites, m), nil
+
+		if buildBatchWriter && cfg.EnableClickHouseBatchWrites {
+			bw = batchwriter.New(batchwriter.Config{
+				Workers:      cfg.BatchWriterWorkers,
+				MaxBlocks:    cfg.BatchWriterMaxBlocks,
+				FlushTimeout: cfg.BatchWriterFlushTimeout,
+			}, batchwriter.Repositories{
+				InternalTransactions: internalTxRepo,
+			}, log.Named("batch_writer"), m)
+
+			log.Infow("batch writer enabled",
+				"workers", cfg.BatchWriterWorkers,
+				"maxBlocks", cfg.BatchWriterMaxBlocks,
+				"flushTimeout", cfg.BatchWriterFlushTimeout,
+			)
+		}
+
+		proc := processor.NewCorethTracesProcessor(log, internalTxRepo, bw, cfg.EnableClickHouseBatchWrites, m)
+		return proc, bw, nil
+
 	default:
-		return nil, fmt.Errorf("invalid mode: %s", mode)
+		return nil, nil, fmt.Errorf("invalid mode: %s", mode)
 	}
 }
 
@@ -347,7 +410,7 @@ func newDLQConsumer(
 		return nil, fmt.Errorf("DLQ metrics: %w", err)
 	}
 
-	dlqProc, err := newProcessor(ctx, mode, log, chClient, cfg, dlqMetrics)
+	dlqProc, _, err := newProcessor(ctx, mode, log, chClient, cfg, dlqMetrics, false)
 	if err != nil {
 		return nil, fmt.Errorf("DLQ processor: %w", err)
 	}

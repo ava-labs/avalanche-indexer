@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/batchwriter"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
@@ -26,6 +27,7 @@ type CorethTracesProcessor struct {
 	internalTransactionsRepo evmrepo.InternalTransactions
 	metrics                  *metrics.Metrics
 	enableBatchWrites        bool
+	batchWriter              *batchwriter.Writer
 }
 
 // Compile-time check that CorethTracesProcessor implements Processor.
@@ -34,13 +36,18 @@ var _ Processor = (*CorethTracesProcessor)(nil)
 func NewCorethTracesProcessor(
 	log *zap.SugaredLogger,
 	internalTransactionsRepo evmrepo.InternalTransactions,
+	bw *batchwriter.Writer,
 	enableBatchWrites bool,
-	metrics *metrics.Metrics,
+	m *metrics.Metrics,
 ) *CorethTracesProcessor {
+	if m == nil {
+		m = metrics.NewNoOp()
+	}
 	return &CorethTracesProcessor{
 		log:                      log,
 		internalTransactionsRepo: internalTransactionsRepo,
-		metrics:                  metrics,
+		metrics:                  m,
+		batchWriter:              bw,
 		enableBatchWrites:        enableBatchWrites,
 	}
 }
@@ -74,6 +81,10 @@ func (p *CorethTracesProcessor) Process(ctx context.Context, msg *cKafka.Message
 		"traceCount", len(blockTrace.Traces),
 	)
 
+	if p.batchWriter != nil {
+		return p.submitToBatchWriter(ctx, start, &blockTrace)
+	}
+
 	// Persist traces to ClickHouse if repository is configured
 	if p.internalTransactionsRepo != nil {
 		if err := p.processTraces(ctx, &blockTrace); err != nil {
@@ -85,6 +96,65 @@ func (p *CorethTracesProcessor) Process(ctx context.Context, msg *cKafka.Message
 	p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
 
 	return nil
+}
+
+// submitToBatchWriter converts all traces into internal transaction rows and
+// submits them via the batch writer. Blocks until the batch is flushed.
+func (p *CorethTracesProcessor) submitToBatchWriter(
+	ctx context.Context,
+	start time.Time,
+	blockTrace *kafkamsg.EVMBlockTrace,
+) error {
+	var rows []*evmrepo.InternalTransactionRow
+	for _, rawTrace := range blockTrace.Traces {
+		txHash, traces, err := GetTracesForTransaction(rawTrace)
+		if err != nil {
+			return NonRetryable(fmt.Errorf("failed to get traces for transaction: %w", err))
+		}
+
+		for _, trace := range traces {
+			rows = append(rows, &evmrepo.InternalTransactionRow{
+				BlockchainID:    blockTrace.BlockchainID,
+				EVMChainID:      blockTrace.EVMChainID,
+				BlockNumber:     blockTrace.BlockNumber,
+				BlockTime:       time.Unix(int64(blockTrace.BlockTimestamp), 0).UTC(),
+				TimestampMs:     blockTrace.TimestampMs,
+				TransactionHash: txHash,
+				Type:            trace.Type,
+				From:            trace.From,
+				To:              trace.To,
+				Value:           trace.Value,
+				Gas:             trace.Gas,
+				GasUsed:         trace.GasUsed,
+				Revert:          trace.Revert,
+				Error:           trace.Error,
+				RevertReason:    trace.RevertReason,
+				Input:           trace.Input,
+				Output:          trace.Output,
+				CallIndex:       trace.CallIndex,
+			})
+		}
+	}
+
+	if len(rows) == 0 {
+		return nil
+	}
+
+	req := &batchwriter.WriteRequest{
+		InternalTxns: rows,
+	}
+
+	result := p.batchWriter.Submit(ctx, req)
+	select {
+	case err := <-result:
+		if err != nil {
+			return classifyWriteErr(fmt.Errorf("batch writer flush: %w", err))
+		}
+		p.metrics.ObserveBlockProcessingDuration(time.Since(start).Seconds())
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // processTraces writes each trace as an internal transaction to ClickHouse
