@@ -42,6 +42,19 @@ func TestNew_SuccessfulCreation(t *testing.T) {
 	require.NotNil(t, client)
 }
 
+// Region-only config must construct successfully so the AWS default chain
+// can supply credentials at call time.
+func TestNew_NoStaticCredentials_DefersToDefaultChain(t *testing.T) {
+	cfg := Config{
+		Region: "us-east-1",
+	}
+
+	client, err := New(cfg)
+
+	require.NoError(t, err)
+	require.NotNil(t, client)
+}
+
 func TestNew_WithEndpointURL(t *testing.T) {
 	cfg := Config{
 		Region:          "us-east-1",

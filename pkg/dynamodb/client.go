@@ -20,10 +20,19 @@ func New(cfg Config) (*dynamodb.Client, error) {
 		return nil, errRegionRequired
 	}
 
-	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(),
+	opts := []func(*awscfg.LoadOptions) error{
 		awscfg.WithRegion(cfg.Region),
-		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")),
-	)
+	}
+
+	// Only pin static credentials when the caller explicitly supplied them
+	// (e.g. LocalStack). Otherwise let LoadDefaultConfig do its thing.
+	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
+		opts = append(opts, awscfg.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		))
+	}
+
+	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
