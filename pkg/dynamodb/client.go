@@ -13,11 +13,18 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 )
 
-var errRegionRequired = errors.New("dynamodb region is required")
+var (
+	errRegionRequired           = errors.New("dynamodb region is required")
+	errPartialStaticCredentials = errors.New("dynamodb access key id and secret access key must both be set or both be empty")
+)
 
 func New(cfg Config) (*dynamodb.Client, error) {
 	if strings.TrimSpace(cfg.Region) == "" {
 		return nil, errRegionRequired
+	}
+
+	if (cfg.AccessKeyID == "") != (cfg.SecretAccessKey == "") {
+		return nil, errPartialStaticCredentials
 	}
 
 	opts := []func(*awscfg.LoadOptions) error{
@@ -26,7 +33,7 @@ func New(cfg Config) (*dynamodb.Client, error) {
 
 	// Only pin static credentials when the caller explicitly supplied them
 	// (e.g. LocalStack). Otherwise let LoadDefaultConfig do its thing.
-	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
+	if cfg.AccessKeyID != "" {
 		opts = append(opts, awscfg.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		))

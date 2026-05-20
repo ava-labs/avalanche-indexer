@@ -45,6 +45,11 @@ func TestNew_SuccessfulCreation(t *testing.T) {
 // Region-only config must construct successfully so the AWS default chain
 // can supply credentials at call time.
 func TestNew_NoStaticCredentials_DefersToDefaultChain(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_CONFIG_FILE", tmp+"/config")
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", tmp+"/credentials")
+
 	cfg := Config{
 		Region: "us-east-1",
 	}
@@ -53,6 +58,32 @@ func TestNew_NoStaticCredentials_DefersToDefaultChain(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, client)
+}
+
+func TestNew_PartialStaticCredentials_ReturnsError(t *testing.T) {
+	t.Run("only access key id", func(t *testing.T) {
+		cfg := Config{
+			Region:      "us-east-1",
+			AccessKeyID: "test-key",
+		}
+
+		client, err := New(cfg)
+
+		require.ErrorIs(t, err, errPartialStaticCredentials)
+		assert.Nil(t, client)
+	})
+
+	t.Run("only secret access key", func(t *testing.T) {
+		cfg := Config{
+			Region:          "us-east-1",
+			SecretAccessKey: "test-secret",
+		}
+
+		client, err := New(cfg)
+
+		require.ErrorIs(t, err, errPartialStaticCredentials)
+		assert.Nil(t, client)
+	})
 }
 
 func TestNew_WithEndpointURL(t *testing.T) {
