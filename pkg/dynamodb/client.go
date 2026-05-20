@@ -23,7 +23,10 @@ func New(cfg Config) (*dynamodb.Client, error) {
 		return nil, errRegionRequired
 	}
 
-	if (cfg.AccessKeyID == "") != (cfg.SecretAccessKey == "") {
+	hasAccessKeyID := cfg.AccessKeyID != ""
+	hasSecretAccessKey := cfg.SecretAccessKey != ""
+
+	if hasAccessKeyID != hasSecretAccessKey {
 		return nil, errPartialStaticCredentials
 	}
 
