@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // NewSugaredLogger creates a sugared logger based on the verbose flag.
@@ -17,7 +18,9 @@ func NewSugaredLogger(verbose bool) (*zap.SugaredLogger, error) {
 		return l.Sugar(), nil
 	}
 
-	l, err := zap.NewProduction()
+	cfg := zap.NewProductionConfig()
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	l, err := cfg.Build()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create production logger: %w", err)
 	}
