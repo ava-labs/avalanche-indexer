@@ -44,7 +44,7 @@ ON CLUSTER `%s`
         SELECT * ORDER BY source_blockchain_id, source_block_time, message_id
     ),
     PROJECTION by_destination_chain_time (
-        SELECT * ORDER BY destination_blockchain_id, source_block_time, message_id
+        SELECT * ORDER BY destination_blockchain_id, receive_block_time, message_id
     ),
     PROJECTION by_sender (
         SELECT * ORDER BY sender_address, source_block_time, message_id
@@ -57,6 +57,5 @@ ON CLUSTER `%s`
     )
 )
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
-PARTITION BY toYYYYMM(source_block_time)
 ORDER BY (source_blockchain_id, destination_blockchain_id, message_id)
 SETTINGS index_granularity = 8192
