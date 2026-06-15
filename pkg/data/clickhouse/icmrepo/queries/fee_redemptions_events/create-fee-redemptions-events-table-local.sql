@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS `%s`.`%s_local`
 ON CLUSTER `%s`
 (
     blockchain_id               String,
-    evm_chain_id                UInt64,
+    evm_chain_id                UInt256,
     block_number                UInt64,
     block_time                  DateTime64(3, 'UTC'),
     tx_hash                     FixedString(32),

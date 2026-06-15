@@ -9,7 +9,7 @@ ON CLUSTER `%s`
     -- Fields from SendCrossChainMessage (source chain consumer)
     source_block_time           SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))),
     source_tx_hash              SimpleAggregateFunction(max, Nullable(FixedString(32))),
-    evm_chain_id                SimpleAggregateFunction(max, Nullable(UInt64)),
+    evm_chain_id                SimpleAggregateFunction(max, Nullable(UInt256)),
     contract_address            SimpleAggregateFunction(max, Nullable(FixedString(20))),
     message_nonce               SimpleAggregateFunction(max, Nullable(UInt256)),
     sender_address              SimpleAggregateFunction(max, Nullable(FixedString(20))),
@@ -27,7 +27,7 @@ ON CLUSTER `%s`
     receive_tx_hash             SimpleAggregateFunction(max, Nullable(FixedString(32))),
     deliverer_address           SimpleAggregateFunction(max, Nullable(FixedString(20))),
     reward_redeemer_address     SimpleAggregateFunction(max, Nullable(FixedString(20))),
-    destination_evm_chain_id    SimpleAggregateFunction(max, Nullable(UInt64)),
+    destination_evm_chain_id    SimpleAggregateFunction(max, Nullable(UInt256)),
     destination_gas_spent       SimpleAggregateFunction(max, Nullable(UInt256)),
 
     -- Fields from MessageExecuted (destination chain consumer)
