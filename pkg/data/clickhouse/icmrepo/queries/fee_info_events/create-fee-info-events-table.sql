@@ -12,6 +12,7 @@ ON CLUSTER `%s`
     message_id                  FixedString(32),
     destination_blockchain_id   String,
     fee_token_address           FixedString(20),
-    additional_fee_amount       UInt256
+    additional_fee_amount       UInt256,
+    created_at                  DateTime64(3, 'UTC') DEFAULT now64(3)
 )
 ENGINE = Distributed(`%s`, `%s`, `%s_local`, sipHash64(blockchain_id))

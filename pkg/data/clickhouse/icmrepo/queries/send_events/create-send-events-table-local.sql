@@ -21,6 +21,7 @@ ON CLUSTER `%s`
     message_data                String,
     receipts_message_nonces     Array(UInt256),
     receipts_relayer_addresses  Array(FixedString(20)),
+    created_at                  DateTime64(3, 'UTC') DEFAULT now64(3),
     PROJECTION by_evm_chain_id (
         SELECT * ORDER BY evm_chain_id, block_time, tx_hash, log_index
     )

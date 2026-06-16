@@ -21,6 +21,7 @@ ON CLUSTER `%s`
     allowed_relayer_addresses   Array(String),
     message_data                String,
     receipts_message_nonces     Array(UInt256),
-    receipts_relayer_addresses  Array(FixedString(20))
+    receipts_relayer_addresses  Array(FixedString(20)),
+    created_at                  DateTime64(3, 'UTC') DEFAULT now64(3)
 )
 ENGINE = Distributed(`%s`, `%s`, `%s_local`, sipHash64(blockchain_id))

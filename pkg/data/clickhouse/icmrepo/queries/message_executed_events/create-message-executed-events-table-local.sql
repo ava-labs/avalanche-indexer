@@ -11,6 +11,7 @@ ON CLUSTER `%s`
     contract_address            FixedString(20),
     message_id                  FixedString(32),
     source_blockchain_id        String,
+    created_at                  DateTime64(3, 'UTC') DEFAULT now64(3),
     PROJECTION by_evm_chain_id (
         SELECT * ORDER BY evm_chain_id, block_time, tx_hash, log_index
     )

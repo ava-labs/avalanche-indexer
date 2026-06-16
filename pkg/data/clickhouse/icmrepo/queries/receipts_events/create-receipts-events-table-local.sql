@@ -14,6 +14,7 @@ ON CLUSTER `%s`
     relayer_reward_address      FixedString(20),
     fee_token_address           FixedString(20),
     fee_amount                  UInt256,
+    created_at                  DateTime64(3, 'UTC') DEFAULT now64(3),
     PROJECTION by_evm_chain_id (
         SELECT * ORDER BY evm_chain_id, block_time, tx_hash, log_index
     )

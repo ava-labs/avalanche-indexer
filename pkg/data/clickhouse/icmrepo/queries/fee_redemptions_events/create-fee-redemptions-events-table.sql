@@ -11,6 +11,7 @@ ON CLUSTER `%s`
     contract_address            FixedString(20),
     redeemer_address            FixedString(20),
     fee_token_address           FixedString(20),
-    amount                      UInt256
+    amount                      UInt256,
+    created_at                  DateTime64(3, 'UTC') DEFAULT now64(3)
 )
 ENGINE = Distributed(`%s`, `%s`, `%s_local`, sipHash64(blockchain_id))

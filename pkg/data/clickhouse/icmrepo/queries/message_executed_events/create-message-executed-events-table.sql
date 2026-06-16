@@ -10,6 +10,7 @@ ON CLUSTER `%s`
     log_index                   UInt32,
     contract_address            FixedString(20),
     message_id                  FixedString(32),
-    source_blockchain_id        String
+    source_blockchain_id        String,
+    created_at                  DateTime64(3, 'UTC') DEFAULT now64(3)
 )
 ENGINE = Distributed(`%s`, `%s`, `%s_local`, sipHash64(blockchain_id))
