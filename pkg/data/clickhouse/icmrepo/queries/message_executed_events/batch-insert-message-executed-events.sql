@@ -1,0 +1,4 @@
+INSERT INTO `%s`.`%s` (
+    blockchain_id, evm_chain_id, block_number, block_time, tx_hash, tx_index, log_index,
+    contract_address, message_id, source_blockchain_id
+)
