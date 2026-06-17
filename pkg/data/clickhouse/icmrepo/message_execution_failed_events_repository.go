@@ -171,7 +171,7 @@ func (r *messageExecutionFailedEvents) WriteMessageExecutionFailedEvent(ctx cont
 		bigIntStr(chRow.RequiredGasLimit),
 		chRow.AllowedRelayerAddresses,
 		chRow.MessageData,
-		chRow.ReceiptsMessageNonces,
+		bigIntStrs(chRow.ReceiptsMessageNonces),
 		chRow.ReceiptsRelayerAddresses,
 	)
 }
@@ -187,6 +187,9 @@ func (r *messageExecutionFailedEvents) BatchInsertMessageExecutionFailedEvents(c
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, row := range rows {
+		if row == nil {
+			continue
+		}
 		chRow, err := convertMessageExecutionFailedEventRow(row)
 		if err != nil {
 			return fmt.Errorf("failed to convert message execution failed event row: %w", err)

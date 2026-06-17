@@ -45,7 +45,7 @@ func TestSendEvents_WriteSendEvent_Success(t *testing.T) {
 			"500000",
 			"1",
 			"test-data",
-			[]*big.Int{},
+			[]string{},
 			[]string{},
 		).
 		Return(nil).
@@ -112,7 +112,7 @@ func TestSendEvents_WriteSendEvent_Error(t *testing.T) {
 			"500000",
 			"1",
 			"test-data",
-			[]*big.Int{},
+			[]string{},
 			[]string{},
 		).
 		Return(execErr).

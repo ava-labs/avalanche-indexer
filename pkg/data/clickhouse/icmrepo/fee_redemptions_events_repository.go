@@ -151,6 +151,9 @@ func (r *feeRedemptionsEvents) BatchInsertFeeRedemptionsEvents(ctx context.Conte
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, row := range rows {
+		if row == nil {
+			continue
+		}
 		chRow, err := convertFeeRedemptionsEventRow(row)
 		if err != nil {
 			return fmt.Errorf("failed to convert fee redemptions event row: %w", err)

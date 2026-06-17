@@ -44,7 +44,7 @@ func TestMessageExecutionFailedEvents_WriteMessageExecutionFailedEvent_Success(t
 			"100000",
 			[]string{},
 			"test-data",
-			[]*big.Int{},
+			[]string{},
 			[]string{},
 		).
 		Return(nil).
@@ -109,7 +109,7 @@ func TestMessageExecutionFailedEvents_WriteMessageExecutionFailedEvent_Error(t *
 			"100000",
 			[]string{},
 			"test-data",
-			[]*big.Int{},
+			[]string{},
 			[]string{},
 		).
 		Return(execErr).

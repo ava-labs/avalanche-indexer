@@ -2,6 +2,7 @@ package icmrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	_ "embed"
@@ -43,6 +44,8 @@ var writePartialExecutionFailedQuery string
 //go:embed queries/messages/write-partial-receipt.sql
 var writePartialReceiptQuery string
 
+var errNilRow = errors.New("row is nil")
+
 type messages struct {
 	client    clickhouse.Client
 	cluster   string
@@ -79,6 +82,9 @@ func (r *messages) CreateTableIfNotExists(ctx context.Context) error {
 
 // WritePartialSend writes the source-chain columns for a SendCrossChainMessage event.
 func (r *messages) WritePartialSend(ctx context.Context, row *MessagePartialSendRow) error {
+	if row == nil {
+		return errNilRow
+	}
 	messageID, err := hexToFixed32(row.MessageID)
 	if err != nil {
 		return fmt.Errorf("message_id: %w", err)
@@ -124,13 +130,16 @@ func (r *messages) WritePartialSend(ctx context.Context, row *MessagePartialSend
 		feeTokenAddress,
 		bigIntStr(row.FeeAmount),
 		row.MessageData,
-		bigIntStr(row.SourceGasSpent),
+		bigIntPtrStr(row.SourceGasSpent),
 		row.MessageReceipts,
 	)
 }
 
 // WritePartialReceive writes the destination-chain columns for a ReceiveCrossChainMessage event.
 func (r *messages) WritePartialReceive(ctx context.Context, row *MessagePartialReceiveRow) error {
+	if row == nil {
+		return errNilRow
+	}
 	messageID, err := hexToFixed32(row.MessageID)
 	if err != nil {
 		return fmt.Errorf("message_id: %w", err)
@@ -156,14 +165,17 @@ func (r *messages) WritePartialReceive(ctx context.Context, row *MessagePartialR
 		receiveTxHash,
 		delivererAddress,
 		rewardRedeemerAddress,
-		bigIntStr(row.DestinationEVMChainID),
-		bigIntStr(row.DestinationGasSpent),
+		bigIntPtrStr(row.DestinationEVMChainID),
+		bigIntPtrStr(row.DestinationGasSpent),
 	)
 }
 
 // WritePartialExecuted writes the executed_block_time and executed_tx_hash columns
 // for a MessageExecuted event.
 func (r *messages) WritePartialExecuted(ctx context.Context, row *MessagePartialExecutedRow) error {
+	if row == nil {
+		return errNilRow
+	}
 	messageID, err := hexToFixed32(row.MessageID)
 	if err != nil {
 		return fmt.Errorf("message_id: %w", err)
@@ -185,6 +197,9 @@ func (r *messages) WritePartialExecuted(ctx context.Context, row *MessagePartial
 // WritePartialExecutionFailed writes the last_execution_failed_time column
 // for a MessageExecutionFailed event.
 func (r *messages) WritePartialExecutionFailed(ctx context.Context, row *MessagePartialExecutionFailedRow) error {
+	if row == nil {
+		return errNilRow
+	}
 	messageID, err := hexToFixed32(row.MessageID)
 	if err != nil {
 		return fmt.Errorf("message_id: %w", err)
@@ -200,6 +215,9 @@ func (r *messages) WritePartialExecutionFailed(ctx context.Context, row *Message
 
 // WritePartialReceipt writes the receipt_delivered column for a ReceiptReceived event.
 func (r *messages) WritePartialReceipt(ctx context.Context, row *MessagePartialReceiptRow) error {
+	if row == nil {
+		return errNilRow
+	}
 	messageID, err := hexToFixed32(row.MessageID)
 	if err != nil {
 		return fmt.Errorf("message_id: %w", err)

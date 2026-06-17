@@ -70,6 +70,65 @@ func mustFixed20(t *testing.T, hex string) string {
 	return string(b[:])
 }
 
+func strPtr(s string) *string { return &s }
+
+// -- nil-row guards --
+
+func TestMessages_WritePartialSend_NilRow(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
+	repo, err := NewMessages(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_messages")
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.WritePartialSend(ctx, nil), errNilRow)
+	mockConn.AssertExpectations(t)
+}
+
+func TestMessages_WritePartialReceive_NilRow(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
+	repo, err := NewMessages(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_messages")
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.WritePartialReceive(ctx, nil), errNilRow)
+	mockConn.AssertExpectations(t)
+}
+
+func TestMessages_WritePartialExecuted_NilRow(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
+	repo, err := NewMessages(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_messages")
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.WritePartialExecuted(ctx, nil), errNilRow)
+	mockConn.AssertExpectations(t)
+}
+
+func TestMessages_WritePartialExecutionFailed_NilRow(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
+	repo, err := NewMessages(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_messages")
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.WritePartialExecutionFailed(ctx, nil), errNilRow)
+	mockConn.AssertExpectations(t)
+}
+
+func TestMessages_WritePartialReceipt_NilRow(t *testing.T) {
+	t.Parallel()
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
+	repo, err := NewMessages(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_messages")
+	require.NoError(t, err)
+	require.ErrorIs(t, repo.WritePartialReceipt(ctx, nil), errNilRow)
+	mockConn.AssertExpectations(t)
+}
+
 // -- WritePartialSend --
 
 func TestMessages_WritePartialSend_Success(t *testing.T) {
@@ -93,7 +152,7 @@ func TestMessages_WritePartialSend_Success(t *testing.T) {
 			"43114", contract,
 			"1", addr1, addr2,
 			"100000", []string{}, addr1,
-			"500000", "test-data", "0", "",
+			"500000", "test-data", (*string)(nil), "",
 		).
 		Return(nil).
 		Once()
@@ -143,7 +202,7 @@ func TestMessages_WritePartialSend_Error(t *testing.T) {
 			"43114", contract,
 			"1", addr1, addr2,
 			"100000", []string{}, addr1,
-			"500000", "test-data", "0", "",
+			"500000", "test-data", (*string)(nil), "",
 		).
 		Return(execErr).
 		Once()
@@ -193,7 +252,7 @@ func TestMessages_WritePartialReceive_Success(t *testing.T) {
 			testBlockchainID, testDstBlockchainID,
 			msgID, testBlockTime, txHash,
 			addr1, addr2,
-			"43114", "200000",
+			strPtr("43114"), strPtr("200000"),
 		).
 		Return(nil).
 		Once()
@@ -232,7 +291,7 @@ func TestMessages_WritePartialReceive_Error(t *testing.T) {
 			testBlockchainID, testDstBlockchainID,
 			msgID, testBlockTime, txHash,
 			addr1, addr2,
-			"43114", "200000",
+			strPtr("43114"), strPtr("200000"),
 		).
 		Return(execErr).
 		Once()

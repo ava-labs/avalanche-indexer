@@ -46,7 +46,7 @@ func TestReceiveEvents_WriteReceiveEvent_Success(t *testing.T) {
 			"100000",
 			[]string{},
 			"test-data",
-			[]*big.Int{},
+			[]string{},
 			[]string{},
 		).
 		Return(nil).
@@ -115,7 +115,7 @@ func TestReceiveEvents_WriteReceiveEvent_Error(t *testing.T) {
 			"100000",
 			[]string{},
 			"test-data",
-			[]*big.Int{},
+			[]string{},
 			[]string{},
 		).
 		Return(execErr).

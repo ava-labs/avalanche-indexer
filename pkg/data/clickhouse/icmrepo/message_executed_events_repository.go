@@ -144,6 +144,9 @@ func (r *messageExecutedEvents) BatchInsertMessageExecutedEvents(ctx context.Con
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, row := range rows {
+		if row == nil {
+			continue
+		}
 		chRow, err := convertMessageExecutedEventRow(row)
 		if err != nil {
 			return fmt.Errorf("failed to convert message executed event row: %w", err)

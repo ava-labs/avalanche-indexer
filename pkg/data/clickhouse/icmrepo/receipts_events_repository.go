@@ -161,6 +161,9 @@ func (r *receiptsEvents) BatchInsertReceiptsEvents(ctx context.Context, rows []*
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, row := range rows {
+		if row == nil {
+			continue
+		}
 		chRow, err := convertReceiptsEventRow(row)
 		if err != nil {
 			return fmt.Errorf("failed to convert receipts event row: %w", err)

@@ -178,7 +178,7 @@ func (r *sendEvents) WriteSendEvent(ctx context.Context, row *SendEventRow) erro
 		bigIntStr(chRow.FeeAmount),
 		bigIntStr(chRow.MessageNonce),
 		chRow.MessageData,
-		chRow.ReceiptsMessageNonces,
+		bigIntStrs(chRow.ReceiptsMessageNonces),
 		chRow.ReceiptsRelayerAddresses,
 	)
 }
@@ -194,6 +194,9 @@ func (r *sendEvents) BatchInsertSendEvents(ctx context.Context, rows []*SendEven
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, row := range rows {
+		if row == nil {
+			continue
+		}
 		chRow, err := convertSendEventRow(row)
 		if err != nil {
 			return fmt.Errorf("failed to convert send event row: %w", err)

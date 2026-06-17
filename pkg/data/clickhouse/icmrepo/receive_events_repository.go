@@ -185,7 +185,7 @@ func (r *receiveEvents) WriteReceiveEvent(ctx context.Context, row *ReceiveEvent
 		bigIntStr(chRow.RequiredGasLimit),
 		chRow.AllowedRelayerAddresses,
 		chRow.MessageData,
-		chRow.ReceiptsMessageNonces,
+		bigIntStrs(chRow.ReceiptsMessageNonces),
 		chRow.ReceiptsRelayerAddresses,
 	)
 }
@@ -201,6 +201,9 @@ func (r *receiveEvents) BatchInsertReceiveEvents(ctx context.Context, rows []*Re
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 	for _, row := range rows {
+		if row == nil {
+			continue
+		}
 		chRow, err := convertReceiveEventRow(row)
 		if err != nil {
 			return fmt.Errorf("failed to convert receive event row: %w", err)

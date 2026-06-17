@@ -26,12 +26,32 @@ func hexToFixed20(s string) (string, error) {
 }
 
 // bigIntStr returns the decimal string of v, or "0" if v is nil.
-// Used when passing UInt256 values via Exec (ClickHouse accepts decimal strings for UInt256).
+// Used when passing non-nullable UInt256 values via Exec.
 func bigIntStr(v *big.Int) string {
 	if v == nil {
 		return "0"
 	}
 	return v.String()
+}
+
+// bigIntPtrStr returns a pointer to the decimal string of v for Nullable(UInt256) Exec args,
+// or nil (SQL NULL) when v is nil.
+func bigIntPtrStr(v *big.Int) *string {
+	if v == nil {
+		return nil
+	}
+	s := v.String()
+	return &s
+}
+
+// bigIntStrs converts a slice of *big.Int to decimal strings for Array(UInt256) Exec args.
+// Returns an empty non-nil slice when vs is nil or empty.
+func bigIntStrs(vs []*big.Int) []string {
+	result := make([]string, len(vs))
+	for i, v := range vs {
+		result[i] = bigIntStr(v)
+	}
+	return result
 }
 
 // bigIntOrZero returns v if non-nil, or a new zero-value big.Int.
