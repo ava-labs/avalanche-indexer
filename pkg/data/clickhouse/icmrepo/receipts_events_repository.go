@@ -43,19 +43,19 @@ type receiptsEvents struct {
 }
 
 type chReceiptsEventRow struct {
-	BlockchainID            string   `ch:"blockchain_id"`
-	EVMChainID              *big.Int `ch:"evm_chain_id"`
-	BlockNumber             uint64   `ch:"block_number"`
+	BlockchainID            string    `ch:"blockchain_id"`
+	EVMChainID              *big.Int  `ch:"evm_chain_id"`
+	BlockNumber             uint64    `ch:"block_number"`
 	BlockTime               time.Time `ch:"block_time"`
-	TxHash                  string   `ch:"tx_hash"`
-	TxIndex                 uint32   `ch:"tx_index"`
-	LogIndex                uint32   `ch:"log_index"`
-	ContractAddress         string   `ch:"contract_address"`
-	MessageID               string   `ch:"message_id"`
-	DestinationBlockchainID string   `ch:"destination_blockchain_id"`
-	RelayerRewardAddress    string   `ch:"relayer_reward_address"`
-	FeeTokenAddress         string   `ch:"fee_token_address"`
-	FeeAmount               *big.Int `ch:"fee_amount"`
+	TxHash                  string    `ch:"tx_hash"`
+	TxIndex                 uint32    `ch:"tx_index"`
+	LogIndex                uint32    `ch:"log_index"`
+	ContractAddress         string    `ch:"contract_address"`
+	MessageID               string    `ch:"message_id"`
+	DestinationBlockchainID string    `ch:"destination_blockchain_id"`
+	RelayerRewardAddress    string    `ch:"relayer_reward_address"`
+	FeeTokenAddress         string    `ch:"fee_token_address"`
+	FeeAmount               *big.Int  `ch:"fee_amount"`
 }
 
 func convertReceiptsEventRow(row *ReceiptsEventRow) (*chReceiptsEventRow, error) {

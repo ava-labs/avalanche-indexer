@@ -7,88 +7,88 @@ import (
 
 // SendEventRow represents a row in the icm_send_events table.
 type SendEventRow struct {
-	BlockchainID              string
-	EVMChainID                *big.Int // UInt256 in ClickHouse
-	BlockNumber               uint64
-	BlockTime                 time.Time
-	TxHash                    string // hex, stored as FixedString(32)
-	TxIndex                   uint32
-	LogIndex                  uint32
-	ContractAddress           string   // hex, stored as FixedString(20)
-	MessageID                 string   // hex, stored as FixedString(32)
-	DestinationBlockchainID   string
-	SenderAddress             string   // hex, stored as FixedString(20)
-	DestinationAddress        string   // hex, stored as FixedString(20)
-	RequiredGasLimit          *big.Int // UInt256 in ClickHouse
-	AllowedRelayerAddresses   []string // hex addresses, stored as Array(String)
-	FeeTokenAddress           string   // hex, stored as FixedString(20)
-	FeeAmount                 *big.Int // UInt256 in ClickHouse
-	MessageNonce              *big.Int // UInt256 in ClickHouse
-	MessageData               []byte   // stored as String
-	ReceiptsMessageNonces     []*big.Int
-	ReceiptsRelayerAddresses  []string // hex addresses, stored as Array(FixedString(20))
+	BlockchainID             string
+	EVMChainID               *big.Int // UInt256 in ClickHouse
+	BlockNumber              uint64
+	BlockTime                time.Time
+	TxHash                   string // hex, stored as FixedString(32)
+	TxIndex                  uint32
+	LogIndex                 uint32
+	ContractAddress          string // hex, stored as FixedString(20)
+	MessageID                string // hex, stored as FixedString(32)
+	DestinationBlockchainID  string
+	SenderAddress            string   // hex, stored as FixedString(20)
+	DestinationAddress       string   // hex, stored as FixedString(20)
+	RequiredGasLimit         *big.Int // UInt256 in ClickHouse
+	AllowedRelayerAddresses  []string // hex addresses, stored as Array(String)
+	FeeTokenAddress          string   // hex, stored as FixedString(20)
+	FeeAmount                *big.Int // UInt256 in ClickHouse
+	MessageNonce             *big.Int // UInt256 in ClickHouse
+	MessageData              []byte   // stored as String
+	ReceiptsMessageNonces    []*big.Int
+	ReceiptsRelayerAddresses []string // hex addresses, stored as Array(FixedString(20))
 }
 
 // ReceiveEventRow represents a row in the icm_receive_events table.
 type ReceiveEventRow struct {
-	BlockchainID              string
-	EVMChainID                *big.Int
-	BlockNumber               uint64
-	BlockTime                 time.Time
-	TxHash                    string
-	TxIndex                   uint32
-	LogIndex                  uint32
-	ContractAddress           string
-	MessageID                 string
-	SourceBlockchainID        string
-	DelivererAddress          string
-	RewardRedeemerAddress     string
-	MessageNonce              *big.Int
-	OriginSenderAddress       string
-	DestinationBlockchainID   string
-	DestinationAddress        string
-	RequiredGasLimit          *big.Int
-	AllowedRelayerAddresses   []string
-	MessageData               []byte
-	ReceiptsMessageNonces     []*big.Int
-	ReceiptsRelayerAddresses  []string
+	BlockchainID             string
+	EVMChainID               *big.Int
+	BlockNumber              uint64
+	BlockTime                time.Time
+	TxHash                   string
+	TxIndex                  uint32
+	LogIndex                 uint32
+	ContractAddress          string
+	MessageID                string
+	SourceBlockchainID       string
+	DelivererAddress         string
+	RewardRedeemerAddress    string
+	MessageNonce             *big.Int
+	OriginSenderAddress      string
+	DestinationBlockchainID  string
+	DestinationAddress       string
+	RequiredGasLimit         *big.Int
+	AllowedRelayerAddresses  []string
+	MessageData              []byte
+	ReceiptsMessageNonces    []*big.Int
+	ReceiptsRelayerAddresses []string
 }
 
 // MessageExecutedEventRow represents a row in the icm_message_executed_events table.
 type MessageExecutedEventRow struct {
-	BlockchainID        string
-	EVMChainID          *big.Int
-	BlockNumber         uint64
-	BlockTime           time.Time
-	TxHash              string
-	TxIndex             uint32
-	LogIndex            uint32
-	ContractAddress     string
-	MessageID           string
-	SourceBlockchainID  string
+	BlockchainID       string
+	EVMChainID         *big.Int
+	BlockNumber        uint64
+	BlockTime          time.Time
+	TxHash             string
+	TxIndex            uint32
+	LogIndex           uint32
+	ContractAddress    string
+	MessageID          string
+	SourceBlockchainID string
 }
 
 // MessageExecutionFailedEventRow represents a row in the icm_message_execution_failed_events table.
 type MessageExecutionFailedEventRow struct {
-	BlockchainID              string
-	EVMChainID                *big.Int
-	BlockNumber               uint64
-	BlockTime                 time.Time
-	TxHash                    string
-	TxIndex                   uint32
-	LogIndex                  uint32
-	ContractAddress           string
-	MessageID                 string
-	SourceBlockchainID        string
-	MessageNonce              *big.Int
-	OriginSenderAddress       string
-	DestinationBlockchainID   string
-	DestinationAddress        string
-	RequiredGasLimit          *big.Int
-	AllowedRelayerAddresses   []string
-	MessageData               []byte
-	ReceiptsMessageNonces     []*big.Int
-	ReceiptsRelayerAddresses  []string
+	BlockchainID             string
+	EVMChainID               *big.Int
+	BlockNumber              uint64
+	BlockTime                time.Time
+	TxHash                   string
+	TxIndex                  uint32
+	LogIndex                 uint32
+	ContractAddress          string
+	MessageID                string
+	SourceBlockchainID       string
+	MessageNonce             *big.Int
+	OriginSenderAddress      string
+	DestinationBlockchainID  string
+	DestinationAddress       string
+	RequiredGasLimit         *big.Int
+	AllowedRelayerAddresses  []string
+	MessageData              []byte
+	ReceiptsMessageNonces    []*big.Int
+	ReceiptsRelayerAddresses []string
 }
 
 // ReceiptsEventRow represents a row in the icm_receipts_events table.
