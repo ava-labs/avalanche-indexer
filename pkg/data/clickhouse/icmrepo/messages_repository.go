@@ -79,6 +79,10 @@ func (r *messages) CreateTableIfNotExists(ctx context.Context) error {
 
 // WritePartialSend writes the source-chain columns for a SendCrossChainMessage event.
 func (r *messages) WritePartialSend(ctx context.Context, row *MessagePartialSendRow) error {
+	messageID, err := hexToFixed32(row.MessageID)
+	if err != nil {
+		return fmt.Errorf("message_id: %w", err)
+	}
 	sourceTxHash, err := hexToFixed32(row.SourceTxHash)
 	if err != nil {
 		return fmt.Errorf("source_tx_hash: %w", err)
@@ -107,7 +111,7 @@ func (r *messages) WritePartialSend(ctx context.Context, row *MessagePartialSend
 	return r.client.Conn().Exec(ctx, query,
 		row.SourceBlockchainID,
 		row.DestinationBlockchainID,
-		row.MessageID,
+		messageID,
 		row.SourceBlockTime,
 		sourceTxHash,
 		bigIntStr(row.EVMChainID),
@@ -127,6 +131,10 @@ func (r *messages) WritePartialSend(ctx context.Context, row *MessagePartialSend
 
 // WritePartialReceive writes the destination-chain columns for a ReceiveCrossChainMessage event.
 func (r *messages) WritePartialReceive(ctx context.Context, row *MessagePartialReceiveRow) error {
+	messageID, err := hexToFixed32(row.MessageID)
+	if err != nil {
+		return fmt.Errorf("message_id: %w", err)
+	}
 	receiveTxHash, err := hexToFixed32(row.ReceiveTxHash)
 	if err != nil {
 		return fmt.Errorf("receive_tx_hash: %w", err)
@@ -143,7 +151,7 @@ func (r *messages) WritePartialReceive(ctx context.Context, row *MessagePartialR
 	return r.client.Conn().Exec(ctx, query,
 		row.SourceBlockchainID,
 		row.DestinationBlockchainID,
-		row.MessageID,
+		messageID,
 		row.ReceiveBlockTime,
 		receiveTxHash,
 		delivererAddress,
@@ -156,6 +164,10 @@ func (r *messages) WritePartialReceive(ctx context.Context, row *MessagePartialR
 // WritePartialExecuted writes the executed_block_time and executed_tx_hash columns
 // for a MessageExecuted event.
 func (r *messages) WritePartialExecuted(ctx context.Context, row *MessagePartialExecutedRow) error {
+	messageID, err := hexToFixed32(row.MessageID)
+	if err != nil {
+		return fmt.Errorf("message_id: %w", err)
+	}
 	executedTxHash, err := hexToFixed32(row.ExecutedTxHash)
 	if err != nil {
 		return fmt.Errorf("executed_tx_hash: %w", err)
@@ -164,7 +176,7 @@ func (r *messages) WritePartialExecuted(ctx context.Context, row *MessagePartial
 	return r.client.Conn().Exec(ctx, query,
 		row.SourceBlockchainID,
 		row.DestinationBlockchainID,
-		row.MessageID,
+		messageID,
 		row.ExecutedBlockTime,
 		executedTxHash,
 	)
@@ -173,22 +185,30 @@ func (r *messages) WritePartialExecuted(ctx context.Context, row *MessagePartial
 // WritePartialExecutionFailed writes the last_execution_failed_time column
 // for a MessageExecutionFailed event.
 func (r *messages) WritePartialExecutionFailed(ctx context.Context, row *MessagePartialExecutionFailedRow) error {
+	messageID, err := hexToFixed32(row.MessageID)
+	if err != nil {
+		return fmt.Errorf("message_id: %w", err)
+	}
 	query := fmt.Sprintf(writePartialExecutionFailedQuery, r.database, r.tableName)
 	return r.client.Conn().Exec(ctx, query,
 		row.SourceBlockchainID,
 		row.DestinationBlockchainID,
-		row.MessageID,
+		messageID,
 		row.LastExecutionFailedTime,
 	)
 }
 
 // WritePartialReceipt writes the receipt_delivered column for a ReceiptReceived event.
 func (r *messages) WritePartialReceipt(ctx context.Context, row *MessagePartialReceiptRow) error {
+	messageID, err := hexToFixed32(row.MessageID)
+	if err != nil {
+		return fmt.Errorf("message_id: %w", err)
+	}
 	query := fmt.Sprintf(writePartialReceiptQuery, r.database, r.tableName)
 	return r.client.Conn().Exec(ctx, query,
 		row.SourceBlockchainID,
 		row.DestinationBlockchainID,
-		row.MessageID,
+		messageID,
 		row.ReceiptDelivered,
 	)
 }
