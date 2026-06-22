@@ -117,6 +117,17 @@ type Config struct {
 	RawLogsTableName              string
 	InternalTransactionsTableName string
 
+	// ICM settings
+	TeleporterContractAddresses              []string
+	ICMMessagesTableName                     string
+	ICMSendEventsTableName                   string
+	ICMReceiveEventsTableName                string
+	ICMMessageExecutedEventsTableName        string
+	ICMMessageExecutionFailedEventsTableName string
+	ICMReceiptsEventsTableName               string
+	ICMFeeInfoEventsTableName                string
+	ICMFeeRedemptionsEventsTableName         string
+
 	// Metrics settings
 	MetricsHost   string
 	MetricsPort   int
@@ -205,22 +216,48 @@ func buildConfig(c *cli.Context) (*Config, error) {
 			Mechanism:        c.String("kafka-sasl-mechanism"),
 			SecurityProtocol: c.String("kafka-security-protocol"),
 		},
-		ClickHouse:                    chCfg,
-		RawBlocksTableName:            c.String("raw-blocks-table-name"),
-		RawTransactionsTableName:      c.String("raw-transactions-table-name"),
-		RawLogsTableName:              c.String("raw-logs-table-name"),
-		InternalTransactionsTableName: c.String("internal-transactions-table-name"),
-		MetricsHost:                   c.String("metrics-host"),
-		MetricsPort:                   c.Int("metrics-port"),
-		ChainID:                       c.Uint64("chain-id"),
-		Environment:                   c.String("environment"),
-		Region:                        c.String("region"),
-		CloudProvider:                 c.String("cloud-provider"),
-		EnableClickHouseBatchWrites:   c.Bool("enable-clickhouse-batch-writes"),
-		BatchWriterWorkers:            c.Int("batch-writer-workers"),
-		BatchWriterMaxBlocks:          c.Int("batch-writer-max-blocks"),
-		BatchWriterFlushTimeout:       c.Duration("batch-writer-flush-timeout"),
+		ClickHouse:                               chCfg,
+		RawBlocksTableName:                       c.String("raw-blocks-table-name"),
+		RawTransactionsTableName:                 c.String("raw-transactions-table-name"),
+		RawLogsTableName:                         c.String("raw-logs-table-name"),
+		InternalTransactionsTableName:            c.String("internal-transactions-table-name"),
+		TeleporterContractAddresses:              buildTeleporterAddresses(c),
+		ICMMessagesTableName:                     c.String("icm-messages-table-name"),
+		ICMSendEventsTableName:                   c.String("icm-send-events-table-name"),
+		ICMReceiveEventsTableName:                c.String("icm-receive-events-table-name"),
+		ICMMessageExecutedEventsTableName:        c.String("icm-message-executed-events-table-name"),
+		ICMMessageExecutionFailedEventsTableName: c.String("icm-message-execution-failed-events-table-name"),
+		ICMReceiptsEventsTableName:               c.String("icm-receipts-events-table-name"),
+		ICMFeeInfoEventsTableName:                c.String("icm-fee-info-events-table-name"),
+		ICMFeeRedemptionsEventsTableName:         c.String("icm-fee-redemptions-events-table-name"),
+		MetricsHost:                              c.String("metrics-host"),
+		MetricsPort:                              c.Int("metrics-port"),
+		ChainID:                                  c.Uint64("chain-id"),
+		Environment:                              c.String("environment"),
+		Region:                                   c.String("region"),
+		CloudProvider:                            c.String("cloud-provider"),
+		EnableClickHouseBatchWrites:              c.Bool("enable-clickhouse-batch-writes"),
+		BatchWriterWorkers:                       c.Int("batch-writer-workers"),
+		BatchWriterMaxBlocks:                     c.Int("batch-writer-max-blocks"),
+		BatchWriterFlushTimeout:                  c.Duration("batch-writer-flush-timeout"),
 	}, nil
+}
+
+// buildTeleporterAddresses reads the teleporter-contract-addresses flag.
+// Handles both repeated flags (--flag a --flag b) and a single comma-separated value
+// (consistent with the clickhouse-hosts handling in buildClickHouseConfig).
+func buildTeleporterAddresses(c *cli.Context) []string {
+	addrs := c.StringSlice("teleporter-contract-addresses")
+	if len(addrs) == 1 && strings.Contains(addrs[0], ",") {
+		parts := strings.Split(addrs[0], ",")
+		addrs = make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				addrs = append(addrs, trimmed)
+			}
+		}
+	}
+	return addrs
 }
 
 // buildClickHouseConfig builds a ClickhouseConfig from CLI context flags

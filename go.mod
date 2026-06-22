@@ -4,7 +4,9 @@ go 1.24.9
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
+	github.com/ava-labs/avalanchego v1.14.0
 	github.com/ava-labs/coreth v0.16.0
+	github.com/ava-labs/icm-contracts v1.0.9
 	github.com/ava-labs/libevm v1.13.15-0.20251016142715-1bccf4f2ddb2
 	github.com/ava-labs/subnet-evm v0.8.0
 	github.com/aws/aws-sdk-go-v2 v1.41.3
@@ -33,7 +35,6 @@ require (
 	github.com/StephenButtolph/canoto v0.17.2 // indirect
 	github.com/VictoriaMetrics/fastcache v1.12.1 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
-	github.com/ava-labs/avalanchego v1.14.0 // indirect
 	github.com/ava-labs/firewood-go-ethhash/ffi v0.0.13 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.1 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.19 // indirect
@@ -165,7 +166,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c // indirect
 	google.golang.org/grpc v1.75.0 // indirect
-	google.golang.org/protobuf v1.36.8 // indirect
+	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
