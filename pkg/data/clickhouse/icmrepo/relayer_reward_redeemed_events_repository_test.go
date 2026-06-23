@@ -23,7 +23,7 @@ func TestRelayerRewardRedeemedEvents_WriteRelayerRewardRedeemedEvent_Success(t *
 	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`relayer_reward_redeemed_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`relayer_reward_redeemed_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -115,7 +115,7 @@ func TestRelayerRewardRedeemedEvents_DeleteRelayerRewardRedeemedEvents_Success(t
 	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
@@ -138,7 +138,7 @@ func TestRelayerRewardRedeemedEvents_DeleteRelayerRewardRedeemedEvents_Error(t *
 	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).

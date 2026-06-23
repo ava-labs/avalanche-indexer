@@ -24,7 +24,7 @@ func TestAddFeeEvents_WriteAddFeeEvent_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`add_fee_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`add_fee_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -121,7 +121,7 @@ func TestAddFeeEvents_DeleteAddFeeEvents_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
@@ -144,7 +144,7 @@ func TestAddFeeEvents_DeleteAddFeeEvents_Error(t *testing.T) {
 	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).

@@ -23,7 +23,7 @@ func TestMessageExecutedEvents_WriteMessageExecutedEvent_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "message_executed_events_local", "message_executed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`message_executed_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`message_executed_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -111,7 +111,7 @@ func TestMessageExecutedEvents_DeleteMessageExecutedEvents_Success(t *testing.T)
 	expectICMTableInit(mockConn, "message_executed_events_local", "message_executed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`message_executed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`message_executed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
@@ -134,7 +134,7 @@ func TestMessageExecutedEvents_DeleteMessageExecutedEvents_Error(t *testing.T) {
 	expectICMTableInit(mockConn, "message_executed_events_local", "message_executed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`message_executed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`message_executed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
