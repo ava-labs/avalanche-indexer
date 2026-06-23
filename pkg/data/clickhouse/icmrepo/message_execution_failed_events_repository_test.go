@@ -22,10 +22,10 @@ func TestMessageExecutionFailedEvents_WriteMessageExecutionFailedEvent_Success(t
 	addr1 := mustFixed20(t, testAddr1Hex)
 	addr2 := mustFixed20(t, testAddr2Hex)
 
-	expectICMTableInit(mockConn, "icm_message_execution_failed_events_local", "icm_message_execution_failed_events")
+	expectICMTableInit(mockConn, "message_execution_failed_events_local", "message_execution_failed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`icm_message_execution_failed_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`message_execution_failed_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -50,7 +50,7 @@ func TestMessageExecutionFailedEvents_WriteMessageExecutionFailedEvent_Success(t
 		Return(nil).
 		Once()
 
-	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_execution_failed_events")
+	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_execution_failed_events")
 	require.NoError(t, err)
 	err = repo.WriteMessageExecutionFailedEvent(ctx, &MessageExecutionFailedEventRow{
 		BlockchainID:             testBlockchainID,
@@ -89,7 +89,7 @@ func TestMessageExecutionFailedEvents_WriteMessageExecutionFailedEvent_Error(t *
 	addr1 := mustFixed20(t, testAddr1Hex)
 	addr2 := mustFixed20(t, testAddr2Hex)
 
-	expectICMTableInit(mockConn, "icm_message_execution_failed_events_local", "icm_message_execution_failed_events")
+	expectICMTableInit(mockConn, "message_execution_failed_events_local", "message_execution_failed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -115,7 +115,7 @@ func TestMessageExecutionFailedEvents_WriteMessageExecutionFailedEvent_Error(t *
 		Return(execErr).
 		Once()
 
-	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_execution_failed_events")
+	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_execution_failed_events")
 	require.NoError(t, err)
 	err = repo.WriteMessageExecutionFailedEvent(ctx, &MessageExecutionFailedEventRow{
 		BlockchainID:             testBlockchainID,
@@ -148,16 +148,16 @@ func TestMessageExecutionFailedEvents_DeleteMessageExecutionFailedEvents_Success
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "icm_message_execution_failed_events_local", "icm_message_execution_failed_events")
+	expectICMTableInit(mockConn, "message_execution_failed_events_local", "message_execution_failed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_message_execution_failed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`message_execution_failed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_execution_failed_events")
+	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_execution_failed_events")
 	require.NoError(t, err)
 	err = repo.DeleteMessageExecutionFailedEvents(ctx, chainID)
 	require.NoError(t, err)
@@ -171,16 +171,16 @@ func TestMessageExecutionFailedEvents_DeleteMessageExecutionFailedEvents_Error(t
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "icm_message_execution_failed_events_local", "icm_message_execution_failed_events")
+	expectICMTableInit(mockConn, "message_execution_failed_events_local", "message_execution_failed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_message_execution_failed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`message_execution_failed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_execution_failed_events")
+	repo, err := NewMessageExecutionFailedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_execution_failed_events")
 	require.NoError(t, err)
 	err = repo.DeleteMessageExecutionFailedEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)

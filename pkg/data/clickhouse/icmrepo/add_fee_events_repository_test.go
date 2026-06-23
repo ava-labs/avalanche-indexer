@@ -11,7 +11,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
 )
 
-func TestReceiptsEvents_WriteReceiptsEvent_Success(t *testing.T) {
+func TestAddFeeEvents_WriteAddFeeEvent_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
@@ -21,10 +21,10 @@ func TestReceiptsEvents_WriteReceiptsEvent_Success(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "icm_receipts_events_local", "icm_receipts_events")
+	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`icm_receipts_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`add_fee_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -37,15 +37,14 @@ func TestReceiptsEvents_WriteReceiptsEvent_Success(t *testing.T) {
 			msgID,
 			testDstBlockchainID,
 			addr1,
-			addr1,
 			"500000",
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewReceiptsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipts_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
 	require.NoError(t, err)
-	err = repo.WriteReceiptsEvent(ctx, &ReceiptsEventRow{
+	err = repo.WriteAddFeeEvent(ctx, &AddFeeEventRow{
 		BlockchainID:            testBlockchainID,
 		EVMChainID:              big.NewInt(43114),
 		BlockNumber:             100,
@@ -56,15 +55,14 @@ func TestReceiptsEvents_WriteReceiptsEvent_Success(t *testing.T) {
 		ContractAddress:         testContractAddrHex,
 		MessageID:               testMessageIDHex,
 		DestinationBlockchainID: testDstBlockchainID,
-		RelayerRewardAddress:    testAddr1Hex,
 		FeeTokenAddress:         testAddr1Hex,
-		FeeAmount:               big.NewInt(500000),
+		AdditionalFeeAmount:     big.NewInt(500000),
 	})
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
 
-func TestReceiptsEvents_WriteReceiptsEvent_Error(t *testing.T) {
+func TestAddFeeEvents_WriteAddFeeEvent_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
@@ -75,7 +73,7 @@ func TestReceiptsEvents_WriteReceiptsEvent_Error(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "icm_receipts_events_local", "icm_receipts_events")
+	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -89,15 +87,14 @@ func TestReceiptsEvents_WriteReceiptsEvent_Error(t *testing.T) {
 			msgID,
 			testDstBlockchainID,
 			addr1,
-			addr1,
 			"500000",
 		).
 		Return(execErr).
 		Once()
 
-	repo, err := NewReceiptsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipts_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
 	require.NoError(t, err)
-	err = repo.WriteReceiptsEvent(ctx, &ReceiptsEventRow{
+	err = repo.WriteAddFeeEvent(ctx, &AddFeeEventRow{
 		BlockchainID:            testBlockchainID,
 		EVMChainID:              big.NewInt(43114),
 		BlockNumber:             100,
@@ -108,55 +105,54 @@ func TestReceiptsEvents_WriteReceiptsEvent_Error(t *testing.T) {
 		ContractAddress:         testContractAddrHex,
 		MessageID:               testMessageIDHex,
 		DestinationBlockchainID: testDstBlockchainID,
-		RelayerRewardAddress:    testAddr1Hex,
 		FeeTokenAddress:         testAddr1Hex,
-		FeeAmount:               big.NewInt(500000),
+		AdditionalFeeAmount:     big.NewInt(500000),
 	})
 	require.ErrorIs(t, err, execErr)
 	mockConn.AssertExpectations(t)
 }
 
-func TestReceiptsEvents_DeleteReceiptsEvents_Success(t *testing.T) {
+func TestAddFeeEvents_DeleteAddFeeEvents_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "icm_receipts_events_local", "icm_receipts_events")
+	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_receipts_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewReceiptsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipts_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
 	require.NoError(t, err)
-	err = repo.DeleteReceiptsEvents(ctx, chainID)
+	err = repo.DeleteAddFeeEvents(ctx, chainID)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
 
-func TestReceiptsEvents_DeleteReceiptsEvents_Error(t *testing.T) {
+func TestAddFeeEvents_DeleteAddFeeEvents_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "icm_receipts_events_local", "icm_receipts_events")
+	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_receipts_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewReceiptsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipts_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
 	require.NoError(t, err)
-	err = repo.DeleteReceiptsEvents(ctx, chainID)
+	err = repo.DeleteAddFeeEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)
 	mockConn.AssertExpectations(t)
 }

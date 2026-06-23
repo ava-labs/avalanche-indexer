@@ -12,37 +12,37 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// ReceiptsEvents provides methods to write ICM receipt received events to ClickHouse.
-type ReceiptsEvents interface {
+// ReceiptEvents provides methods to write ICM receipt received events to ClickHouse.
+type ReceiptEvents interface {
 	CreateTableIfNotExists(ctx context.Context) error
-	WriteReceiptsEvent(ctx context.Context, row *ReceiptsEventRow) error
-	BatchInsertReceiptsEvents(ctx context.Context, rows []*ReceiptsEventRow) error
-	DeleteReceiptsEvents(ctx context.Context, chainID uint64) error
+	WriteReceiptEvent(ctx context.Context, row *ReceiptEventRow) error
+	BatchInsertReceiptEvents(ctx context.Context, rows []*ReceiptEventRow) error
+	DeleteReceiptEvents(ctx context.Context, chainID uint64) error
 }
 
-//go:embed queries/receipts_events/create-receipts-events-table-local.sql
-var createReceiptsEventsTableLocalQuery string
+//go:embed queries/receipt_events/create-receipt-events-table-local.sql
+var createReceiptEventsTableLocalQuery string
 
-//go:embed queries/receipts_events/create-receipts-events-table.sql
-var createReceiptsEventsTableQuery string
+//go:embed queries/receipt_events/create-receipt-events-table.sql
+var createReceiptEventsTableQuery string
 
-//go:embed queries/receipts_events/write-receipts-event.sql
-var writeReceiptsEventQuery string
+//go:embed queries/receipt_events/write-receipt-event.sql
+var writeReceiptEventQuery string
 
-//go:embed queries/receipts_events/batch-insert-receipts-events.sql
-var batchInsertReceiptsEventsQuery string
+//go:embed queries/receipt_events/batch-insert-receipt-events.sql
+var batchInsertReceiptEventsQuery string
 
-//go:embed queries/receipts_events/delete-receipts-events.sql
-var deleteReceiptsEventsQuery string
+//go:embed queries/receipt_events/delete-receipt-events.sql
+var deleteReceiptEventsQuery string
 
-type receiptsEvents struct {
+type receiptEvents struct {
 	client    clickhouse.Client
 	cluster   string
 	database  string
 	tableName string
 }
 
-type chReceiptsEventRow struct {
+type chReceiptEventRow struct {
 	BlockchainID            string    `ch:"blockchain_id"`
 	EVMChainID              *big.Int  `ch:"evm_chain_id"`
 	BlockNumber             uint64    `ch:"block_number"`
@@ -58,9 +58,9 @@ type chReceiptsEventRow struct {
 	FeeAmount               *big.Int  `ch:"fee_amount"`
 }
 
-func convertReceiptsEventRow(row *ReceiptsEventRow) (*chReceiptsEventRow, error) {
+func convertReceiptEventRow(row *ReceiptEventRow) (*chReceiptEventRow, error) {
 	if row == nil {
-		return nil, errors.New("receipts event row is nil")
+		return nil, errors.New("receipt event row is nil")
 	}
 	txHash, err := hexToFixed32(row.TxHash)
 	if err != nil {
@@ -82,7 +82,7 @@ func convertReceiptsEventRow(row *ReceiptsEventRow) (*chReceiptsEventRow, error)
 	if err != nil {
 		return nil, fmt.Errorf("fee_token_address: %w", err)
 	}
-	return &chReceiptsEventRow{
+	return &chReceiptEventRow{
 		BlockchainID:            row.BlockchainID,
 		EVMChainID:              bigIntOrZero(row.EVMChainID),
 		BlockNumber:             row.BlockNumber,
@@ -99,40 +99,40 @@ func convertReceiptsEventRow(row *ReceiptsEventRow) (*chReceiptsEventRow, error)
 	}, nil
 }
 
-// NewReceiptsEvents creates a new receipts events repository and initializes the table.
-func NewReceiptsEvents(ctx context.Context, client clickhouse.Client, cluster, database, tableName string) (ReceiptsEvents, error) {
-	repo := &receiptsEvents{
+// NewReceiptEvents creates a new receipt events repository and initializes the table.
+func NewReceiptEvents(ctx context.Context, client clickhouse.Client, cluster, database, tableName string) (ReceiptEvents, error) {
+	repo := &receiptEvents{
 		client:    client,
 		cluster:   cluster,
 		database:  database,
 		tableName: tableName,
 	}
 	if err := repo.CreateTableIfNotExists(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialize receipts events table: %w", err)
+		return nil, fmt.Errorf("failed to initialize receipt events table: %w", err)
 	}
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the local and distributed icm_receipts_events tables.
-func (r *receiptsEvents) CreateTableIfNotExists(ctx context.Context) error {
-	query := fmt.Sprintf(createReceiptsEventsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
+// CreateTableIfNotExists creates the local and distributed receipt_events tables.
+func (r *receiptEvents) CreateTableIfNotExists(ctx context.Context) error {
+	query := fmt.Sprintf(createReceiptEventsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
-		return fmt.Errorf("failed to create receipts events local table: %w", err)
+		return fmt.Errorf("failed to create receipt events local table: %w", err)
 	}
-	query = fmt.Sprintf(createReceiptsEventsTableQuery, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
+	query = fmt.Sprintf(createReceiptEventsTableQuery, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
-		return fmt.Errorf("failed to create receipts events distributed table: %w", err)
+		return fmt.Errorf("failed to create receipt events distributed table: %w", err)
 	}
 	return nil
 }
 
-// WriteReceiptsEvent inserts a single receipts event row into ClickHouse.
-func (r *receiptsEvents) WriteReceiptsEvent(ctx context.Context, row *ReceiptsEventRow) error {
-	chRow, err := convertReceiptsEventRow(row)
+// WriteReceiptEvent inserts a single receipt event row into ClickHouse.
+func (r *receiptEvents) WriteReceiptEvent(ctx context.Context, row *ReceiptEventRow) error {
+	chRow, err := convertReceiptEventRow(row)
 	if err != nil {
-		return fmt.Errorf("failed to convert receipts event row: %w", err)
+		return fmt.Errorf("failed to convert receipt event row: %w", err)
 	}
-	query := fmt.Sprintf(writeReceiptsEventQuery, r.database, r.tableName)
+	query := fmt.Sprintf(writeReceiptEventQuery, r.database, r.tableName)
 	return r.client.Conn().Exec(ctx, query,
 		chRow.BlockchainID,
 		bigIntStr(chRow.EVMChainID),
@@ -150,12 +150,12 @@ func (r *receiptsEvents) WriteReceiptsEvent(ctx context.Context, row *ReceiptsEv
 	)
 }
 
-// BatchInsertReceiptsEvents inserts a batch of receipts event rows into ClickHouse.
-func (r *receiptsEvents) BatchInsertReceiptsEvents(ctx context.Context, rows []*ReceiptsEventRow) error {
+// BatchInsertReceiptEvents inserts a batch of receipt event rows into ClickHouse.
+func (r *receiptEvents) BatchInsertReceiptEvents(ctx context.Context, rows []*ReceiptEventRow) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	query := fmt.Sprintf(batchInsertReceiptsEventsQuery, r.database, r.tableName)
+	query := fmt.Sprintf(batchInsertReceiptEventsQuery, r.database, r.tableName)
 	batch, err := r.client.Conn().PrepareBatch(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to prepare batch: %w", err)
@@ -164,24 +164,24 @@ func (r *receiptsEvents) BatchInsertReceiptsEvents(ctx context.Context, rows []*
 		if row == nil {
 			continue
 		}
-		chRow, err := convertReceiptsEventRow(row)
+		chRow, err := convertReceiptEventRow(row)
 		if err != nil {
-			return fmt.Errorf("failed to convert receipts event row: %w", err)
+			return fmt.Errorf("failed to convert receipt event row: %w", err)
 		}
 		if err := batch.AppendStruct(chRow); err != nil {
-			return fmt.Errorf("failed to append receipts event row: %w", err)
+			return fmt.Errorf("failed to append receipt event row: %w", err)
 		}
 	}
 	if err := batch.Send(); err != nil {
-		return fmt.Errorf("failed to send receipts events batch: %w", err)
+		return fmt.Errorf("failed to send receipt events batch: %w", err)
 	}
 	return nil
 }
 
-// DeleteReceiptsEvents deletes all receipts events for the given EVM chain ID.
-func (r *receiptsEvents) DeleteReceiptsEvents(ctx context.Context, chainID uint64) error {
-	query := fmt.Sprintf(deleteReceiptsEventsQuery, r.database, r.tableName, r.cluster)
+// DeleteReceiptEvents deletes all receipt events for the given EVM chain ID.
+func (r *receiptEvents) DeleteReceiptEvents(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf(deleteReceiptEventsQuery, r.database, r.tableName, r.cluster)
 	return r.client.Conn().Exec(ctx, query, chainID)
 }
 
-var _ ReceiptsEvents = (*receiptsEvents)(nil)
+var _ ReceiptEvents = (*receiptEvents)(nil)

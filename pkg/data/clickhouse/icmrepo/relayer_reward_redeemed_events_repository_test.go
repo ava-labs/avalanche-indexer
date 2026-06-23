@@ -11,7 +11,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse/testutils"
 )
 
-func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Success(t *testing.T) {
+func TestRelayerRewardRedeemedEvents_WriteRelayerRewardRedeemedEvent_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
@@ -20,10 +20,10 @@ func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Success(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "icm_fee_redemptions_events_local", "icm_fee_redemptions_events")
+	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`icm_fee_redemptions_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`relayer_reward_redeemed_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -40,9 +40,9 @@ func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewFeeRedemptionsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_fee_redemptions_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
 	require.NoError(t, err)
-	err = repo.WriteFeeRedemptionsEvent(ctx, &FeeRedemptionsEventRow{
+	err = repo.WriteRelayerRewardRedeemedEvent(ctx, &RelayerRewardRedeemedEventRow{
 		BlockchainID:    testBlockchainID,
 		EVMChainID:      big.NewInt(43114),
 		BlockNumber:     100,
@@ -59,7 +59,7 @@ func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Success(t *testing.T) {
 	mockConn.AssertExpectations(t)
 }
 
-func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Error(t *testing.T) {
+func TestRelayerRewardRedeemedEvents_WriteRelayerRewardRedeemedEvent_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
@@ -69,7 +69,7 @@ func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Error(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "icm_fee_redemptions_events_local", "icm_fee_redemptions_events")
+	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -87,9 +87,9 @@ func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewFeeRedemptionsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_fee_redemptions_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
 	require.NoError(t, err)
-	err = repo.WriteFeeRedemptionsEvent(ctx, &FeeRedemptionsEventRow{
+	err = repo.WriteRelayerRewardRedeemedEvent(ctx, &RelayerRewardRedeemedEventRow{
 		BlockchainID:    testBlockchainID,
 		EVMChainID:      big.NewInt(43114),
 		BlockNumber:     100,
@@ -106,47 +106,47 @@ func TestFeeRedemptionsEvents_WriteFeeRedemptionsEvent_Error(t *testing.T) {
 	mockConn.AssertExpectations(t)
 }
 
-func TestFeeRedemptionsEvents_DeleteFeeRedemptionsEvents_Success(t *testing.T) {
+func TestRelayerRewardRedeemedEvents_DeleteRelayerRewardRedeemedEvents_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "icm_fee_redemptions_events_local", "icm_fee_redemptions_events")
+	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_fee_redemptions_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewFeeRedemptionsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_fee_redemptions_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
 	require.NoError(t, err)
-	err = repo.DeleteFeeRedemptionsEvents(ctx, chainID)
+	err = repo.DeleteRelayerRewardRedeemedEvents(ctx, chainID)
 	require.NoError(t, err)
 	mockConn.AssertExpectations(t)
 }
 
-func TestFeeRedemptionsEvents_DeleteFeeRedemptionsEvents_Error(t *testing.T) {
+func TestRelayerRewardRedeemedEvents_DeleteRelayerRewardRedeemedEvents_Error(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
 	ctx := t.Context()
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "icm_fee_redemptions_events_local", "icm_fee_redemptions_events")
+	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_fee_redemptions_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewFeeRedemptionsEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_fee_redemptions_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
 	require.NoError(t, err)
-	err = repo.DeleteFeeRedemptionsEvents(ctx, chainID)
+	err = repo.DeleteRelayerRewardRedeemedEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)
 	mockConn.AssertExpectations(t)
 }

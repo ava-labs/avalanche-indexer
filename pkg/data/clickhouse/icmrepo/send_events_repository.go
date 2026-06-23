@@ -139,7 +139,7 @@ func NewSendEvents(ctx context.Context, client clickhouse.Client, cluster, datab
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the local and distributed icm_send_events tables.
+// CreateTableIfNotExists creates the local and distributed send_events tables.
 func (r *sendEvents) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createSendEventsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {

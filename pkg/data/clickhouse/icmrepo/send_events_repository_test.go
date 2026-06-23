@@ -22,10 +22,10 @@ func TestSendEvents_WriteSendEvent_Success(t *testing.T) {
 	addr1 := mustFixed20(t, testAddr1Hex)
 	addr2 := mustFixed20(t, testAddr2Hex)
 
-	expectICMTableInit(mockConn, "icm_send_events_local", "icm_send_events")
+	expectICMTableInit(mockConn, "send_events_local", "send_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`icm_send_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`send_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -51,7 +51,7 @@ func TestSendEvents_WriteSendEvent_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_send_events")
+	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "send_events")
 	require.NoError(t, err)
 	err = repo.WriteSendEvent(ctx, &SendEventRow{
 		BlockchainID:             testBlockchainID,
@@ -91,7 +91,7 @@ func TestSendEvents_WriteSendEvent_Error(t *testing.T) {
 	addr1 := mustFixed20(t, testAddr1Hex)
 	addr2 := mustFixed20(t, testAddr2Hex)
 
-	expectICMTableInit(mockConn, "icm_send_events_local", "icm_send_events")
+	expectICMTableInit(mockConn, "send_events_local", "send_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -118,7 +118,7 @@ func TestSendEvents_WriteSendEvent_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_send_events")
+	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "send_events")
 	require.NoError(t, err)
 	err = repo.WriteSendEvent(ctx, &SendEventRow{
 		BlockchainID:             testBlockchainID,
@@ -152,16 +152,16 @@ func TestSendEvents_DeleteSendEvents_Success(t *testing.T) {
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "icm_send_events_local", "icm_send_events")
+	expectICMTableInit(mockConn, "send_events_local", "send_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_send_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`send_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_send_events")
+	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "send_events")
 	require.NoError(t, err)
 	err = repo.DeleteSendEvents(ctx, chainID)
 	require.NoError(t, err)
@@ -175,16 +175,16 @@ func TestSendEvents_DeleteSendEvents_Error(t *testing.T) {
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "icm_send_events_local", "icm_send_events")
+	expectICMTableInit(mockConn, "send_events_local", "send_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_send_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`send_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_send_events")
+	repo, err := NewSendEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "send_events")
 	require.NoError(t, err)
 	err = repo.DeleteSendEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// SendEventRow represents a row in the icm_send_events table.
+// SendEventRow represents a row in the send_events table.
 type SendEventRow struct {
 	BlockchainID             string
 	EVMChainID               *big.Int // UInt256 in ClickHouse
@@ -29,7 +29,7 @@ type SendEventRow struct {
 	ReceiptsRelayerAddresses []string // hex addresses, stored as Array(FixedString(20))
 }
 
-// ReceiveEventRow represents a row in the icm_receive_events table.
+// ReceiveEventRow represents a row in the receive_events table.
 type ReceiveEventRow struct {
 	BlockchainID             string
 	EVMChainID               *big.Int
@@ -54,7 +54,7 @@ type ReceiveEventRow struct {
 	ReceiptsRelayerAddresses []string
 }
 
-// MessageExecutedEventRow represents a row in the icm_message_executed_events table.
+// MessageExecutedEventRow represents a row in the message_executed_events table.
 type MessageExecutedEventRow struct {
 	BlockchainID       string
 	EVMChainID         *big.Int
@@ -68,7 +68,7 @@ type MessageExecutedEventRow struct {
 	SourceBlockchainID string
 }
 
-// MessageExecutionFailedEventRow represents a row in the icm_message_execution_failed_events table.
+// MessageExecutionFailedEventRow represents a row in the message_execution_failed_events table.
 type MessageExecutionFailedEventRow struct {
 	BlockchainID             string
 	EVMChainID               *big.Int
@@ -91,8 +91,8 @@ type MessageExecutionFailedEventRow struct {
 	ReceiptsRelayerAddresses []string
 }
 
-// ReceiptsEventRow represents a row in the icm_receipts_events table.
-type ReceiptsEventRow struct {
+// ReceiptEventRow represents a row in the receipt_events table.
+type ReceiptEventRow struct {
 	BlockchainID            string
 	EVMChainID              *big.Int
 	BlockNumber             uint64
@@ -108,8 +108,8 @@ type ReceiptsEventRow struct {
 	FeeAmount               *big.Int
 }
 
-// FeeInfoEventRow represents a row in the icm_fee_info_events table.
-type FeeInfoEventRow struct {
+// AddFeeEventRow represents a row in the add_fee_events table.
+type AddFeeEventRow struct {
 	BlockchainID            string
 	EVMChainID              *big.Int
 	BlockNumber             uint64
@@ -124,8 +124,8 @@ type FeeInfoEventRow struct {
 	AdditionalFeeAmount     *big.Int
 }
 
-// FeeRedemptionsEventRow represents a row in the icm_fee_redemptions_events table.
-type FeeRedemptionsEventRow struct {
+// RelayerRewardRedeemedEventRow represents a row in the relayer_reward_redeemed_events table.
+type RelayerRewardRedeemedEventRow struct {
 	BlockchainID    string
 	EVMChainID      *big.Int
 	BlockNumber     uint64
@@ -139,7 +139,7 @@ type FeeRedemptionsEventRow struct {
 	Amount          *big.Int
 }
 
-// MessagePartialSendRow carries the fields written to icm_messages by the
+// MessagePartialSendRow carries the fields written to messages by the
 // SendCrossChainMessage handler. Only send-side columns are populated; all
 // receive/execute fields are left at their zero value so AggregatingMergeTree
 // merges them correctly when the destination-chain partial row arrives.
@@ -163,7 +163,7 @@ type MessagePartialSendRow struct {
 	MessageReceipts         string   // serialised; stored as String in ClickHouse
 }
 
-// MessagePartialReceiveRow carries the fields written to icm_messages by the
+// MessagePartialReceiveRow carries the fields written to messages by the
 // ReceiveCrossChainMessage handler.
 type MessagePartialReceiveRow struct {
 	SourceBlockchainID      string
@@ -177,7 +177,7 @@ type MessagePartialReceiveRow struct {
 	DestinationGasSpent     *big.Int
 }
 
-// MessagePartialExecutedRow carries the fields written to icm_messages by the
+// MessagePartialExecutedRow carries the fields written to messages by the
 // MessageExecuted handler.
 type MessagePartialExecutedRow struct {
 	SourceBlockchainID      string
@@ -187,7 +187,7 @@ type MessagePartialExecutedRow struct {
 	ExecutedTxHash          string
 }
 
-// MessagePartialExecutionFailedRow carries the fields written to icm_messages
+// MessagePartialExecutionFailedRow carries the fields written to messages
 // by the MessageExecutionFailed handler.
 type MessagePartialExecutionFailedRow struct {
 	SourceBlockchainID      string
@@ -196,7 +196,7 @@ type MessagePartialExecutionFailedRow struct {
 	LastExecutionFailedTime time.Time
 }
 
-// MessagePartialReceiptRow carries the fields written to icm_messages by the
+// MessagePartialReceiptRow carries the fields written to messages by the
 // ReceiptReceived handler.
 type MessagePartialReceiptRow struct {
 	SourceBlockchainID      string
