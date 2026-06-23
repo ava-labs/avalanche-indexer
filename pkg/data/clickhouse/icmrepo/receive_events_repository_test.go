@@ -22,10 +22,10 @@ func TestReceiveEvents_WriteReceiveEvent_Success(t *testing.T) {
 	addr1 := mustFixed20(t, testAddr1Hex)
 	addr2 := mustFixed20(t, testAddr2Hex)
 
-	expectICMTableInit(mockConn, "icm_receive_events_local", "icm_receive_events")
+	expectICMTableInit(mockConn, "receive_events_local", "receive_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`icm_receive_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`default`.`receive_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -52,7 +52,7 @@ func TestReceiveEvents_WriteReceiveEvent_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receive_events")
+	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receive_events")
 	require.NoError(t, err)
 	err = repo.WriteReceiveEvent(ctx, &ReceiveEventRow{
 		BlockchainID:             testBlockchainID,
@@ -93,7 +93,7 @@ func TestReceiveEvents_WriteReceiveEvent_Error(t *testing.T) {
 	addr1 := mustFixed20(t, testAddr1Hex)
 	addr2 := mustFixed20(t, testAddr2Hex)
 
-	expectICMTableInit(mockConn, "icm_receive_events_local", "icm_receive_events")
+	expectICMTableInit(mockConn, "receive_events_local", "receive_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -121,7 +121,7 @@ func TestReceiveEvents_WriteReceiveEvent_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receive_events")
+	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receive_events")
 	require.NoError(t, err)
 	err = repo.WriteReceiveEvent(ctx, &ReceiveEventRow{
 		BlockchainID:             testBlockchainID,
@@ -156,16 +156,16 @@ func TestReceiveEvents_DeleteReceiveEvents_Success(t *testing.T) {
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "icm_receive_events_local", "icm_receive_events")
+	expectICMTableInit(mockConn, "receive_events_local", "receive_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_receive_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `default`.`receive_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receive_events")
+	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receive_events")
 	require.NoError(t, err)
 	err = repo.DeleteReceiveEvents(ctx, chainID)
 	require.NoError(t, err)
@@ -179,16 +179,16 @@ func TestReceiveEvents_DeleteReceiveEvents_Error(t *testing.T) {
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "icm_receive_events_local", "icm_receive_events")
+	expectICMTableInit(mockConn, "receive_events_local", "receive_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `default`.`icm_receive_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `default`.`receive_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receive_events")
+	repo, err := NewReceiveEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receive_events")
 	require.NoError(t, err)
 	err = repo.DeleteReceiveEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)

@@ -12,37 +12,37 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// FeeInfoEvents provides methods to write ICM add fee amount events to ClickHouse.
-type FeeInfoEvents interface {
+// AddFeeEvents provides methods to write ICM add fee amount events to ClickHouse.
+type AddFeeEvents interface {
 	CreateTableIfNotExists(ctx context.Context) error
-	WriteFeeInfoEvent(ctx context.Context, row *FeeInfoEventRow) error
-	BatchInsertFeeInfoEvents(ctx context.Context, rows []*FeeInfoEventRow) error
-	DeleteFeeInfoEvents(ctx context.Context, chainID uint64) error
+	WriteAddFeeEvent(ctx context.Context, row *AddFeeEventRow) error
+	BatchInsertAddFeeEvents(ctx context.Context, rows []*AddFeeEventRow) error
+	DeleteAddFeeEvents(ctx context.Context, chainID uint64) error
 }
 
-//go:embed queries/fee_info_events/create-fee-info-events-table-local.sql
-var createFeeInfoEventsTableLocalQuery string
+//go:embed queries/add_fee_events/create-add-fee-events-table-local.sql
+var createAddFeeEventsTableLocalQuery string
 
-//go:embed queries/fee_info_events/create-fee-info-events-table.sql
-var createFeeInfoEventsTableQuery string
+//go:embed queries/add_fee_events/create-add-fee-events-table.sql
+var createAddFeeEventsTableQuery string
 
-//go:embed queries/fee_info_events/write-fee-info-event.sql
-var writeFeeInfoEventQuery string
+//go:embed queries/add_fee_events/write-add-fee-event.sql
+var writeAddFeeEventQuery string
 
-//go:embed queries/fee_info_events/batch-insert-fee-info-events.sql
-var batchInsertFeeInfoEventsQuery string
+//go:embed queries/add_fee_events/batch-insert-add-fee-events.sql
+var batchInsertAddFeeEventsQuery string
 
-//go:embed queries/fee_info_events/delete-fee-info-events.sql
-var deleteFeeInfoEventsQuery string
+//go:embed queries/add_fee_events/delete-add-fee-events.sql
+var deleteAddFeeEventsQuery string
 
-type feeInfoEvents struct {
+type addFeeEvents struct {
 	client    clickhouse.Client
 	cluster   string
 	database  string
 	tableName string
 }
 
-type chFeeInfoEventRow struct {
+type chAddFeeEventRow struct {
 	BlockchainID            string    `ch:"blockchain_id"`
 	EVMChainID              *big.Int  `ch:"evm_chain_id"`
 	BlockNumber             uint64    `ch:"block_number"`
@@ -57,9 +57,9 @@ type chFeeInfoEventRow struct {
 	AdditionalFeeAmount     *big.Int  `ch:"additional_fee_amount"`
 }
 
-func convertFeeInfoEventRow(row *FeeInfoEventRow) (*chFeeInfoEventRow, error) {
+func convertAddFeeEventRow(row *AddFeeEventRow) (*chAddFeeEventRow, error) {
 	if row == nil {
-		return nil, errors.New("fee info event row is nil")
+		return nil, errors.New("add fee event row is nil")
 	}
 	txHash, err := hexToFixed32(row.TxHash)
 	if err != nil {
@@ -77,7 +77,7 @@ func convertFeeInfoEventRow(row *FeeInfoEventRow) (*chFeeInfoEventRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fee_token_address: %w", err)
 	}
-	return &chFeeInfoEventRow{
+	return &chAddFeeEventRow{
 		BlockchainID:            row.BlockchainID,
 		EVMChainID:              bigIntOrZero(row.EVMChainID),
 		BlockNumber:             row.BlockNumber,
@@ -93,40 +93,40 @@ func convertFeeInfoEventRow(row *FeeInfoEventRow) (*chFeeInfoEventRow, error) {
 	}, nil
 }
 
-// NewFeeInfoEvents creates a new fee info events repository and initializes the table.
-func NewFeeInfoEvents(ctx context.Context, client clickhouse.Client, cluster, database, tableName string) (FeeInfoEvents, error) {
-	repo := &feeInfoEvents{
+// NewAddFeeEvents creates a new add fee events repository and initializes the table.
+func NewAddFeeEvents(ctx context.Context, client clickhouse.Client, cluster, database, tableName string) (AddFeeEvents, error) {
+	repo := &addFeeEvents{
 		client:    client,
 		cluster:   cluster,
 		database:  database,
 		tableName: tableName,
 	}
 	if err := repo.CreateTableIfNotExists(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialize fee info events table: %w", err)
+		return nil, fmt.Errorf("failed to initialize add fee events table: %w", err)
 	}
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the local and distributed icm_fee_info_events tables.
-func (r *feeInfoEvents) CreateTableIfNotExists(ctx context.Context) error {
-	query := fmt.Sprintf(createFeeInfoEventsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
+// CreateTableIfNotExists creates the local and distributed add_fee_events tables.
+func (r *addFeeEvents) CreateTableIfNotExists(ctx context.Context) error {
+	query := fmt.Sprintf(createAddFeeEventsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
-		return fmt.Errorf("failed to create fee info events local table: %w", err)
+		return fmt.Errorf("failed to create add fee events local table: %w", err)
 	}
-	query = fmt.Sprintf(createFeeInfoEventsTableQuery, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
+	query = fmt.Sprintf(createAddFeeEventsTableQuery, r.database, r.tableName, r.cluster, r.cluster, r.database, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
-		return fmt.Errorf("failed to create fee info events distributed table: %w", err)
+		return fmt.Errorf("failed to create add fee events distributed table: %w", err)
 	}
 	return nil
 }
 
-// WriteFeeInfoEvent inserts a single fee info event row into ClickHouse.
-func (r *feeInfoEvents) WriteFeeInfoEvent(ctx context.Context, row *FeeInfoEventRow) error {
-	chRow, err := convertFeeInfoEventRow(row)
+// WriteAddFeeEvent inserts a single add fee event row into ClickHouse.
+func (r *addFeeEvents) WriteAddFeeEvent(ctx context.Context, row *AddFeeEventRow) error {
+	chRow, err := convertAddFeeEventRow(row)
 	if err != nil {
-		return fmt.Errorf("failed to convert fee info event row: %w", err)
+		return fmt.Errorf("failed to convert add fee event row: %w", err)
 	}
-	query := fmt.Sprintf(writeFeeInfoEventQuery, r.database, r.tableName)
+	query := fmt.Sprintf(writeAddFeeEventQuery, r.database, r.tableName)
 	return r.client.Conn().Exec(ctx, query,
 		chRow.BlockchainID,
 		bigIntStr(chRow.EVMChainID),
@@ -143,12 +143,12 @@ func (r *feeInfoEvents) WriteFeeInfoEvent(ctx context.Context, row *FeeInfoEvent
 	)
 }
 
-// BatchInsertFeeInfoEvents inserts a batch of fee info event rows into ClickHouse.
-func (r *feeInfoEvents) BatchInsertFeeInfoEvents(ctx context.Context, rows []*FeeInfoEventRow) error {
+// BatchInsertAddFeeEvents inserts a batch of add fee event rows into ClickHouse.
+func (r *addFeeEvents) BatchInsertAddFeeEvents(ctx context.Context, rows []*AddFeeEventRow) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	query := fmt.Sprintf(batchInsertFeeInfoEventsQuery, r.database, r.tableName)
+	query := fmt.Sprintf(batchInsertAddFeeEventsQuery, r.database, r.tableName)
 	batch, err := r.client.Conn().PrepareBatch(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to prepare batch: %w", err)
@@ -157,24 +157,24 @@ func (r *feeInfoEvents) BatchInsertFeeInfoEvents(ctx context.Context, rows []*Fe
 		if row == nil {
 			continue
 		}
-		chRow, err := convertFeeInfoEventRow(row)
+		chRow, err := convertAddFeeEventRow(row)
 		if err != nil {
-			return fmt.Errorf("failed to convert fee info event row: %w", err)
+			return fmt.Errorf("failed to convert add fee event row: %w", err)
 		}
 		if err := batch.AppendStruct(chRow); err != nil {
-			return fmt.Errorf("failed to append fee info event row: %w", err)
+			return fmt.Errorf("failed to append add fee event row: %w", err)
 		}
 	}
 	if err := batch.Send(); err != nil {
-		return fmt.Errorf("failed to send fee info events batch: %w", err)
+		return fmt.Errorf("failed to send add fee events batch: %w", err)
 	}
 	return nil
 }
 
-// DeleteFeeInfoEvents deletes all fee info events for the given EVM chain ID.
-func (r *feeInfoEvents) DeleteFeeInfoEvents(ctx context.Context, chainID uint64) error {
-	query := fmt.Sprintf(deleteFeeInfoEventsQuery, r.database, r.tableName, r.cluster)
+// DeleteAddFeeEvents deletes all add fee events for the given EVM chain ID.
+func (r *addFeeEvents) DeleteAddFeeEvents(ctx context.Context, chainID uint64) error {
+	query := fmt.Sprintf(deleteAddFeeEventsQuery, r.database, r.tableName, r.cluster)
 	return r.client.Conn().Exec(ctx, query, chainID)
 }
 
-var _ FeeInfoEvents = (*feeInfoEvents)(nil)
+var _ AddFeeEvents = (*addFeeEvents)(nil)

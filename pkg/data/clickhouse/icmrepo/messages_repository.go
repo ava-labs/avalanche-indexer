@@ -10,7 +10,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 )
 
-// Messages provides methods to write partial rows to the icm_messages table.
+// Messages provides methods to write partial rows to the messages table.
 // Each method covers exactly the columns produced by one event type; unwritten
 // columns retain their zero/NULL aggregate state and are merged by
 // AggregatingMergeTree when both consumers have written their halves.
@@ -67,7 +67,7 @@ func NewMessages(ctx context.Context, client clickhouse.Client, cluster, databas
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the local and distributed icm_messages tables.
+// CreateTableIfNotExists creates the local and distributed messages tables.
 func (r *messages) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createMessagesTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {

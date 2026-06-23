@@ -99,7 +99,7 @@ func NewMessageExecutedEvents(ctx context.Context, client clickhouse.Client, clu
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the local and distributed icm_message_executed_events tables.
+// CreateTableIfNotExists creates the local and distributed message_executed_events tables.
 func (r *messageExecutedEvents) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createMessageExecutedEventsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {

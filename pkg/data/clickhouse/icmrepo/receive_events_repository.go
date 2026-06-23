@@ -145,7 +145,7 @@ func NewReceiveEvents(ctx context.Context, client clickhouse.Client, cluster, da
 	return repo, nil
 }
 
-// CreateTableIfNotExists creates the local and distributed icm_receive_events tables.
+// CreateTableIfNotExists creates the local and distributed receive_events tables.
 func (r *receiveEvents) CreateTableIfNotExists(ctx context.Context) error {
 	query := fmt.Sprintf(createReceiveEventsTableLocalQuery, r.database, r.tableName, r.cluster, r.tableName)
 	if err := r.client.Conn().Exec(ctx, query); err != nil {
