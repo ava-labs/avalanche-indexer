@@ -222,6 +222,7 @@ func TestE2EICMConsumerIndexer(t *testing.T) {
 		receiptsRepo, feeInfoRepo, feeRedemptionsRepo,
 		[]string{icmE2EContractHex},
 		m,
+		nil,
 	)
 	require.NoError(t, err)
 
