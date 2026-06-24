@@ -64,9 +64,9 @@ type ICMProcessor struct {
 	receiveRepo                icmrepo.ReceiveEvents
 	messageExecutedRepo        icmrepo.MessageExecutedEvents
 	messageExecutionFailedRepo icmrepo.MessageExecutionFailedEvents
-	receiptsRepo               icmrepo.ReceiptsEvents
-	feeInfoRepo                icmrepo.FeeInfoEvents
-	feeRedemptionsRepo         icmrepo.FeeRedemptionsEvents
+	receiptsRepo               icmrepo.ReceiptEvents
+	feeInfoRepo                icmrepo.AddFeeEvents
+	feeRedemptionsRepo         icmrepo.RelayerRewardRedeemedEvents
 	contractAddrs              map[common.Address]struct{}
 	filterer                   *teleportermessenger.TeleporterMessengerFilterer
 	metrics                    *metrics.Metrics
@@ -81,9 +81,9 @@ func NewICMProcessor(
 	receiveRepo icmrepo.ReceiveEvents,
 	messageExecutedRepo icmrepo.MessageExecutedEvents,
 	messageExecutionFailedRepo icmrepo.MessageExecutionFailedEvents,
-	receiptsRepo icmrepo.ReceiptsEvents,
-	feeInfoRepo icmrepo.FeeInfoEvents,
-	feeRedemptionsRepo icmrepo.FeeRedemptionsEvents,
+	receiptsRepo icmrepo.ReceiptEvents,
+	feeInfoRepo icmrepo.AddFeeEvents,
+	feeRedemptionsRepo icmrepo.RelayerRewardRedeemedEvents,
 	contractAddrs []string,
 	m *metrics.Metrics,
 ) (*ICMProcessor, error) {
@@ -583,7 +583,7 @@ func (p *ICMProcessor) handleReceipt(
 	dstChainID := chainID(parsed.DestinationBlockchainID)
 	blockTime := time.Unix(int64(block.Timestamp), 0).UTC()
 
-	eventRow := &icmrepo.ReceiptsEventRow{
+	eventRow := &icmrepo.ReceiptEventRow{
 		BlockchainID:            *block.BlockchainID,
 		EVMChainID:              block.EVMChainID,
 		BlockNumber:             blockNum(block),
@@ -608,8 +608,8 @@ func (p *ICMProcessor) handleReceipt(
 	}
 
 	writeStart := time.Now()
-	err = p.receiptsRepo.WriteReceiptsEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMReceiptsEventsTableName, err, writeStart)
+	err = p.receiptsRepo.WriteReceiptEvent(ctx, eventRow)
+	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMReceiptEventsTableName, err, writeStart)
 	if err != nil {
 		p.metrics.IncError("icm_write_error")
 		return classifyWriteErr(fmt.Errorf("write receipts event: %w", err))
@@ -637,7 +637,7 @@ func (p *ICMProcessor) handleFeeInfo(
 
 	// AddFeeAmount does not emit a destination blockchain ID; the column is left empty.
 	// (The analytics pipeline had a bug here, writing the fee amount into the chain ID column.)
-	eventRow := &icmrepo.FeeInfoEventRow{
+	eventRow := &icmrepo.AddFeeEventRow{
 		BlockchainID:            *block.BlockchainID,
 		EVMChainID:              block.EVMChainID,
 		BlockNumber:             blockNum(block),
@@ -653,8 +653,8 @@ func (p *ICMProcessor) handleFeeInfo(
 	}
 
 	writeStart := time.Now()
-	err = p.feeInfoRepo.WriteFeeInfoEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMFeeInfoEventsTableName, err, writeStart)
+	err = p.feeInfoRepo.WriteAddFeeEvent(ctx, eventRow)
+	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMAddFeeEventsTableName, err, writeStart)
 	if err != nil {
 		p.metrics.IncError("icm_write_error")
 		return classifyWriteErr(fmt.Errorf("write fee info event: %w", err))
@@ -673,7 +673,7 @@ func (p *ICMProcessor) handleFeeRedemption(
 		return NonRetryable(fmt.Errorf("ParseRelayerRewardsRedeemed: %w", err))
 	}
 
-	eventRow := &icmrepo.FeeRedemptionsEventRow{
+	eventRow := &icmrepo.RelayerRewardRedeemedEventRow{
 		BlockchainID:    *block.BlockchainID,
 		EVMChainID:      block.EVMChainID,
 		BlockNumber:     blockNum(block),
@@ -688,8 +688,8 @@ func (p *ICMProcessor) handleFeeRedemption(
 	}
 
 	writeStart := time.Now()
-	err = p.feeRedemptionsRepo.WriteFeeRedemptionsEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMFeeRedemptionsEventsTableName, err, writeStart)
+	err = p.feeRedemptionsRepo.WriteRelayerRewardRedeemedEvent(ctx, eventRow)
+	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMRelayerRewardRedeemedEventsTableName, err, writeStart)
 	if err != nil {
 		p.metrics.IncError("icm_write_error")
 		return classifyWriteErr(fmt.Errorf("write fee redemptions event: %w", err))

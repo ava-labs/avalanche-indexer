@@ -156,11 +156,11 @@ func TestE2EICMConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 	execFailedRepo, err := icmrepo.NewMessageExecutionFailedEvents(ctx, chClient, "default", "default", icmE2EExecFailTable)
 	require.NoError(t, err)
-	receiptsRepo, err := icmrepo.NewReceiptsEvents(ctx, chClient, "default", "default", icmE2EReceiptsTable)
+	receiptsRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, "default", "default", icmE2EReceiptsTable)
 	require.NoError(t, err)
-	feeInfoRepo, err := icmrepo.NewFeeInfoEvents(ctx, chClient, "default", "default", icmE2EFeeInfoTable)
+	feeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, "default", "default", icmE2EFeeInfoTable)
 	require.NoError(t, err)
-	feeRedemptionsRepo, err := icmrepo.NewFeeRedemptionsEvents(ctx, chClient, "default", "default", icmE2EFeeRedeemTable)
+	feeRedemptionsRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, "default", "default", icmE2EFeeRedeemTable)
 	require.NoError(t, err)
 
 	for _, tbl := range []string{

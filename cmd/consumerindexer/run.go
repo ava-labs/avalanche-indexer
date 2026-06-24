@@ -415,15 +415,15 @@ func newProcessor(
 		if err != nil {
 			return nil, nil, fmt.Errorf("icm message execution failed events repository: %w", err)
 		}
-		receiptsRepo, err := icmrepo.NewReceiptsEvents(ctx, chClient, cluster, database, cfg.ICMReceiptsEventsTableName)
+		receiptsRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, cluster, database, cfg.ICMReceiptsEventsTableName)
 		if err != nil {
 			return nil, nil, fmt.Errorf("icm receipts events repository: %w", err)
 		}
-		feeInfoRepo, err := icmrepo.NewFeeInfoEvents(ctx, chClient, cluster, database, cfg.ICMFeeInfoEventsTableName)
+		feeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, cluster, database, cfg.ICMFeeInfoEventsTableName)
 		if err != nil {
 			return nil, nil, fmt.Errorf("icm fee info events repository: %w", err)
 		}
-		feeRedemptionsRepo, err := icmrepo.NewFeeRedemptionsEvents(ctx, chClient, cluster, database, cfg.ICMFeeRedemptionsEventsTableName)
+		feeRedemptionsRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, cluster, database, cfg.ICMFeeRedemptionsEventsTableName)
 		if err != nil {
 			return nil, nil, fmt.Errorf("icm fee redemptions events repository: %w", err)
 		}
