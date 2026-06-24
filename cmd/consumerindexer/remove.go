@@ -9,6 +9,7 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/icmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
@@ -29,6 +30,13 @@ func remove(c *cli.Context) error {
 	rawTransactionsTableName := c.String("raw-transactions-table-name")
 	rawLogsTableName := c.String("raw-logs-table-name")
 	internalTransactionsTableName := c.String("internal-transactions-table-name")
+	icmSendEventsTableName := c.String("icm-send-events-table-name")
+	icmReceiveEventsTableName := c.String("icm-receive-events-table-name")
+	icmMessageExecutedEventsTableName := c.String("icm-message-executed-events-table-name")
+	icmMessageExecutionFailedEventsTableName := c.String("icm-message-execution-failed-events-table-name")
+	icmReceiptsEventsTableName := c.String("icm-receipts-events-table-name")
+	icmFeeInfoEventsTableName := c.String("icm-fee-info-events-table-name")
+	icmFeeRedemptionsEventsTableName := c.String("icm-fee-redemptions-events-table-name")
 
 	chCfg, err := buildClickHouseConfig(c)
 	if err != nil {
@@ -56,28 +64,70 @@ func remove(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create internal transactions repository: %w", err)
 	}
-
-	err = rawBlocksRepo.DeleteBlocks(ctx, evmChainID)
+	icmSendRepo, err := icmrepo.NewSendEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmSendEventsTableName)
 	if err != nil {
+		return fmt.Errorf("failed to create ICM send events repository: %w", err)
+	}
+	icmReceiveRepo, err := icmrepo.NewReceiveEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmReceiveEventsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create ICM receive events repository: %w", err)
+	}
+	icmMessageExecutedRepo, err := icmrepo.NewMessageExecutedEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmMessageExecutedEventsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create ICM message executed events repository: %w", err)
+	}
+	icmMessageExecutionFailedRepo, err := icmrepo.NewMessageExecutionFailedEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmMessageExecutionFailedEventsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create ICM message execution failed events repository: %w", err)
+	}
+	icmReceiptsRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmReceiptsEventsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create ICM receipt events repository: %w", err)
+	}
+	icmFeeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmFeeInfoEventsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create ICM add fee events repository: %w", err)
+	}
+	icmFeeRedemptionsRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmFeeRedemptionsEventsTableName)
+	if err != nil {
+		return fmt.Errorf("failed to create ICM relayer reward redeemed events repository: %w", err)
+	}
+
+	if err = rawBlocksRepo.DeleteBlocks(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete blocks: %w", err)
 	}
-
-	err = rawTransactionsRepo.DeleteTransactions(ctx, evmChainID)
-	if err != nil {
+	if err = rawTransactionsRepo.DeleteTransactions(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete transactions: %w", err)
 	}
-
-	err = rawLogsRepo.DeleteLogs(ctx, evmChainID)
-	if err != nil {
+	if err = rawLogsRepo.DeleteLogs(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete logs: %w", err)
 	}
-
-	err = internalTransactionsRepo.DeleteInternalTransactions(ctx, evmChainID)
-	if err != nil {
+	if err = internalTransactionsRepo.DeleteInternalTransactions(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete internal transactions: %w", err)
 	}
+	if err = icmSendRepo.DeleteSendEvents(ctx, evmChainID); err != nil {
+		return fmt.Errorf("failed to delete ICM send events: %w", err)
+	}
+	if err = icmReceiveRepo.DeleteReceiveEvents(ctx, evmChainID); err != nil {
+		return fmt.Errorf("failed to delete ICM receive events: %w", err)
+	}
+	if err = icmMessageExecutedRepo.DeleteMessageExecutedEvents(ctx, evmChainID); err != nil {
+		return fmt.Errorf("failed to delete ICM message executed events: %w", err)
+	}
+	if err = icmMessageExecutionFailedRepo.DeleteMessageExecutionFailedEvents(ctx, evmChainID); err != nil {
+		return fmt.Errorf("failed to delete ICM message execution failed events: %w", err)
+	}
+	if err = icmReceiptsRepo.DeleteReceiptEvents(ctx, evmChainID); err != nil {
+		return fmt.Errorf("failed to delete ICM receipt events: %w", err)
+	}
+	if err = icmFeeInfoRepo.DeleteAddFeeEvents(ctx, evmChainID); err != nil {
+		return fmt.Errorf("failed to delete ICM add fee events: %w", err)
+	}
+	if err = icmFeeRedemptionsRepo.DeleteRelayerRewardRedeemedEvents(ctx, evmChainID); err != nil {
+		return fmt.Errorf("failed to delete ICM relayer reward redeemed events: %w", err)
+	}
 
-	sugar.Infof("blocks, transactions, logs, and internal transactions successfully removed for chain ID %d", evmChainID)
+	sugar.Infof("all tables successfully cleaned for chain ID %d", evmChainID)
 
 	return nil
 }
