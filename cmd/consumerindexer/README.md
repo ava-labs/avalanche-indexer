@@ -396,16 +396,25 @@ docker run --rm \
 - Returns non-zero exit code on fatal errors
 
 ### Delete Resources 
-As a clean up it might be needed to delete all blocks, transactions, logs, and internal transactions for a specific chain. Use `remove` in this case:
+To clean up all indexed data for a specific chain, use `remove`:
 ```bash
 ./bin/consumerindexer remove --evm-chain-id 43114
 ```
 
-This will delete data from all tables:
+This deletes data by `evm_chain_id` from all tables:
 - `raw_blocks`
 - `raw_transactions`
 - `raw_logs`
 - `internal_transactions`
+- `icm_send_events`
+- `icm_receive_events`
+- `icm_message_executed_events`
+- `icm_message_execution_failed_events`
+- `icm_receipt_events`
+- `icm_add_fee_events`
+- `icm_relayer_reward_redeemed_events`
+
+Note: `icm_messages` is not deleted because it is keyed on `(source_blockchain_id, destination_blockchain_id, message_id)` and has no `evm_chain_id` column.
 
 **`remove` flags** (same environment variable names as `run` where applicable):
 
@@ -432,3 +441,10 @@ This will delete data from all tables:
 - `--raw-transactions-table-name` → `CLICKHOUSE_RAW_TRANSACTIONS_TABLE_NAME`
 - `--raw-logs-table-name` → `CLICKHOUSE_RAW_LOGS_TABLE_NAME`
 - `--internal-transactions-table-name` → `CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME` (default: "internal_transactions")
+- `--icm-send-events-table-name` → `ICM_SEND_EVENTS_TABLE_NAME` (default: "icm_send_events")
+- `--icm-receive-events-table-name` → `ICM_RECEIVE_EVENTS_TABLE_NAME` (default: "icm_receive_events")
+- `--icm-message-executed-events-table-name` → `ICM_MESSAGE_EXECUTED_EVENTS_TABLE_NAME` (default: "icm_message_executed_events")
+- `--icm-message-execution-failed-events-table-name` → `ICM_MESSAGE_EXECUTION_FAILED_EVENTS_TABLE_NAME` (default: "icm_message_execution_failed_events")
+- `--icm-receipts-events-table-name` → `ICM_RECEIPTS_EVENTS_TABLE_NAME` (default: "icm_receipts_events")
+- `--icm-fee-info-events-table-name` → `ICM_FEE_INFO_EVENTS_TABLE_NAME` (default: "icm_fee_info_events")
+- `--icm-fee-redemptions-events-table-name` → `ICM_FEE_REDEMPTIONS_EVENTS_TABLE_NAME` (default: "icm_fee_redemptions_events")
