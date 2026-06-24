@@ -165,7 +165,7 @@ func TestE2EICMConsumerIndexer(t *testing.T) {
 =======
 	receiptsRepo, err := icmrepo.NewReceiptsEvents(ctx, chClient, "default", "default", icmE2EReceiptsTable)
 	require.NoError(t, err)
-	feeInfoRepo, err := icmrepo.NewFeeInfoEvents(ctx, chClient, "default", "default", icmE2EFeeInfoTable)
+	feeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, "default", "default", icmE2EFeeInfoTable)
 	require.NoError(t, err)
 	feeRedemptionsRepo, err := icmrepo.NewFeeRedemptionsEvents(ctx, chClient, "default", "default", icmE2EFeeRedeemTable)
 >>>>>>> 895c84d (Add e2e tests)
