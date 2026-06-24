@@ -87,8 +87,8 @@ func (m *mockICMMessagesRepo) WritePartialReceipt(ctx context.Context, row *icmr
 }
 
 type mockICMSendEventsRepo struct {
-	writeSendEventFunc         func(context.Context, *icmrepo.SendEventRow) error
-	batchInsertSendEventsFunc  func(context.Context, []*icmrepo.SendEventRow) error
+	writeSendEventFunc        func(context.Context, *icmrepo.SendEventRow) error
+	batchInsertSendEventsFunc func(context.Context, []*icmrepo.SendEventRow) error
 }
 
 func (*mockICMSendEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -198,8 +198,8 @@ func (m *mockICMFeeInfoEventsRepo) WriteAddFeeEvent(ctx context.Context, row *ic
 }
 
 type mockICMFeeRedemptionsEventsRepo struct {
-	writeFeeRedemptionsEventFunc                  func(context.Context, *icmrepo.RelayerRewardRedeemedEventRow) error
-	batchInsertRelayerRewardRedeemedEventsFunc     func(context.Context, []*icmrepo.RelayerRewardRedeemedEventRow) error
+	writeFeeRedemptionsEventFunc               func(context.Context, *icmrepo.RelayerRewardRedeemedEventRow) error
+	batchInsertRelayerRewardRedeemedEventsFunc func(context.Context, []*icmrepo.RelayerRewardRedeemedEventRow) error
 }
 
 func (*mockICMFeeRedemptionsEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
@@ -1108,7 +1108,7 @@ func newICMBatchTestFixture(t *testing.T) *icmTestFixture {
 	require.NoError(t, err)
 	f.proc = proc
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	go func() { _ = bw.Start(ctx) }()
 
