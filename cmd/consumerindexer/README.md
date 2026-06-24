@@ -3,7 +3,7 @@
 Consumes blockchain data from Kafka pipeline with concurrent processing, automatic offset management, and DLQ support.
 
 ### Features
-- **Two Operating Modes**: Blocks mode (default) and Traces mode for processing debug traces
+- **Three Operating Modes**: Blocks mode (default), Traces mode for debug traces, and ICM mode for Teleporter/ICM events
 - **Concurrent Processing**: Configurable concurrency with semaphore-based throttling
 - **At-Least-Once Delivery**: Sliding window offset commits ensure no data loss
 - **Dead Letter Queue**: Failed messages automatically sent to DLQ topic
@@ -41,6 +41,19 @@ Processes debug traces (internal transactions) and persists to `internal_transac
 - `input` - Call input data
 - `output` - Call output data
 - `call_index` - Hierarchical index (e.g., `call_0_1_2`)
+
+#### ICM Mode
+Processes Avalanche Teleporter/ICM cross-chain messages. Filters logs by Teleporter contract address and topic0, ABI-decodes seven event types, and persists to:
+- `icm_messages` — AggregatingMergeTree that merges partial rows from multiple event types into one merged message row per (source_chain, destination_chain, message_id)
+- `icm_send_events` — `SendCrossChainMessage` events
+- `icm_receive_events` — `ReceiveCrossChainMessage` events
+- `icm_message_executed_events` — `MessageExecuted` events
+- `icm_message_execution_failed_events` — `MessageExecutionFailed` events
+- `icm_receipt_events` — `ReceiptReceived` events
+- `icm_add_fee_events` — `AddFeeAmount` events
+- `icm_relayer_reward_redeemed_events` — `RelayerRewardsRedeemed` events
+
+Requires `--teleporter-contract-addresses` (at least one). Supports `--enable-clickhouse-batch-writes` to batch event table writes (partial writes to `icm_messages` are always immediate regardless of batch mode).
 
 ### Usage
 
@@ -88,6 +101,28 @@ bin/consumerindexer run \
   --clickhouse-database default \
   --clickhouse-username default \
   --internal-transactions-table-name internal_transactions
+```
+
+#### ICM Mode
+```bash
+bin/consumerindexer run \
+  --mode icm \
+  --bootstrap-servers localhost:9092 \
+  --group-id my-icm-consumer-group \
+  --topic icm-blocks \
+  --dlq-topic icm-blocks-dlq \
+  --publish-to-dlq \
+  --concurrency 10 \
+  --kafka-topic-num-partitions 1 \
+  --kafka-topic-replication-factor 1 \
+  --kafka-dlq-topic-num-partitions 1 \
+  --kafka-dlq-topic-replication-factor 1 \
+  --clickhouse-hosts localhost:9000 \
+  --clickhouse-cluster default \
+  --clickhouse-database default \
+  --clickhouse-username default \
+  --teleporter-contract-addresses 0xD820f95Bd8A5b7a0E3E01f5fC08Ed8D17E8E1E0 \
+  --metrics-port 9099
 ```
 
 ### Run with SASL Authentication (OCI Kafka, etc.)
@@ -145,7 +180,7 @@ bin/consumerindexer run --verbose
 All flags have environment variable equivalents:
 
 **Application flags:**
-- `--mode` → `MODE` (default: "blocks", options: "blocks" or "traces")
+- `--mode` → `MODE` (default: "blocks", options: "blocks", "traces", or "icm")
 - `--verbose` / `-v` → none (enable verbose application logging)
 
 **Kafka flags:**
@@ -223,6 +258,17 @@ All flags have environment variable equivalents:
 - `--internal-transactions-table-name` → `CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME` (default: "internal_transactions", used in traces mode)
 
 Tables are automatically created if they don't exist.
+
+**ICM / Teleporter flags (used in icm mode):**
+- `--teleporter-contract-addresses` → `TELEPORTER_CONTRACT_ADDRESSES` (**required** when mode=icm; one or more 0x-prefixed addresses, repeated flag or comma-separated)
+- `--icm-messages-table-name` → `ICM_MESSAGES_TABLE_NAME` (default: "icm_messages")
+- `--icm-send-events-table-name` → `ICM_SEND_EVENTS_TABLE_NAME` (default: "icm_send_events")
+- `--icm-receive-events-table-name` → `ICM_RECEIVE_EVENTS_TABLE_NAME` (default: "icm_receive_events")
+- `--icm-message-executed-events-table-name` → `ICM_MESSAGE_EXECUTED_EVENTS_TABLE_NAME` (default: "icm_message_executed_events")
+- `--icm-message-execution-failed-events-table-name` → `ICM_MESSAGE_EXECUTION_FAILED_EVENTS_TABLE_NAME` (default: "icm_message_execution_failed_events")
+- `--icm-receipts-events-table-name` → `ICM_RECEIPTS_EVENTS_TABLE_NAME` (default: "icm_receipts_events")
+- `--icm-fee-info-events-table-name` → `ICM_FEE_INFO_EVENTS_TABLE_NAME` (default: "icm_fee_info_events")
+- `--icm-fee-redemptions-events-table-name` → `ICM_FEE_REDEMPTIONS_EVENTS_TABLE_NAME` (default: "icm_fee_redemptions_events")
 
 **Batch writer (optional, aggregates block writes to ClickHouse):**
 - `--enable-clickhouse-batch-writes` → `ENABLE_CLICKHOUSE_BATCH_WRITES` (default: false; when true, processors enqueue rows and a background writer batches inserts)

@@ -428,6 +428,28 @@ func newProcessor(
 			return nil, nil, fmt.Errorf("icm fee redemptions events repository: %w", err)
 		}
 
+		if buildBatchWriter && cfg.EnableClickHouseBatchWrites {
+			bw = batchwriter.New(batchwriter.Config{
+				Workers:      cfg.BatchWriterWorkers,
+				MaxBlocks:    cfg.BatchWriterMaxBlocks,
+				FlushTimeout: cfg.BatchWriterFlushTimeout,
+			}, batchwriter.Repositories{
+				ICMSendEvents:             sendRepo,
+				ICMReceiveEvents:          receiveRepo,
+				ICMMessageExecutedEvents:  messageExecutedRepo,
+				ICMMessageExecutionFailed: messageExecutionFailedRepo,
+				ICMReceiptEvents:          receiptsRepo,
+				ICMAddFeeEvents:           feeInfoRepo,
+				ICMRelayerRewardRedeemed:  feeRedemptionsRepo,
+			}, log.Named("batch_writer"), m)
+
+			log.Infow("batch writer enabled",
+				"workers", cfg.BatchWriterWorkers,
+				"maxBlocks", cfg.BatchWriterMaxBlocks,
+				"flushTimeout", cfg.BatchWriterFlushTimeout,
+			)
+		}
+
 		proc, err := processor.NewICMProcessor(
 			log,
 			messagesRepo,
@@ -440,11 +462,12 @@ func newProcessor(
 			feeRedemptionsRepo,
 			cfg.TeleporterContractAddresses,
 			m,
+			bw,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("icm processor: %w", err)
 		}
-		return proc, nil, nil
+		return proc, bw, nil
 
 	default:
 		return nil, nil, fmt.Errorf("invalid mode: %s", mode)
