@@ -24,7 +24,7 @@ func TestReceiptEvents_WriteReceiptEvent_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_receipt_events_local", "icm_receipt_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`receipt_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_receipt_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -125,7 +125,7 @@ func TestReceiptEvents_DeleteReceiptEvents_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_receipt_events_local", "icm_receipt_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
@@ -148,7 +148,7 @@ func TestReceiptEvents_DeleteReceiptEvents_Error(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_receipt_events_local", "icm_receipt_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).

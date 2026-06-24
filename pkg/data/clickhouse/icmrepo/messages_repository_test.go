@@ -145,7 +145,7 @@ func TestMessages_WritePartialSend_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`messages`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_messages`")
 		}),
 			testBlockchainID, testDstBlockchainID,
 			msgID, testBlockTime, txHash,
@@ -247,7 +247,7 @@ func TestMessages_WritePartialReceive_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`messages`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_messages`")
 		}),
 			testBlockchainID, testDstBlockchainID,
 			msgID, testBlockTime, txHash,
@@ -326,7 +326,7 @@ func TestMessages_WritePartialExecuted_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`messages`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_messages`")
 		}),
 			testBlockchainID, testDstBlockchainID,
 			msgID, testBlockTime, txHash,
@@ -390,7 +390,7 @@ func TestMessages_WritePartialExecutionFailed_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`messages`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_messages`")
 		}),
 			testBlockchainID, testDstBlockchainID,
 			msgID, testBlockTime,
@@ -451,7 +451,7 @@ func TestMessages_WritePartialReceipt_Success(t *testing.T) {
 	expectICMTableInit(mockConn, "icm_messages_local", "icm_messages")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`messages`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_messages`")
 		}),
 			testBlockchainID, testDstBlockchainID,
 			msgID, uint8(1),
