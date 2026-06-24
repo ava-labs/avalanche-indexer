@@ -21,10 +21,10 @@ func TestAddFeeEvents_WriteAddFeeEvent_Success(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
+	expectICMTableInit(mockConn, "icm_add_fee_events_local", "icm_add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`add_fee_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_add_fee_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -42,7 +42,7 @@ func TestAddFeeEvents_WriteAddFeeEvent_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_add_fee_events")
 	require.NoError(t, err)
 	err = repo.WriteAddFeeEvent(ctx, &AddFeeEventRow{
 		BlockchainID:            testBlockchainID,
@@ -73,7 +73,7 @@ func TestAddFeeEvents_WriteAddFeeEvent_Error(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
+	expectICMTableInit(mockConn, "icm_add_fee_events_local", "icm_add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -92,7 +92,7 @@ func TestAddFeeEvents_WriteAddFeeEvent_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_add_fee_events")
 	require.NoError(t, err)
 	err = repo.WriteAddFeeEvent(ctx, &AddFeeEventRow{
 		BlockchainID:            testBlockchainID,
@@ -118,16 +118,16 @@ func TestAddFeeEvents_DeleteAddFeeEvents_Success(t *testing.T) {
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
+	expectICMTableInit(mockConn, "icm_add_fee_events_local", "icm_add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_add_fee_events")
 	require.NoError(t, err)
 	err = repo.DeleteAddFeeEvents(ctx, chainID)
 	require.NoError(t, err)
@@ -141,16 +141,16 @@ func TestAddFeeEvents_DeleteAddFeeEvents_Error(t *testing.T) {
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "add_fee_events_local", "add_fee_events")
+	expectICMTableInit(mockConn, "icm_add_fee_events_local", "icm_add_fee_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_add_fee_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "add_fee_events")
+	repo, err := NewAddFeeEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_add_fee_events")
 	require.NoError(t, err)
 	err = repo.DeleteAddFeeEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)

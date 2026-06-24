@@ -21,10 +21,10 @@ func TestReceiptEvents_WriteReceiptEvent_Success(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "receipt_events_local", "receipt_events")
+	expectICMTableInit(mockConn, "icm_receipt_events_local", "icm_receipt_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`receipt_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_receipt_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -43,7 +43,7 @@ func TestReceiptEvents_WriteReceiptEvent_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receipt_events")
+	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipt_events")
 	require.NoError(t, err)
 	err = repo.WriteReceiptEvent(ctx, &ReceiptEventRow{
 		BlockchainID:            testBlockchainID,
@@ -75,7 +75,7 @@ func TestReceiptEvents_WriteReceiptEvent_Error(t *testing.T) {
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "receipt_events_local", "receipt_events")
+	expectICMTableInit(mockConn, "icm_receipt_events_local", "icm_receipt_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -95,7 +95,7 @@ func TestReceiptEvents_WriteReceiptEvent_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receipt_events")
+	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipt_events")
 	require.NoError(t, err)
 	err = repo.WriteReceiptEvent(ctx, &ReceiptEventRow{
 		BlockchainID:            testBlockchainID,
@@ -122,16 +122,16 @@ func TestReceiptEvents_DeleteReceiptEvents_Success(t *testing.T) {
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "receipt_events_local", "receipt_events")
+	expectICMTableInit(mockConn, "icm_receipt_events_local", "icm_receipt_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receipt_events")
+	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipt_events")
 	require.NoError(t, err)
 	err = repo.DeleteReceiptEvents(ctx, chainID)
 	require.NoError(t, err)
@@ -145,16 +145,16 @@ func TestReceiptEvents_DeleteReceiptEvents_Error(t *testing.T) {
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "receipt_events_local", "receipt_events")
+	expectICMTableInit(mockConn, "icm_receipt_events_local", "icm_receipt_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_receipt_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "receipt_events")
+	repo, err := NewReceiptEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_receipt_events")
 	require.NoError(t, err)
 	err = repo.DeleteReceiptEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)

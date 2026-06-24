@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// SendEventRow represents a row in the send_events table.
+// SendEventRow represents a row in the icm_send_events table.
 type SendEventRow struct {
 	BlockchainID             string
 	EVMChainID               *big.Int // UInt256 in ClickHouse
@@ -29,7 +29,7 @@ type SendEventRow struct {
 	ReceiptsRelayerAddresses []string // hex addresses, stored as Array(FixedString(20))
 }
 
-// ReceiveEventRow represents a row in the receive_events table.
+// ReceiveEventRow represents a row in the icm_receive_events table.
 type ReceiveEventRow struct {
 	BlockchainID             string
 	EVMChainID               *big.Int
@@ -54,7 +54,7 @@ type ReceiveEventRow struct {
 	ReceiptsRelayerAddresses []string
 }
 
-// MessageExecutedEventRow represents a row in the message_executed_events table.
+// MessageExecutedEventRow represents a row in the icm_message_executed_events table.
 type MessageExecutedEventRow struct {
 	BlockchainID       string
 	EVMChainID         *big.Int
@@ -68,7 +68,7 @@ type MessageExecutedEventRow struct {
 	SourceBlockchainID string
 }
 
-// MessageExecutionFailedEventRow represents a row in the message_execution_failed_events table.
+// MessageExecutionFailedEventRow represents a row in the icm_message_execution_failed_events table.
 type MessageExecutionFailedEventRow struct {
 	BlockchainID             string
 	EVMChainID               *big.Int
@@ -91,7 +91,7 @@ type MessageExecutionFailedEventRow struct {
 	ReceiptsRelayerAddresses []string
 }
 
-// ReceiptEventRow represents a row in the receipt_events table.
+// ReceiptEventRow represents a row in the icm_receipt_events table.
 type ReceiptEventRow struct {
 	BlockchainID            string
 	EVMChainID              *big.Int
@@ -108,7 +108,7 @@ type ReceiptEventRow struct {
 	FeeAmount               *big.Int
 }
 
-// AddFeeEventRow represents a row in the add_fee_events table.
+// AddFeeEventRow represents a row in the icm_add_fee_events table.
 type AddFeeEventRow struct {
 	BlockchainID            string
 	EVMChainID              *big.Int
@@ -124,7 +124,7 @@ type AddFeeEventRow struct {
 	AdditionalFeeAmount     *big.Int
 }
 
-// RelayerRewardRedeemedEventRow represents a row in the relayer_reward_redeemed_events table.
+// RelayerRewardRedeemedEventRow represents a row in the icm_relayer_reward_redeemed_events table.
 type RelayerRewardRedeemedEventRow struct {
 	BlockchainID    string
 	EVMChainID      *big.Int

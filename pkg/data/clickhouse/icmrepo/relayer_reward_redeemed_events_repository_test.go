@@ -20,10 +20,10 @@ func TestRelayerRewardRedeemedEvents_WriteRelayerRewardRedeemedEvent_Success(t *
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
+	expectICMTableInit(mockConn, "icm_relayer_reward_redeemed_events_local", "icm_relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
-			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`relayer_reward_redeemed_events`")
+			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`icm_relayer_reward_redeemed_events`")
 		}),
 			testBlockchainID,
 			"43114",
@@ -40,7 +40,7 @@ func TestRelayerRewardRedeemedEvents_WriteRelayerRewardRedeemedEvent_Success(t *
 		Return(nil).
 		Once()
 
-	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_relayer_reward_redeemed_events")
 	require.NoError(t, err)
 	err = repo.WriteRelayerRewardRedeemedEvent(ctx, &RelayerRewardRedeemedEventRow{
 		BlockchainID:    testBlockchainID,
@@ -69,7 +69,7 @@ func TestRelayerRewardRedeemedEvents_WriteRelayerRewardRedeemedEvent_Error(t *te
 	contract := mustFixed20(t, testContractAddrHex)
 	addr1 := mustFixed20(t, testAddr1Hex)
 
-	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
+	expectICMTableInit(mockConn, "icm_relayer_reward_redeemed_events_local", "icm_relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -87,7 +87,7 @@ func TestRelayerRewardRedeemedEvents_WriteRelayerRewardRedeemedEvent_Error(t *te
 		Return(execErr).
 		Once()
 
-	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_relayer_reward_redeemed_events")
 	require.NoError(t, err)
 	err = repo.WriteRelayerRewardRedeemedEvent(ctx, &RelayerRewardRedeemedEventRow{
 		BlockchainID:    testBlockchainID,
@@ -112,16 +112,16 @@ func TestRelayerRewardRedeemedEvents_DeleteRelayerRewardRedeemedEvents_Success(t
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
+	expectICMTableInit(mockConn, "icm_relayer_reward_redeemed_events_local", "icm_relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(nil).
 		Once()
 
-	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_relayer_reward_redeemed_events")
 	require.NoError(t, err)
 	err = repo.DeleteRelayerRewardRedeemedEvents(ctx, chainID)
 	require.NoError(t, err)
@@ -135,16 +135,16 @@ func TestRelayerRewardRedeemedEvents_DeleteRelayerRewardRedeemedEvents_Error(t *
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "relayer_reward_redeemed_events_local", "relayer_reward_redeemed_events")
+	expectICMTableInit(mockConn, "icm_relayer_reward_redeemed_events_local", "icm_relayer_reward_redeemed_events")
 	mockConn.
 		On("Exec", mock.Anything,
-			"DELETE FROM `icm`.`relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
+			"DELETE FROM `icm`.`icm_relayer_reward_redeemed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
 			chainID,
 		).
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "relayer_reward_redeemed_events")
+	repo, err := NewRelayerRewardRedeemedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_relayer_reward_redeemed_events")
 	require.NoError(t, err)
 	err = repo.DeleteRelayerRewardRedeemedEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)
