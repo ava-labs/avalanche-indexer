@@ -20,7 +20,7 @@ func TestMessageExecutedEvents_WriteMessageExecutedEvent_Success(t *testing.T) {
 	msgID := mustFixed32(t, testMessageIDHex)
 	contract := mustFixed20(t, testContractAddrHex)
 
-	expectICMTableInit(mockConn, "message_executed_events_local", "message_executed_events")
+	expectICMTableInit(mockConn, "icm_message_executed_events_local", "icm_message_executed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.MatchedBy(func(q string) bool {
 			return containsSubstring(q, "INSERT INTO") && containsSubstring(q, "`icm`.`message_executed_events`")
@@ -39,7 +39,7 @@ func TestMessageExecutedEvents_WriteMessageExecutedEvent_Success(t *testing.T) {
 		Return(nil).
 		Once()
 
-	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_executed_events")
+	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_executed_events")
 	require.NoError(t, err)
 	err = repo.WriteMessageExecutedEvent(ctx, &MessageExecutedEventRow{
 		BlockchainID:       testBlockchainID,
@@ -67,7 +67,7 @@ func TestMessageExecutedEvents_WriteMessageExecutedEvent_Error(t *testing.T) {
 	msgID := mustFixed32(t, testMessageIDHex)
 	contract := mustFixed20(t, testContractAddrHex)
 
-	expectICMTableInit(mockConn, "message_executed_events_local", "message_executed_events")
+	expectICMTableInit(mockConn, "icm_message_executed_events_local", "icm_message_executed_events")
 	mockConn.
 		On("Exec", mock.Anything, mock.Anything,
 			testBlockchainID,
@@ -84,7 +84,7 @@ func TestMessageExecutedEvents_WriteMessageExecutedEvent_Error(t *testing.T) {
 		Return(execErr).
 		Once()
 
-	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_executed_events")
+	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_executed_events")
 	require.NoError(t, err)
 	err = repo.WriteMessageExecutedEvent(ctx, &MessageExecutedEventRow{
 		BlockchainID:       testBlockchainID,
@@ -108,7 +108,7 @@ func TestMessageExecutedEvents_DeleteMessageExecutedEvents_Success(t *testing.T)
 	ctx := t.Context()
 	chainID := uint64(43114)
 
-	expectICMTableInit(mockConn, "message_executed_events_local", "message_executed_events")
+	expectICMTableInit(mockConn, "icm_message_executed_events_local", "icm_message_executed_events")
 	mockConn.
 		On("Exec", mock.Anything,
 			"DELETE FROM `icm`.`message_executed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
@@ -117,7 +117,7 @@ func TestMessageExecutedEvents_DeleteMessageExecutedEvents_Success(t *testing.T)
 		Return(nil).
 		Once()
 
-	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_executed_events")
+	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_executed_events")
 	require.NoError(t, err)
 	err = repo.DeleteMessageExecutedEvents(ctx, chainID)
 	require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestMessageExecutedEvents_DeleteMessageExecutedEvents_Error(t *testing.T) {
 	chainID := uint64(43114)
 	deleteErr := errors.New("delete failed")
 
-	expectICMTableInit(mockConn, "message_executed_events_local", "message_executed_events")
+	expectICMTableInit(mockConn, "icm_message_executed_events_local", "icm_message_executed_events")
 	mockConn.
 		On("Exec", mock.Anything,
 			"DELETE FROM `icm`.`message_executed_events_local` ON CLUSTER 'default' WHERE evm_chain_id = ?\n",
@@ -140,7 +140,7 @@ func TestMessageExecutedEvents_DeleteMessageExecutedEvents_Error(t *testing.T) {
 		Return(deleteErr).
 		Once()
 
-	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "message_executed_events")
+	repo, err := NewMessageExecutedEvents(ctx, testutils.NewTestClient(mockConn), testCluster, testDatabase, "icm_message_executed_events")
 	require.NoError(t, err)
 	err = repo.DeleteMessageExecutedEvents(ctx, chainID)
 	require.ErrorIs(t, err, deleteErr)
