@@ -34,9 +34,9 @@ func remove(c *cli.Context) error {
 	icmReceiveEventsTableName := c.String("icm-receive-events-table-name")
 	icmMessageExecutedEventsTableName := c.String("icm-message-executed-events-table-name")
 	icmMessageExecutionFailedEventsTableName := c.String("icm-message-execution-failed-events-table-name")
-	icmReceiptsEventsTableName := c.String("icm-receipts-events-table-name")
-	icmFeeInfoEventsTableName := c.String("icm-fee-info-events-table-name")
-	icmFeeRedemptionsEventsTableName := c.String("icm-fee-redemptions-events-table-name")
+	icmReceiptEventsTableName := c.String("icm-receipt-events-table-name")
+	icmAddFeeEventsTableName := c.String("icm-add-fee-events-table-name")
+	icmRelayerRewardRedeemedEventsTableName := c.String("icm-relayer-reward-redeemed-events-table-name")
 
 	chCfg, err := buildClickHouseConfig(c)
 	if err != nil {
@@ -80,15 +80,15 @@ func remove(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create ICM message execution failed events repository: %w", err)
 	}
-	icmReceiptsRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmReceiptsEventsTableName)
+	icmReceiptRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmReceiptEventsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create ICM receipt events repository: %w", err)
 	}
-	icmFeeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmFeeInfoEventsTableName)
+	icmAddFeeRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmAddFeeEventsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create ICM add fee events repository: %w", err)
 	}
-	icmFeeRedemptionsRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmFeeRedemptionsEventsTableName)
+	icmRelayerRewardRedeemedRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, chCfg.Cluster, chCfg.Database, icmRelayerRewardRedeemedEventsTableName)
 	if err != nil {
 		return fmt.Errorf("failed to create ICM relayer reward redeemed events repository: %w", err)
 	}
@@ -117,13 +117,13 @@ func remove(c *cli.Context) error {
 	if err = icmMessageExecutionFailedRepo.DeleteMessageExecutionFailedEvents(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete ICM message execution failed events: %w", err)
 	}
-	if err = icmReceiptsRepo.DeleteReceiptEvents(ctx, evmChainID); err != nil {
+	if err = icmReceiptRepo.DeleteReceiptEvents(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete ICM receipt events: %w", err)
 	}
-	if err = icmFeeInfoRepo.DeleteAddFeeEvents(ctx, evmChainID); err != nil {
+	if err = icmAddFeeRepo.DeleteAddFeeEvents(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete ICM add fee events: %w", err)
 	}
-	if err = icmFeeRedemptionsRepo.DeleteRelayerRewardRedeemedEvents(ctx, evmChainID); err != nil {
+	if err = icmRelayerRewardRedeemedRepo.DeleteRelayerRewardRedeemedEvents(ctx, evmChainID); err != nil {
 		return fmt.Errorf("failed to delete ICM relayer reward redeemed events: %w", err)
 	}
 

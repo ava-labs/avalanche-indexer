@@ -124,9 +124,9 @@ type Config struct {
 	ICMReceiveEventsTableName                string
 	ICMMessageExecutedEventsTableName        string
 	ICMMessageExecutionFailedEventsTableName string
-	ICMReceiptsEventsTableName               string
-	ICMFeeInfoEventsTableName                string
-	ICMFeeRedemptionsEventsTableName         string
+	ICMReceiptEventsTableName                string
+	ICMAddFeeEventsTableName                 string
+	ICMRelayerRewardRedeemedEventsTableName  string
 
 	// Metrics settings
 	MetricsHost   string
@@ -227,9 +227,9 @@ func buildConfig(c *cli.Context) (*Config, error) {
 		ICMReceiveEventsTableName:                c.String("icm-receive-events-table-name"),
 		ICMMessageExecutedEventsTableName:        c.String("icm-message-executed-events-table-name"),
 		ICMMessageExecutionFailedEventsTableName: c.String("icm-message-execution-failed-events-table-name"),
-		ICMReceiptsEventsTableName:               c.String("icm-receipts-events-table-name"),
-		ICMFeeInfoEventsTableName:                c.String("icm-fee-info-events-table-name"),
-		ICMFeeRedemptionsEventsTableName:         c.String("icm-fee-redemptions-events-table-name"),
+		ICMReceiptEventsTableName:                c.String("icm-receipt-events-table-name"),
+		ICMAddFeeEventsTableName:                 c.String("icm-add-fee-events-table-name"),
+		ICMRelayerRewardRedeemedEventsTableName:  c.String("icm-relayer-reward-redeemed-events-table-name"),
 		MetricsHost:                              c.String("metrics-host"),
 		MetricsPort:                              c.Int("metrics-port"),
 		ChainID:                                  c.Uint64("chain-id"),

@@ -90,9 +90,9 @@ func run(c *cli.Context) error {
 		"icmReceiveEventsTableName", cfg.ICMReceiveEventsTableName,
 		"icmMessageExecutedEventsTableName", cfg.ICMMessageExecutedEventsTableName,
 		"icmMessageExecutionFailedEventsTableName", cfg.ICMMessageExecutionFailedEventsTableName,
-		"icmReceiptsEventsTableName", cfg.ICMReceiptsEventsTableName,
-		"icmFeeInfoEventsTableName", cfg.ICMFeeInfoEventsTableName,
-		"icmFeeRedemptionsEventsTableName", cfg.ICMFeeRedemptionsEventsTableName,
+		"icmReceiptEventsTableName", cfg.ICMReceiptEventsTableName,
+		"icmAddFeeEventsTableName", cfg.ICMAddFeeEventsTableName,
+		"icmRelayerRewardRedeemedEventsTableName", cfg.ICMRelayerRewardRedeemedEventsTableName,
 	)
 
 	// Initialize Prometheus metrics with labels for multi-instance filtering.
@@ -415,17 +415,17 @@ func newProcessor(
 		if err != nil {
 			return nil, nil, fmt.Errorf("icm message execution failed events repository: %w", err)
 		}
-		receiptsRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, cluster, database, cfg.ICMReceiptsEventsTableName)
+		receiptRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, cluster, database, cfg.ICMReceiptEventsTableName)
 		if err != nil {
-			return nil, nil, fmt.Errorf("icm receipts events repository: %w", err)
+			return nil, nil, fmt.Errorf("icm receipt events repository: %w", err)
 		}
-		feeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, cluster, database, cfg.ICMFeeInfoEventsTableName)
+		addFeeRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, cluster, database, cfg.ICMAddFeeEventsTableName)
 		if err != nil {
-			return nil, nil, fmt.Errorf("icm fee info events repository: %w", err)
+			return nil, nil, fmt.Errorf("icm add fee events repository: %w", err)
 		}
-		feeRedemptionsRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, cluster, database, cfg.ICMFeeRedemptionsEventsTableName)
+		relayerRewardRedeemedRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, cluster, database, cfg.ICMRelayerRewardRedeemedEventsTableName)
 		if err != nil {
-			return nil, nil, fmt.Errorf("icm fee redemptions events repository: %w", err)
+			return nil, nil, fmt.Errorf("icm relayer reward redeemed events repository: %w", err)
 		}
 
 		if buildBatchWriter && cfg.EnableClickHouseBatchWrites {
@@ -438,9 +438,9 @@ func newProcessor(
 				ICMReceiveEvents:          receiveRepo,
 				ICMMessageExecutedEvents:  messageExecutedRepo,
 				ICMMessageExecutionFailed: messageExecutionFailedRepo,
-				ICMReceiptEvents:          receiptsRepo,
-				ICMAddFeeEvents:           feeInfoRepo,
-				ICMRelayerRewardRedeemed:  feeRedemptionsRepo,
+				ICMReceiptEvents:          receiptRepo,
+				ICMAddFeeEvents:           addFeeRepo,
+				ICMRelayerRewardRedeemed:  relayerRewardRedeemedRepo,
 			}, log.Named("batch_writer"), m)
 
 			log.Infow("batch writer enabled",
@@ -457,9 +457,9 @@ func newProcessor(
 			receiveRepo,
 			messageExecutedRepo,
 			messageExecutionFailedRepo,
-			receiptsRepo,
-			feeInfoRepo,
-			feeRedemptionsRepo,
+			receiptRepo,
+			addFeeRepo,
+			relayerRewardRedeemedRepo,
 			cfg.TeleporterContractAddresses,
 			m,
 			bw,

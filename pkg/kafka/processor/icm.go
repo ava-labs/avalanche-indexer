@@ -67,9 +67,9 @@ type ICMProcessor struct {
 	receiveRepo                icmrepo.ReceiveEvents
 	messageExecutedRepo        icmrepo.MessageExecutedEvents
 	messageExecutionFailedRepo icmrepo.MessageExecutionFailedEvents
-	receiptsRepo               icmrepo.ReceiptEvents
-	feeInfoRepo                icmrepo.AddFeeEvents
-	feeRedemptionsRepo         icmrepo.RelayerRewardRedeemedEvents
+	receiptRepo                icmrepo.ReceiptEvents
+	addFeeRepo                 icmrepo.AddFeeEvents
+	relayerRewardRedeemedRepo  icmrepo.RelayerRewardRedeemedEvents
 	contractAddrs              map[common.Address]struct{}
 	filterer                   *teleportermessenger.TeleporterMessengerFilterer
 	metrics                    *metrics.Metrics
@@ -86,9 +86,9 @@ func NewICMProcessor(
 	receiveRepo icmrepo.ReceiveEvents,
 	messageExecutedRepo icmrepo.MessageExecutedEvents,
 	messageExecutionFailedRepo icmrepo.MessageExecutionFailedEvents,
-	receiptsRepo icmrepo.ReceiptEvents,
-	feeInfoRepo icmrepo.AddFeeEvents,
-	feeRedemptionsRepo icmrepo.RelayerRewardRedeemedEvents,
+	receiptRepo icmrepo.ReceiptEvents,
+	addFeeRepo icmrepo.AddFeeEvents,
+	relayerRewardRedeemedRepo icmrepo.RelayerRewardRedeemedEvents,
 	contractAddrs []string,
 	m *metrics.Metrics,
 	bw *batchwriter.Writer,
@@ -123,9 +123,9 @@ func NewICMProcessor(
 		receiveRepo:                receiveRepo,
 		messageExecutedRepo:        messageExecutedRepo,
 		messageExecutionFailedRepo: messageExecutionFailedRepo,
-		receiptsRepo:               receiptsRepo,
-		feeInfoRepo:                feeInfoRepo,
-		feeRedemptionsRepo:         feeRedemptionsRepo,
+		receiptRepo:                receiptRepo,
+		addFeeRepo:                 addFeeRepo,
+		relayerRewardRedeemedRepo:  relayerRewardRedeemedRepo,
 		contractAddrs:              addrSet,
 		filterer:                   filterer,
 		metrics:                    m,
@@ -229,9 +229,9 @@ func (p *ICMProcessor) processLog(
 	case eventSigReceiptReceived:
 		return p.handleReceipt(ctx, evmLog, tx, block, req)
 	case eventSigAddFeeAmount:
-		return p.handleFeeInfo(ctx, evmLog, tx, block, req)
+		return p.handleAddFee(ctx, evmLog, tx, block, req)
 	case eventSigRelayerRewardsRedeemed:
-		return p.handleFeeRedemption(ctx, evmLog, tx, block, req)
+		return p.handleRelayerRewardRedeemed(ctx, evmLog, tx, block, req)
 	default:
 		// Guard: a topic0 is in icmEventSigMap but has no case here.
 		// This indicates a missing case after adding a new event to the map.
@@ -656,11 +656,11 @@ func (p *ICMProcessor) handleReceipt(
 
 	if req == nil {
 		writeStart := time.Now()
-		err = p.receiptsRepo.WriteReceiptEvent(ctx, eventRow)
+		err = p.receiptRepo.WriteReceiptEvent(ctx, eventRow)
 		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMReceiptEventsTableName, err, writeStart)
 		if err != nil {
 			p.metrics.IncError("icm_write_error")
-			return classifyWriteErr(fmt.Errorf("write receipts event: %w", err))
+			return classifyWriteErr(fmt.Errorf("write receipt event: %w", err))
 		}
 	} else {
 		req.ICMReceiptEvents = append(req.ICMReceiptEvents, eventRow)
@@ -675,7 +675,7 @@ func (p *ICMProcessor) handleReceipt(
 	return nil
 }
 
-func (p *ICMProcessor) handleFeeInfo(
+func (p *ICMProcessor) handleAddFee(
 	ctx context.Context,
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
@@ -706,7 +706,7 @@ func (p *ICMProcessor) handleFeeInfo(
 
 	if req == nil {
 		writeStart := time.Now()
-		err = p.feeInfoRepo.WriteAddFeeEvent(ctx, eventRow)
+		err = p.addFeeRepo.WriteAddFeeEvent(ctx, eventRow)
 		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMAddFeeEventsTableName, err, writeStart)
 		if err != nil {
 			p.metrics.IncError("icm_write_error")
@@ -718,7 +718,7 @@ func (p *ICMProcessor) handleFeeInfo(
 	return nil
 }
 
-func (p *ICMProcessor) handleFeeRedemption(
+func (p *ICMProcessor) handleRelayerRewardRedeemed(
 	ctx context.Context,
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
@@ -746,7 +746,7 @@ func (p *ICMProcessor) handleFeeRedemption(
 
 	if req == nil {
 		writeStart := time.Now()
-		err = p.feeRedemptionsRepo.WriteRelayerRewardRedeemedEvent(ctx, eventRow)
+		err = p.relayerRewardRedeemedRepo.WriteRelayerRewardRedeemedEvent(ctx, eventRow)
 		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMRelayerRewardRedeemedEventsTableName, err, writeStart)
 		if err != nil {
 			p.metrics.IncError("icm_write_error")

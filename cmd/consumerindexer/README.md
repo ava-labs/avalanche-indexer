@@ -121,7 +121,7 @@ bin/consumerindexer run \
   --clickhouse-cluster default \
   --clickhouse-database default \
   --clickhouse-username default \
-  --teleporter-contract-addresses 0xD820f95Bd8A5b7a0E3E01f5fC08Ed8D17E8E1E0 \
+  --teleporter-contract-addresses 0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf \
   --metrics-port 9099
 ```
 
@@ -266,7 +266,7 @@ Tables are automatically created if they don't exist.
 - `--icm-receive-events-table-name` → `ICM_RECEIVE_EVENTS_TABLE_NAME` (default: "icm_receive_events")
 - `--icm-message-executed-events-table-name` → `ICM_MESSAGE_EXECUTED_EVENTS_TABLE_NAME` (default: "icm_message_executed_events")
 - `--icm-message-execution-failed-events-table-name` → `ICM_MESSAGE_EXECUTION_FAILED_EVENTS_TABLE_NAME` (default: "icm_message_execution_failed_events")
-- `--icm-receipts-events-table-name` → `ICM_RECEIPTS_EVENTS_TABLE_NAME` (default: "icm_receipts_events")
+- `--icm-receipt-events-table-name` → `ICM_RECEIPT_EVENTS_TABLE_NAME` (default: "icm_receipt_events")
 - `--icm-fee-info-events-table-name` → `ICM_FEE_INFO_EVENTS_TABLE_NAME` (default: "icm_fee_info_events")
 - `--icm-fee-redemptions-events-table-name` → `ICM_FEE_REDEMPTIONS_EVENTS_TABLE_NAME` (default: "icm_fee_redemptions_events")
 
@@ -445,6 +445,6 @@ Note: `icm_messages` is not deleted because it is keyed on `(source_blockchain_i
 - `--icm-receive-events-table-name` → `ICM_RECEIVE_EVENTS_TABLE_NAME` (default: "icm_receive_events")
 - `--icm-message-executed-events-table-name` → `ICM_MESSAGE_EXECUTED_EVENTS_TABLE_NAME` (default: "icm_message_executed_events")
 - `--icm-message-execution-failed-events-table-name` → `ICM_MESSAGE_EXECUTION_FAILED_EVENTS_TABLE_NAME` (default: "icm_message_execution_failed_events")
-- `--icm-receipts-events-table-name` → `ICM_RECEIPTS_EVENTS_TABLE_NAME` (default: "icm_receipts_events")
+- `--icm-receipt-events-table-name` → `ICM_RECEIPT_EVENTS_TABLE_NAME` (default: "icm_receipt_events")
 - `--icm-fee-info-events-table-name` → `ICM_FEE_INFO_EVENTS_TABLE_NAME` (default: "icm_fee_info_events")
 - `--icm-fee-redemptions-events-table-name` → `ICM_FEE_REDEMPTIONS_EVENTS_TABLE_NAME` (default: "icm_fee_redemptions_events")

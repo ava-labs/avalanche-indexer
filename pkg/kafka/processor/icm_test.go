@@ -165,58 +165,60 @@ func (m *mockICMMessageExecutionFailedEventsRepo) WriteMessageExecutionFailedEve
 	return nil
 }
 
-type mockICMReceiptsEventsRepo struct {
-	writeReceiptsEventFunc func(context.Context, *icmrepo.ReceiptEventRow) error
+type mockICMReceiptEventsRepo struct {
+	writeReceiptEventFunc func(context.Context, *icmrepo.ReceiptEventRow) error
 }
 
-func (*mockICMReceiptsEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
-func (*mockICMReceiptsEventsRepo) BatchInsertReceiptEvents(context.Context, []*icmrepo.ReceiptEventRow) error {
+func (*mockICMReceiptEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
+func (*mockICMReceiptEventsRepo) BatchInsertReceiptEvents(context.Context, []*icmrepo.ReceiptEventRow) error {
 	return nil
 }
-func (*mockICMReceiptsEventsRepo) DeleteReceiptEvents(context.Context, uint64) error { return nil }
-func (m *mockICMReceiptsEventsRepo) WriteReceiptEvent(ctx context.Context, row *icmrepo.ReceiptEventRow) error {
-	if m.writeReceiptsEventFunc != nil {
-		return m.writeReceiptsEventFunc(ctx, row)
+func (*mockICMReceiptEventsRepo) DeleteReceiptEvents(context.Context, uint64) error { return nil }
+func (m *mockICMReceiptEventsRepo) WriteReceiptEvent(ctx context.Context, row *icmrepo.ReceiptEventRow) error {
+	if m.writeReceiptEventFunc != nil {
+		return m.writeReceiptEventFunc(ctx, row)
 	}
 	return nil
 }
 
-type mockICMFeeInfoEventsRepo struct {
-	writeFeeInfoEventFunc func(context.Context, *icmrepo.AddFeeEventRow) error
+type mockICMAddFeeEventsRepo struct {
+	writeAddFeeEventFunc func(context.Context, *icmrepo.AddFeeEventRow) error
 }
 
-func (*mockICMFeeInfoEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
-func (*mockICMFeeInfoEventsRepo) BatchInsertAddFeeEvents(context.Context, []*icmrepo.AddFeeEventRow) error {
+func (*mockICMAddFeeEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
+func (*mockICMAddFeeEventsRepo) BatchInsertAddFeeEvents(context.Context, []*icmrepo.AddFeeEventRow) error {
 	return nil
 }
-func (*mockICMFeeInfoEventsRepo) DeleteAddFeeEvents(context.Context, uint64) error { return nil }
-func (m *mockICMFeeInfoEventsRepo) WriteAddFeeEvent(ctx context.Context, row *icmrepo.AddFeeEventRow) error {
-	if m.writeFeeInfoEventFunc != nil {
-		return m.writeFeeInfoEventFunc(ctx, row)
+func (*mockICMAddFeeEventsRepo) DeleteAddFeeEvents(context.Context, uint64) error { return nil }
+func (m *mockICMAddFeeEventsRepo) WriteAddFeeEvent(ctx context.Context, row *icmrepo.AddFeeEventRow) error {
+	if m.writeAddFeeEventFunc != nil {
+		return m.writeAddFeeEventFunc(ctx, row)
 	}
 	return nil
 }
 
-type mockICMFeeRedemptionsEventsRepo struct {
-	writeFeeRedemptionsEventFunc               func(context.Context, *icmrepo.RelayerRewardRedeemedEventRow) error
+type mockICMRelayerRewardRedeemedEventsRepo struct {
+	writeRelayerRewardRedeemedEventFunc        func(context.Context, *icmrepo.RelayerRewardRedeemedEventRow) error
 	batchInsertRelayerRewardRedeemedEventsFunc func(context.Context, []*icmrepo.RelayerRewardRedeemedEventRow) error
 }
 
-func (*mockICMFeeRedemptionsEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
-func (m *mockICMFeeRedemptionsEventsRepo) BatchInsertRelayerRewardRedeemedEvents(ctx context.Context, rows []*icmrepo.RelayerRewardRedeemedEventRow) error {
+func (*mockICMRelayerRewardRedeemedEventsRepo) CreateTableIfNotExists(context.Context) error {
+	return nil
+}
+func (m *mockICMRelayerRewardRedeemedEventsRepo) BatchInsertRelayerRewardRedeemedEvents(ctx context.Context, rows []*icmrepo.RelayerRewardRedeemedEventRow) error {
 	if m.batchInsertRelayerRewardRedeemedEventsFunc != nil {
 		return m.batchInsertRelayerRewardRedeemedEventsFunc(ctx, rows)
 	}
 	return nil
 }
 
-func (*mockICMFeeRedemptionsEventsRepo) DeleteRelayerRewardRedeemedEvents(context.Context, uint64) error {
+func (*mockICMRelayerRewardRedeemedEventsRepo) DeleteRelayerRewardRedeemedEvents(context.Context, uint64) error {
 	return nil
 }
 
-func (m *mockICMFeeRedemptionsEventsRepo) WriteRelayerRewardRedeemedEvent(ctx context.Context, row *icmrepo.RelayerRewardRedeemedEventRow) error {
-	if m.writeFeeRedemptionsEventFunc != nil {
-		return m.writeFeeRedemptionsEventFunc(ctx, row)
+func (m *mockICMRelayerRewardRedeemedEventsRepo) WriteRelayerRewardRedeemedEvent(ctx context.Context, row *icmrepo.RelayerRewardRedeemedEventRow) error {
+	if m.writeRelayerRewardRedeemedEventFunc != nil {
+		return m.writeRelayerRewardRedeemedEventFunc(ctx, row)
 	}
 	return nil
 }
@@ -226,28 +228,28 @@ func (m *mockICMFeeRedemptionsEventsRepo) WriteRelayerRewardRedeemedEvent(ctx co
 // ============================================================================
 
 type icmTestFixture struct {
-	proc               *ICMProcessor
-	messages           *mockICMMessagesRepo
-	sendRepo           *mockICMSendEventsRepo
-	receiveRepo        *mockICMReceiveEventsRepo
-	executedRepo       *mockICMMessageExecutedEventsRepo
-	execFailedRepo     *mockICMMessageExecutionFailedEventsRepo
-	receiptsRepo       *mockICMReceiptsEventsRepo
-	feeInfoRepo        *mockICMFeeInfoEventsRepo
-	feeRedemptionsRepo *mockICMFeeRedemptionsEventsRepo
+	proc                      *ICMProcessor
+	messages                  *mockICMMessagesRepo
+	sendRepo                  *mockICMSendEventsRepo
+	receiveRepo               *mockICMReceiveEventsRepo
+	executedRepo              *mockICMMessageExecutedEventsRepo
+	execFailedRepo            *mockICMMessageExecutionFailedEventsRepo
+	receiptRepo               *mockICMReceiptEventsRepo
+	addFeeRepo                *mockICMAddFeeEventsRepo
+	relayerRewardRedeemedRepo *mockICMRelayerRewardRedeemedEventsRepo
 }
 
 func newICMTestFixture(t *testing.T) *icmTestFixture {
 	t.Helper()
 	f := &icmTestFixture{
-		messages:           &mockICMMessagesRepo{},
-		sendRepo:           &mockICMSendEventsRepo{},
-		receiveRepo:        &mockICMReceiveEventsRepo{},
-		executedRepo:       &mockICMMessageExecutedEventsRepo{},
-		execFailedRepo:     &mockICMMessageExecutionFailedEventsRepo{},
-		receiptsRepo:       &mockICMReceiptsEventsRepo{},
-		feeInfoRepo:        &mockICMFeeInfoEventsRepo{},
-		feeRedemptionsRepo: &mockICMFeeRedemptionsEventsRepo{},
+		messages:                  &mockICMMessagesRepo{},
+		sendRepo:                  &mockICMSendEventsRepo{},
+		receiveRepo:               &mockICMReceiveEventsRepo{},
+		executedRepo:              &mockICMMessageExecutedEventsRepo{},
+		execFailedRepo:            &mockICMMessageExecutionFailedEventsRepo{},
+		receiptRepo:               &mockICMReceiptEventsRepo{},
+		addFeeRepo:                &mockICMAddFeeEventsRepo{},
+		relayerRewardRedeemedRepo: &mockICMRelayerRewardRedeemedEventsRepo{},
 	}
 	proc, err := NewICMProcessor(
 		zap.NewNop().Sugar(),
@@ -256,9 +258,9 @@ func newICMTestFixture(t *testing.T) *icmTestFixture {
 		f.receiveRepo,
 		f.executedRepo,
 		f.execFailedRepo,
-		f.receiptsRepo,
-		f.feeInfoRepo,
-		f.feeRedemptionsRepo,
+		f.receiptRepo,
+		f.addFeeRepo,
+		f.relayerRewardRedeemedRepo,
 		[]string{icmTestContractHex},
 		nil,
 		nil,
@@ -359,9 +361,9 @@ func TestNewICMProcessor_EmptyAddrs(t *testing.T) {
 		&mockICMReceiveEventsRepo{},
 		&mockICMMessageExecutedEventsRepo{},
 		&mockICMMessageExecutionFailedEventsRepo{},
-		&mockICMReceiptsEventsRepo{},
-		&mockICMFeeInfoEventsRepo{},
-		&mockICMFeeRedemptionsEventsRepo{},
+		&mockICMReceiptEventsRepo{},
+		&mockICMAddFeeEventsRepo{},
+		&mockICMRelayerRewardRedeemedEventsRepo{},
 		[]string{},
 		nil,
 		nil,
@@ -378,9 +380,9 @@ func TestNewICMProcessor_InvalidHexAddress(t *testing.T) {
 		&mockICMReceiveEventsRepo{},
 		&mockICMMessageExecutedEventsRepo{},
 		&mockICMMessageExecutionFailedEventsRepo{},
-		&mockICMReceiptsEventsRepo{},
-		&mockICMFeeInfoEventsRepo{},
-		&mockICMFeeRedemptionsEventsRepo{},
+		&mockICMReceiptEventsRepo{},
+		&mockICMAddFeeEventsRepo{},
+		&mockICMRelayerRewardRedeemedEventsRepo{},
 		[]string{"not-a-hex-address"},
 		nil,
 		nil,
@@ -883,7 +885,7 @@ func TestICMProcessor_HandleReceipt_WriteEventError(t *testing.T) {
 	t.Parallel()
 	f := newICMTestFixture(t)
 	expectedErr := errors.New("receipt write failed")
-	f.receiptsRepo.writeReceiptsEventFunc = func(_ context.Context, _ *icmrepo.ReceiptEventRow) error {
+	f.receiptRepo.writeReceiptEventFunc = func(_ context.Context, _ *icmrepo.ReceiptEventRow) error {
 		return expectedErr
 	}
 
@@ -917,7 +919,7 @@ func TestICMProcessor_HandleReceipt_Success(t *testing.T) {
 	f := newICMTestFixture(t)
 
 	var eventCalled, partialCalled bool
-	f.receiptsRepo.writeReceiptsEventFunc = func(_ context.Context, _ *icmrepo.ReceiptEventRow) error {
+	f.receiptRepo.writeReceiptEventFunc = func(_ context.Context, _ *icmrepo.ReceiptEventRow) error {
 		eventCalled = true
 		return nil
 	}
@@ -938,7 +940,7 @@ func TestICMProcessor_HandleReceipt_Success(t *testing.T) {
 }
 
 // ============================================================================
-// handleFeeInfo tests (AddFeeAmount)
+// handleAddFee tests (AddFeeAmount)
 // ============================================================================
 
 func feeInfoTopics() []common.Hash {
@@ -948,7 +950,7 @@ func feeInfoTopics() []common.Hash {
 	}
 }
 
-func TestICMProcessor_HandleFeeInfo_ParseError(t *testing.T) {
+func TestICMProcessor_HandleAddFee_ParseError(t *testing.T) {
 	t.Parallel()
 	f := newICMTestFixture(t)
 
@@ -959,11 +961,11 @@ func TestICMProcessor_HandleFeeInfo_ParseError(t *testing.T) {
 	require.True(t, IsNonRetryable(err), "ABI parse failure should be NonRetryable")
 }
 
-func TestICMProcessor_HandleFeeInfo_WriteError(t *testing.T) {
+func TestICMProcessor_HandleAddFee_WriteError(t *testing.T) {
 	t.Parallel()
 	f := newICMTestFixture(t)
 	expectedErr := errors.New("fee info write failed")
-	f.feeInfoRepo.writeFeeInfoEventFunc = func(_ context.Context, _ *icmrepo.AddFeeEventRow) error {
+	f.addFeeRepo.writeAddFeeEventFunc = func(_ context.Context, _ *icmrepo.AddFeeEventRow) error {
 		return expectedErr
 	}
 
@@ -976,12 +978,12 @@ func TestICMProcessor_HandleFeeInfo_WriteError(t *testing.T) {
 	require.ErrorIs(t, err, expectedErr)
 }
 
-func TestICMProcessor_HandleFeeInfo_Success(t *testing.T) {
+func TestICMProcessor_HandleAddFee_Success(t *testing.T) {
 	t.Parallel()
 	f := newICMTestFixture(t)
 
 	var eventCalled bool
-	f.feeInfoRepo.writeFeeInfoEventFunc = func(_ context.Context, row *icmrepo.AddFeeEventRow) error {
+	f.addFeeRepo.writeAddFeeEventFunc = func(_ context.Context, row *icmrepo.AddFeeEventRow) error {
 		eventCalled = true
 		// DestinationBlockchainID must be empty — AddFeeAmount does not emit it.
 		assert.Empty(t, row.DestinationBlockchainID)
@@ -998,7 +1000,7 @@ func TestICMProcessor_HandleFeeInfo_Success(t *testing.T) {
 }
 
 // ============================================================================
-// handleFeeRedemption tests (RelayerRewardsRedeemed)
+// handleRelayerRewardRedeemed tests (RelayerRewardsRedeemed)
 // ============================================================================
 
 func feeRedemptionTopics() []common.Hash {
@@ -1009,7 +1011,7 @@ func feeRedemptionTopics() []common.Hash {
 	}
 }
 
-func TestICMProcessor_HandleFeeRedemption_ParseError(t *testing.T) {
+func TestICMProcessor_HandleRelayerRewardRedeemed_ParseError(t *testing.T) {
 	t.Parallel()
 	f := newICMTestFixture(t)
 
@@ -1020,11 +1022,11 @@ func TestICMProcessor_HandleFeeRedemption_ParseError(t *testing.T) {
 	require.True(t, IsNonRetryable(err), "ABI parse failure should be NonRetryable")
 }
 
-func TestICMProcessor_HandleFeeRedemption_WriteError(t *testing.T) {
+func TestICMProcessor_HandleRelayerRewardRedeemed_WriteError(t *testing.T) {
 	t.Parallel()
 	f := newICMTestFixture(t)
 	expectedErr := errors.New("fee redemption write failed")
-	f.feeRedemptionsRepo.writeFeeRedemptionsEventFunc = func(_ context.Context, _ *icmrepo.RelayerRewardRedeemedEventRow) error {
+	f.relayerRewardRedeemedRepo.writeRelayerRewardRedeemedEventFunc = func(_ context.Context, _ *icmrepo.RelayerRewardRedeemedEventRow) error {
 		return expectedErr
 	}
 
@@ -1037,12 +1039,12 @@ func TestICMProcessor_HandleFeeRedemption_WriteError(t *testing.T) {
 	require.ErrorIs(t, err, expectedErr)
 }
 
-func TestICMProcessor_HandleFeeRedemption_Success(t *testing.T) {
+func TestICMProcessor_HandleRelayerRewardRedeemed_Success(t *testing.T) {
 	t.Parallel()
 	f := newICMTestFixture(t)
 
 	var eventCalled bool
-	f.feeRedemptionsRepo.writeFeeRedemptionsEventFunc = func(_ context.Context, row *icmrepo.RelayerRewardRedeemedEventRow) error {
+	f.relayerRewardRedeemedRepo.writeRelayerRewardRedeemedEventFunc = func(_ context.Context, row *icmrepo.RelayerRewardRedeemedEventRow) error {
 		eventCalled = true
 		assert.Equal(t, icmRedeemer.Hex(), row.RedeemerAddress)
 		assert.Equal(t, icmAssetAddr.Hex(), row.FeeTokenAddress)
@@ -1067,14 +1069,14 @@ func TestICMProcessor_HandleFeeRedemption_Success(t *testing.T) {
 func newICMBatchTestFixture(t *testing.T) *icmTestFixture {
 	t.Helper()
 	f := &icmTestFixture{
-		messages:           &mockICMMessagesRepo{},
-		sendRepo:           &mockICMSendEventsRepo{},
-		receiveRepo:        &mockICMReceiveEventsRepo{},
-		executedRepo:       &mockICMMessageExecutedEventsRepo{},
-		execFailedRepo:     &mockICMMessageExecutionFailedEventsRepo{},
-		receiptsRepo:       &mockICMReceiptsEventsRepo{},
-		feeInfoRepo:        &mockICMFeeInfoEventsRepo{},
-		feeRedemptionsRepo: &mockICMFeeRedemptionsEventsRepo{},
+		messages:                  &mockICMMessagesRepo{},
+		sendRepo:                  &mockICMSendEventsRepo{},
+		receiveRepo:               &mockICMReceiveEventsRepo{},
+		executedRepo:              &mockICMMessageExecutedEventsRepo{},
+		execFailedRepo:            &mockICMMessageExecutionFailedEventsRepo{},
+		receiptRepo:               &mockICMReceiptEventsRepo{},
+		addFeeRepo:                &mockICMAddFeeEventsRepo{},
+		relayerRewardRedeemedRepo: &mockICMRelayerRewardRedeemedEventsRepo{},
 	}
 
 	bw := batchwriter.New(batchwriter.Config{
@@ -1086,9 +1088,9 @@ func newICMBatchTestFixture(t *testing.T) *icmTestFixture {
 		ICMReceiveEvents:          f.receiveRepo,
 		ICMMessageExecutedEvents:  f.executedRepo,
 		ICMMessageExecutionFailed: f.execFailedRepo,
-		ICMReceiptEvents:          f.receiptsRepo,
-		ICMAddFeeEvents:           f.feeInfoRepo,
-		ICMRelayerRewardRedeemed:  f.feeRedemptionsRepo,
+		ICMReceiptEvents:          f.receiptRepo,
+		ICMAddFeeEvents:           f.addFeeRepo,
+		ICMRelayerRewardRedeemed:  f.relayerRewardRedeemedRepo,
 	}, zap.NewNop().Sugar(), nil)
 
 	proc, err := NewICMProcessor(
@@ -1098,9 +1100,9 @@ func newICMBatchTestFixture(t *testing.T) *icmTestFixture {
 		f.receiveRepo,
 		f.executedRepo,
 		f.execFailedRepo,
-		f.receiptsRepo,
-		f.feeInfoRepo,
-		f.feeRedemptionsRepo,
+		f.receiptRepo,
+		f.addFeeRepo,
+		f.relayerRewardRedeemedRepo,
 		[]string{icmTestContractHex},
 		nil,
 		bw,
@@ -1196,7 +1198,7 @@ func TestICMProcessor_BatchMode_MultipleEventsInBlock(t *testing.T) {
 		sendRows = rows
 		return nil
 	}
-	f.feeRedemptionsRepo.batchInsertRelayerRewardRedeemedEventsFunc = func(_ context.Context, rows []*icmrepo.RelayerRewardRedeemedEventRow) error {
+	f.relayerRewardRedeemedRepo.batchInsertRelayerRewardRedeemedEventsFunc = func(_ context.Context, rows []*icmrepo.RelayerRewardRedeemedEventRow) error {
 		redeemRows = rows
 		return nil
 	}

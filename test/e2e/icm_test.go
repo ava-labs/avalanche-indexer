@@ -29,16 +29,16 @@ import (
 
 // ICM e2e test constants — stable values shared across helpers and the test body.
 const (
-	icmE2EContractHex    = "0xaAbBcCdDeEfF001122334455667788990011aAbB"
-	icmE2EBlockchainID   = "11111111111111111111111111111111LpoYY"
-	icmE2EMessagesTable  = "icm_messages_e2e"
-	icmE2ESendTable      = "icm_send_events_e2e"
-	icmE2EReceiveTable   = "icm_receive_events_e2e"
-	icmE2EExecutedTable  = "icm_message_executed_events_e2e"
-	icmE2EExecFailTable  = "icm_message_execution_failed_events_e2e"
-	icmE2EReceiptsTable  = "icm_receipts_events_e2e"
-	icmE2EFeeInfoTable   = "icm_fee_info_events_e2e"
-	icmE2EFeeRedeemTable = "icm_fee_redemptions_events_e2e"
+	icmE2EContractHex                = "0xaAbBcCdDeEfF001122334455667788990011aAbB"
+	icmE2EBlockchainID               = "11111111111111111111111111111111LpoYY"
+	icmE2EMessagesTable              = "icm_messages_e2e"
+	icmE2ESendTable                  = "icm_send_events_e2e"
+	icmE2EReceiveTable               = "icm_receive_events_e2e"
+	icmE2EExecutedTable              = "icm_message_executed_events_e2e"
+	icmE2EExecFailTable              = "icm_message_execution_failed_events_e2e"
+	icmE2EReceiptTable               = "icm_receipt_events_e2e"
+	icmE2EAddFeeTable                = "icm_add_fee_events_e2e"
+	icmE2ERelayerRewardRedeemedTable = "icm_relayer_reward_redeemed_events_e2e"
 )
 
 var (
@@ -156,11 +156,11 @@ func TestE2EICMConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 	execFailedRepo, err := icmrepo.NewMessageExecutionFailedEvents(ctx, chClient, "default", "default", icmE2EExecFailTable)
 	require.NoError(t, err)
-	receiptsRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, "default", "default", icmE2EReceiptsTable)
+	receiptRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, "default", "default", icmE2EReceiptTable)
 	require.NoError(t, err)
-	feeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, "default", "default", icmE2EFeeInfoTable)
+	addFeeRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, "default", "default", icmE2EAddFeeTable)
 	require.NoError(t, err)
-	feeRedemptionsRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, "default", "default", icmE2EFeeRedeemTable)
+	relayerRewardRedeemedRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, "default", "default", icmE2ERelayerRewardRedeemedTable)
 	require.NoError(t, err)
 
 	for _, tbl := range []string{
@@ -169,9 +169,9 @@ func TestE2EICMConsumerIndexer(t *testing.T) {
 		icmE2EReceiveTable,
 		icmE2EExecutedTable,
 		icmE2EExecFailTable,
-		icmE2EReceiptsTable,
-		icmE2EFeeInfoTable,
-		icmE2EFeeRedeemTable,
+		icmE2EReceiptTable,
+		icmE2EAddFeeTable,
+		icmE2ERelayerRewardRedeemedTable,
 	} {
 		require.NoError(t,
 			chClient.Conn().Exec(ctx, "TRUNCATE TABLE IF EXISTS "+tbl),
@@ -211,7 +211,7 @@ func TestE2EICMConsumerIndexer(t *testing.T) {
 		log,
 		messagesRepo, sendRepo, receiveRepo,
 		executedRepo, execFailedRepo,
-		receiptsRepo, feeInfoRepo, feeRedemptionsRepo,
+		receiptRepo, addFeeRepo, relayerRewardRedeemedRepo,
 		[]string{icmE2EContractHex},
 		m,
 		nil,
