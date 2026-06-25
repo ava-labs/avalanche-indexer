@@ -58,5 +58,6 @@ ON CLUSTER `%s`
 )
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
 ORDER BY (source_blockchain_id, destination_blockchain_id, message_id)
-SETTINGS index_granularity = 8192,
-         deduplicate_merge_projection_mode = 'drop'
+SETTINGS 
+    index_granularity = 8192,
+    deduplicate_merge_projection_mode = 'drop'

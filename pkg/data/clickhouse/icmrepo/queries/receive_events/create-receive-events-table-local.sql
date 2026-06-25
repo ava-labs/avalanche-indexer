@@ -30,5 +30,6 @@ ON CLUSTER `%s`
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
 PARTITION BY toYYYYMM(block_time)
 ORDER BY (blockchain_id, tx_hash, log_index)
-SETTINGS index_granularity = 8192,
-         deduplicate_merge_projection_mode = 'drop'
+SETTINGS 
+    index_granularity = 8192,
+    deduplicate_merge_projection_mode = 'drop'

@@ -245,7 +245,6 @@ func buildConfig(c *cli.Context) (*Config, error) {
 
 // buildTeleporterAddresses reads the teleporter-contract-addresses flag.
 // Handles both repeated flags (--flag a --flag b) and a single comma-separated value
-// (consistent with the clickhouse-hosts handling in buildClickHouseConfig).
 func buildTeleporterAddresses(c *cli.Context) []string {
 	addrs := c.StringSlice("teleporter-contract-addresses")
 	if len(addrs) == 1 && strings.Contains(addrs[0], ",") {
