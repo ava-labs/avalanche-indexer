@@ -22,9 +22,8 @@ func NewSubnetEVM(log *zap.SugaredLogger, client ethclient.Client) *SubnetEVM {
 	}
 }
 
-// Subscribe is a BLOCKING function. It subscribes to new heads and submits them
-// to the manager, reconnecting with backoff on failure. It returns only when
-// ctx is done.
+// Subscribe is BLOCKING. It subscribes to new heads and submits them to the
+// manager, reconnecting with backoff on failure; it returns only when ctx is done.
 func (s *SubnetEVM) Subscribe(ctx context.Context, capacity int, manager *slidingwindow.Manager) error {
 	return runWithReconnect(ctx, s.log, capacity, manager,
 		func(ctx context.Context, ch chan<- *types.Header) (subscription, error) {
