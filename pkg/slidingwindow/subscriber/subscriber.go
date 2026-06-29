@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"
+	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
 type Subscriber interface {
@@ -21,6 +22,10 @@ const (
 	initialReconnectBackoff = 1 * time.Second
 	// maxReconnectBackoff caps the exponential backoff between reconnects.
 	maxReconnectBackoff = 30 * time.Second
+	// reconnectErrorThreshold is the number of consecutive failed reconnect
+	// attempts after which failures are logged at Error level so alerting can
+	// catch a prolonged disconnection.
+	reconnectErrorThreshold = 5
 )
 
 // subscription is the minimal surface we need from an eth new-heads
@@ -43,7 +48,8 @@ func runWithReconnect(
 	manager *slidingwindow.Manager,
 	subscribe subscribeNewHeadFn,
 ) error {
-	backoff := initialReconnectBackoff
+	backoff := utils.NewBackoff(initialReconnectBackoff, maxReconnectBackoff)
+	consecutiveFailures := 0
 	for {
 		connected, err := subscribeOnce(ctx, log, capacity, manager, subscribe)
 		if ctx.Err() != nil {
@@ -53,19 +59,22 @@ func runWithReconnect(
 		// Reset backoff after a healthy session; keep backing off if we never
 		// connected, to avoid hammering an RPC that is not yet live.
 		if connected {
-			backoff = initialReconnectBackoff
+			backoff.Reset()
+			consecutiveFailures = 0
 		}
+		consecutiveFailures++
 
-		log.Warnw("new heads subscription unavailable; reconnecting",
-			"error", err, "retryIn", backoff.String())
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
+		retryIn := backoff.Next()
+		logw := log.Warnw
+		if consecutiveFailures >= reconnectErrorThreshold {
+			logw = log.Errorw
 		}
+		logw("new heads subscription unavailable; reconnecting",
+			"error", err, "retryIn", retryIn.String(), "consecutiveFailures", consecutiveFailures)
 
-		backoff = nextBackoff(backoff)
+		if err := utils.Sleep(ctx, retryIn); err != nil {
+			return err
+		}
 	}
 }
 
@@ -104,13 +113,4 @@ func subscribeOnce(
 			return true, fmt.Errorf("subscribe new heads: %w", subErr)
 		}
 	}
-}
-
-// nextBackoff doubles the backoff, capped at maxReconnectBackoff.
-func nextBackoff(d time.Duration) time.Duration {
-	next := d * 2
-	if next > maxReconnectBackoff {
-		return maxReconnectBackoff
-	}
-	return next
 }

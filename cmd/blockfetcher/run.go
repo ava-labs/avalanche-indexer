@@ -38,13 +38,19 @@ const (
 	initialDialBackoff = 1 * time.Second
 	// maxDialBackoff caps the exponential backoff between dial attempts.
 	maxDialBackoff = 30 * time.Second
+	// maxDialRetries caps how many times we retry a failed dial before giving
+	// up and letting the process exit (so the orchestrator can restart it). At
+	// the 30s backoff cap this is ~8h of retrying before we declare the RPC dead.
+	maxDialRetries = 1000
 )
 
-// dialWithRetry retries dial with capped backoff until it succeeds or ctx is
-// cancelled, so a not-yet-live chain (e.g. 404 bad handshake) no longer crashes us.
+// dialWithRetry retries dial with capped backoff until it succeeds, ctx is
+// cancelled, or maxDialRetries is exhausted. A not-yet-live chain (e.g. 404 bad
+// handshake) no longer crashes us immediately, but a chain that never comes up
+// eventually surfaces an error so the process can exit and be restarted.
 func dialWithRetry[T any](ctx context.Context, log *zap.SugaredLogger, dial func(context.Context) (T, error)) (T, error) {
-	backoff := initialDialBackoff
-	for {
+	backoff := utils.NewBackoff(initialDialBackoff, maxDialBackoff)
+	for retries := 0; ; retries++ {
 		client, err := dial(ctx)
 		if err == nil {
 			return client, nil
@@ -53,20 +59,17 @@ func dialWithRetry[T any](ctx context.Context, log *zap.SugaredLogger, dial func
 			var zero T
 			return zero, ctx.Err()
 		}
-
-		log.Warnw("failed to dial rpc; retrying", "error", err, "retryIn", backoff.String())
-
-		select {
-		case <-ctx.Done():
+		if retries >= maxDialRetries {
 			var zero T
-			return zero, ctx.Err()
-		case <-time.After(backoff):
+			return zero, fmt.Errorf("dial rpc: gave up after %d retries: %w", maxDialRetries, err)
 		}
 
-		if next := backoff * 2; next < maxDialBackoff {
-			backoff = next
-		} else {
-			backoff = maxDialBackoff
+		retryIn := backoff.Next()
+		log.Warnw("failed to dial rpc; retrying", "error", err, "retry", retries+1, "retryIn", retryIn.String())
+
+		if err := utils.Sleep(ctx, retryIn); err != nil {
+			var zero T
+			return zero, err
 		}
 	}
 }
