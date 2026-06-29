@@ -39,15 +39,11 @@ const (
 	// maxDialBackoff caps the exponential backoff between dial attempts.
 	maxDialBackoff = 30 * time.Second
 	// maxDialRetries caps how many times we retry a failed dial before giving
-	// up and letting the process exit (so the orchestrator can restart it). At
-	// the 30s backoff cap this is ~8h of retrying before we declare the RPC dead.
-	maxDialRetries = 1000
+	// up and letting the process exit (so the orchestrator can restart it).
+	maxDialRetries = 100
 )
 
-// dialWithRetry retries dial with capped backoff until it succeeds, ctx is
-// cancelled, or maxDialRetries is exhausted. A not-yet-live chain (e.g. 404 bad
-// handshake) no longer crashes us immediately, but a chain that never comes up
-// eventually surfaces an error so the process can exit and be restarted.
+// dialWithRetry retries dial with capped backoff until it succeeds
 func dialWithRetry[T any](ctx context.Context, log *zap.SugaredLogger, dial func(context.Context) (T, error)) (T, error) {
 	backoff := utils.NewBackoff(initialDialBackoff, maxDialBackoff)
 	for retries := 0; ; retries++ {

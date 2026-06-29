@@ -13,9 +13,9 @@ type Backoff struct {
 	current time.Duration
 }
 
-// NewBackoff returns a Backoff that starts at initial and doubles, capped at max.
-func NewBackoff(initial, max time.Duration) *Backoff {
-	return &Backoff{initial: initial, max: max, current: initial}
+// NewBackoff returns a Backoff that starts at initial and doubles, capped at maxDelay.
+func NewBackoff(initial, maxDelay time.Duration) *Backoff {
+	return &Backoff{initial: initial, max: maxDelay, current: initial}
 }
 
 // Next returns the current delay, then advances by doubling, capped at Max.
