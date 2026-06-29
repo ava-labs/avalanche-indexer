@@ -100,7 +100,10 @@ func subscribeOnce(
 		select {
 		case <-ctx.Done():
 			return true, ctx.Err()
-		case header := <-ch:
+		case header, ok := <-ch:
+			if !ok || header == nil {
+				return true, errors.New("subscribe new heads: header channel closed")
+			}
 			h := header.Number.Uint64()
 			log.Debugw("received new block from subscription", "height", h)
 			if !manager.SubmitHeight(h) {
