@@ -32,19 +32,13 @@ func (m *MockConn) Select(
 	args ...interface{},
 ) error {
 	_ = dest
-
-	callArgs := make([]interface{}, 0, 2+len(args))
-	callArgs = append(callArgs, ctx, query)
-	callArgs = append(callArgs, args...)
-
+	callArgs := append([]interface{}{ctx, query}, args...)
 	argsResult := m.Called(callArgs...)
 	return argsResult.Error(0)
 }
 
 func (m *MockConn) Query(ctx context.Context, query string, args ...interface{}) (driver.Rows, error) {
-	callArgs := make([]interface{}, 0, 2+len(args))
-	callArgs = append(callArgs, ctx, query)
-	callArgs = append(callArgs, args...)
+	callArgs := append([]interface{}{ctx, query}, args...)
 	argsResult := m.Called(callArgs...)
 	if argsResult.Get(0) == nil {
 		return nil, argsResult.Error(1)
@@ -53,9 +47,7 @@ func (m *MockConn) Query(ctx context.Context, query string, args ...interface{})
 }
 
 func (m *MockConn) QueryRow(ctx context.Context, query string, args ...interface{}) driver.Row {
-	callArgs := make([]interface{}, 0, 2+len(args))
-	callArgs = append(callArgs, ctx, query)
-	callArgs = append(callArgs, args...)
+	callArgs := append([]interface{}{ctx, query}, args...)
 	argsResult := m.Called(callArgs...)
 	if argsResult.Get(0) == nil {
 		return nil
@@ -64,24 +56,19 @@ func (m *MockConn) QueryRow(ctx context.Context, query string, args ...interface
 }
 
 func (m *MockConn) Exec(ctx context.Context, query string, args ...interface{}) error {
-	callArgs := make([]interface{}, 0, 2+len(args))
-	callArgs = append(callArgs, ctx, query)
-	callArgs = append(callArgs, args...)
+	callArgs := append([]interface{}{ctx, query}, args...)
 	argsResult := m.Called(callArgs...)
 	return argsResult.Error(0)
 }
 
 func (m *MockConn) AsyncInsert(ctx context.Context, query string, wait bool, args ...interface{}) error {
-	callArgs := make([]interface{}, 0, 3+len(args))
-	callArgs = append(callArgs, ctx, query, wait)
-	callArgs = append(callArgs, args...)
+	callArgs := append([]interface{}{ctx, query, wait}, args...)
 	argsResult := m.Called(callArgs...)
 	return argsResult.Error(0)
 }
 
 func (m *MockConn) PrepareBatch(ctx context.Context, query string, opts ...driver.PrepareBatchOption) (driver.Batch, error) {
-	callArgs := make([]interface{}, 0, 2+len(opts))
-	callArgs = append(callArgs, ctx, query)
+	callArgs := []interface{}{ctx, query} //nolint:prealloc // preallocating would require N+len(opts) arithmetic, which triggers the integer-overflow linter
 	for _, opt := range opts {
 		callArgs = append(callArgs, opt)
 	}
