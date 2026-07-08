@@ -51,13 +51,13 @@ type Repositories struct {
 
 	// ICM event repositories. Populated only in icm mode; nil in evm/traces modes.
 	// icm_messages partial writes are not batched — they use single-row writes via ICMProcessor.
-	ICMSendEvents                icmrepo.SendEvents
-	ICMReceiveEvents             icmrepo.ReceiveEvents
-	ICMMessageExecutedEvents     icmrepo.MessageExecutedEvents
-	ICMMessageExecutionFailed    icmrepo.MessageExecutionFailedEvents
-	ICMReceiptEvents             icmrepo.ReceiptEvents
-	ICMAddFeeEvents              icmrepo.AddFeeEvents
-	ICMRelayerRewardRedeemed     icmrepo.RelayerRewardRedeemedEvents
+	ICMSendEvents             icmrepo.SendEvents
+	ICMReceiveEvents          icmrepo.ReceiveEvents
+	ICMMessageExecutedEvents  icmrepo.MessageExecutedEvents
+	ICMMessageExecutionFailed icmrepo.MessageExecutionFailedEvents
+	ICMReceiptEvents          icmrepo.ReceiptEvents
+	ICMAddFeeEvents           icmrepo.AddFeeEvents
+	ICMRelayerRewardRedeemed  icmrepo.RelayerRewardRedeemedEvents
 }
 
 // WriteRequest represents a single block's worth of data submitted by a
