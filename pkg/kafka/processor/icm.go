@@ -164,7 +164,7 @@ func (p *ICMProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 	}
 
 	for _, tx := range block.Transactions {
-		if tx.Receipt == nil {
+		if tx == nil || tx.Receipt == nil {
 			continue
 		}
 		for _, l := range tx.Receipt.Logs {
@@ -196,26 +196,26 @@ func (p *ICMProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 // req is non-nil only in batch mode; handlers append event rows to it instead of writing.
 func (p *ICMProcessor) processLog(
 	ctx context.Context,
-	l *kafkamsg.EVMLog,
+	log *kafkamsg.EVMLog,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
 	req *batchwriter.WriteRequest,
 ) error {
 	// Filter 1: contract address must be in the configured set.
-	if _, ok := p.contractAddrs[l.Address]; !ok {
+	if _, ok := p.contractAddrs[log.Address]; !ok {
 		return nil
 	}
 	// Filter 2: topic0 must match a known Teleporter event signature.
-	if len(l.Topics) == 0 {
+	if len(log.Topics) == 0 {
 		return nil
 	}
 	// common.Hash.Hex() already returns lowercase 0x-prefixed hex; no ToLower needed.
-	topic0 := l.Topics[0].Hex()
+	topic0 := log.Topics[0].Hex()
 	if _, known := icmEventSigMap[topic0]; !known {
 		return nil
 	}
 
-	evmLog := toSubnetEVMLog(l)
+	evmLog := toSubnetEVMLog(log)
 
 	switch topic0 {
 	case eventSigSendCrossChainMessage:
@@ -269,10 +269,8 @@ func blockNum(block *kafkamsg.EVMBlock) uint64 {
 // icmGasSpent computes the gas cost for a transaction.
 // Uses effectiveGasPrice from the receipt (correct for EIP-1559 transactions), falling back
 // to the tx-level gas price. Returns nil if no price source is available.
+// Callers must ensure tx.Receipt != nil before calling.
 func icmGasSpent(tx *kafkamsg.EVMTransaction) *big.Int {
-	if tx.Receipt == nil {
-		return nil
-	}
 	var price *big.Int
 	switch {
 	case tx.Receipt.EffectiveGasPrice != nil:

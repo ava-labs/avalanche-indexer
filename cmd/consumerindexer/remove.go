@@ -127,7 +127,13 @@ func remove(c *cli.Context) error {
 		return fmt.Errorf("failed to delete ICM relayer reward redeemed events: %w", err)
 	}
 
-	sugar.Infof("all tables successfully cleaned for chain ID %d", evmChainID)
+	// icm_messages is intentionally skipped. It is a global cross-chain table whose merge key
+	// is (source_blockchain_id, destination_blockchain_id, message_id) — it has no evm_chain_id
+	// column and cannot be cleaned by chain. Rows must be removed manually if needed.
+	sugar.Infow("tables cleaned for chain ID",
+		"evmChainID", evmChainID,
+		"skipped", "icm_messages (global cross-chain table, not deletable by chain ID)",
+	)
 
 	return nil
 }
