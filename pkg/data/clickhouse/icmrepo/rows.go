@@ -158,9 +158,13 @@ type MessagePartialSendRow struct {
 	AllowedRelayerAddresses []string
 	FeeTokenAddress         string
 	FeeAmount               *big.Int
-	MessageData             string   // serialised; stored as String in ClickHouse
-	SourceGasSpent          *big.Int // nullable UInt256
-	MessageReceipts         string   // serialised; stored as String in ClickHouse
+	MessageData             string // serialised; stored as String in ClickHouse
+	// SourceGasSpent is the full transaction gas cost (effectiveGasPrice × gasUsed), not
+	// the cost attributable to this send alone. A single transaction can emit multiple
+	// SendCrossChainMessage events (e.g. via a batch-dispatch contract), so any aggregation
+	// of this field must deduplicate on TxHash first to avoid overcounting.
+	SourceGasSpent  *big.Int // nullable UInt256
+	MessageReceipts string   // serialised; stored as String in ClickHouse
 }
 
 // MessagePartialReceiveRow carries the fields written to messages by the
@@ -174,7 +178,10 @@ type MessagePartialReceiveRow struct {
 	DelivererAddress        string
 	RewardRedeemerAddress   string
 	DestinationEVMChainID   *big.Int
-	DestinationGasSpent     *big.Int
+	// DestinationGasSpent is the full transaction gas cost, not per-message. A single
+	// transaction can deliver multiple messages, so aggregations must deduplicate on
+	// ReceiveTxHash first to avoid overcounting.
+	DestinationGasSpent *big.Int
 }
 
 // MessagePartialExecutedRow carries the fields written to messages by the

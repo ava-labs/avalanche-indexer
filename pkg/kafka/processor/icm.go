@@ -13,6 +13,7 @@ import (
 	"github.com/ava-labs/libevm/core/types"
 	"go.uber.org/zap"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/batchwriter"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/icmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
@@ -56,6 +57,8 @@ var icmEventSigMap = map[string]struct{}{
 // ICMProcessor implements Processor for Teleporter/ICM events.
 // It applies a two-step filter (contract address + topic0) before ABI-decoding, then
 // writes to the relevant event table and, where applicable, a partial row to icm_messages.
+// When batchWriter is non-nil, event table rows are batched; partial rows to icm_messages
+// are always written immediately regardless of mode.
 // Safe for concurrent use.
 type ICMProcessor struct {
 	log                        *zap.SugaredLogger
@@ -70,10 +73,12 @@ type ICMProcessor struct {
 	contractAddrs              map[common.Address]struct{}
 	filterer                   *teleportermessenger.TeleporterMessengerFilterer
 	metrics                    *metrics.Metrics
+	batchWriter                *batchwriter.Writer
 }
 
 // NewICMProcessor creates a new ICMProcessor. contractAddrs must contain at least one
-// address; the processor fails to start otherwise.
+// address; the processor fails to start otherwise. bw may be nil to disable batch mode,
+// in which case every event row is written to ClickHouse individually and synchronously.
 func NewICMProcessor(
 	log *zap.SugaredLogger,
 	messagesRepo icmrepo.Messages,
@@ -86,6 +91,7 @@ func NewICMProcessor(
 	feeRedemptionsRepo icmrepo.RelayerRewardRedeemedEvents,
 	contractAddrs []string,
 	m *metrics.Metrics,
+	bw *batchwriter.Writer,
 ) (*ICMProcessor, error) {
 	if len(contractAddrs) == 0 {
 		return nil, ErrNoContractAddresses
@@ -123,6 +129,7 @@ func NewICMProcessor(
 		contractAddrs:              addrSet,
 		filterer:                   filterer,
 		metrics:                    m,
+		batchWriter:                bw,
 	}, nil
 }
 
@@ -151,17 +158,48 @@ func (p *ICMProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 		"txCount", len(block.Transactions),
 	)
 
+	var req *batchwriter.WriteRequest
+	if p.batchWriter != nil {
+		req = &batchwriter.WriteRequest{}
+	}
+
 	for _, tx := range block.Transactions {
-		if tx.Receipt == nil {
+		// Receipt presence is the blockfetcher's responsibility — the consumer treats
+		// a nil receipt as an anomaly and skips the transaction rather than erroring,
+		// so a single bad message does not stall the consumer. A warning is logged so
+		// the blockfetcher team can investigate if this surfaces in production.
+		if tx == nil || tx.Receipt == nil {
+			p.log.Warnw("skipping transaction with missing receipt",
+				"blockchainID", *block.BlockchainID,
+				"blockNumber", blockNum(&block),
+				"txHash", func() string {
+					if tx != nil {
+						return tx.Hash
+					}
+					return "<nil tx>"
+				}(),
+			)
 			continue
 		}
 		for _, l := range tx.Receipt.Logs {
 			if l == nil {
 				continue
 			}
-			if err := p.processLog(ctx, l, tx, &block); err != nil {
+			if err := p.processLog(ctx, l, tx, &block, req); err != nil {
 				return err
 			}
+		}
+	}
+
+	if req != nil {
+		ch := p.batchWriter.Submit(ctx, req)
+		select {
+		case err := <-ch:
+			if err != nil {
+				return classifyWriteErr(fmt.Errorf("icm batch submit: %w", err))
+			}
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 	return nil
@@ -169,43 +207,45 @@ func (p *ICMProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 
 // processLog applies the two-step filter (address, then topic0) and dispatches to the
 // appropriate handler. Returns nil for logs that do not match — they are silently skipped.
+// req is non-nil only in batch mode; handlers append event rows to it instead of writing.
 func (p *ICMProcessor) processLog(
 	ctx context.Context,
-	l *kafkamsg.EVMLog,
+	log *kafkamsg.EVMLog,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	// Filter 1: contract address must be in the configured set.
-	if _, ok := p.contractAddrs[l.Address]; !ok {
+	if _, ok := p.contractAddrs[log.Address]; !ok {
 		return nil
 	}
 	// Filter 2: topic0 must match a known Teleporter event signature.
-	if len(l.Topics) == 0 {
+	if len(log.Topics) == 0 {
 		return nil
 	}
 	// common.Hash.Hex() already returns lowercase 0x-prefixed hex; no ToLower needed.
-	topic0 := l.Topics[0].Hex()
+	topic0 := log.Topics[0].Hex()
 	if _, known := icmEventSigMap[topic0]; !known {
 		return nil
 	}
 
-	evmLog := toSubnetEVMLog(l)
+	evmLog := toSubnetEVMLog(log)
 
 	switch topic0 {
 	case eventSigSendCrossChainMessage:
-		return p.handleSend(ctx, evmLog, tx, block)
+		return p.handleSend(ctx, evmLog, tx, block, req)
 	case eventSigReceiveCrossChainMessage:
-		return p.handleReceive(ctx, evmLog, tx, block)
+		return p.handleReceive(ctx, evmLog, tx, block, req)
 	case eventSigMessageExecuted:
-		return p.handleExecuted(ctx, evmLog, tx, block)
+		return p.handleExecuted(ctx, evmLog, tx, block, req)
 	case eventSigMessageExecutionFailed:
-		return p.handleExecutionFailed(ctx, evmLog, tx, block)
+		return p.handleExecutionFailed(ctx, evmLog, tx, block, req)
 	case eventSigReceiptReceived:
-		return p.handleReceipt(ctx, evmLog, tx, block)
+		return p.handleReceipt(ctx, evmLog, tx, block, req)
 	case eventSigAddFeeAmount:
-		return p.handleFeeInfo(ctx, evmLog, tx, block)
+		return p.handleFeeInfo(ctx, evmLog, tx, block, req)
 	case eventSigRelayerRewardsRedeemed:
-		return p.handleFeeRedemption(ctx, evmLog, tx, block)
+		return p.handleFeeRedemption(ctx, evmLog, tx, block, req)
 	default:
 		// Guard: a topic0 is in icmEventSigMap but has no case here.
 		// This indicates a missing case after adding a new event to the map.
@@ -243,10 +283,8 @@ func blockNum(block *kafkamsg.EVMBlock) uint64 {
 // icmGasSpent computes the gas cost for a transaction.
 // Uses effectiveGasPrice from the receipt (correct for EIP-1559 transactions), falling back
 // to the tx-level gas price. Returns nil if no price source is available.
+// Callers must ensure tx.Receipt != nil before calling.
 func icmGasSpent(tx *kafkamsg.EVMTransaction) *big.Int {
-	if tx.Receipt == nil {
-		return nil
-	}
 	var price *big.Int
 	switch {
 	case tx.Receipt.EffectiveGasPrice != nil:
@@ -308,6 +346,7 @@ func (p *ICMProcessor) handleSend(
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	parsed, err := p.filterer.ParseSendCrossChainMessage(evmLog)
 	if err != nil {
@@ -363,14 +402,18 @@ func (p *ICMProcessor) handleSend(
 		MessageReceipts:         marshalReceipts(parsed.Message.Receipts),
 	}
 
-	writeStart := time.Now()
-	err = p.sendRepo.WriteSendEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMSendEventsTableName, err, writeStart)
-	if err != nil {
-		p.metrics.IncError("icm_write_error")
-		return classifyWriteErr(fmt.Errorf("write send event: %w", err))
+	if req == nil {
+		writeStart := time.Now()
+		err = p.sendRepo.WriteSendEvent(ctx, eventRow)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMSendEventsTableName, err, writeStart)
+		if err != nil {
+			p.metrics.IncError("icm_write_error")
+			return classifyWriteErr(fmt.Errorf("write send event: %w", err))
+		}
+	} else {
+		req.ICMSendEvents = append(req.ICMSendEvents, eventRow)
 	}
-	writeStart = time.Now()
+	writeStart := time.Now()
 	err = p.messagesRepo.WritePartialSend(ctx, partialRow)
 	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessagesTableName, err, writeStart)
 	if err != nil {
@@ -385,6 +428,7 @@ func (p *ICMProcessor) handleReceive(
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	parsed, err := p.filterer.ParseReceiveCrossChainMessage(evmLog)
 	if err != nil {
@@ -433,14 +477,18 @@ func (p *ICMProcessor) handleReceive(
 		DestinationGasSpent:     icmGasSpent(tx),
 	}
 
-	writeStart := time.Now()
-	err = p.receiveRepo.WriteReceiveEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMReceiveEventsTableName, err, writeStart)
-	if err != nil {
-		p.metrics.IncError("icm_write_error")
-		return classifyWriteErr(fmt.Errorf("write receive event: %w", err))
+	if req == nil {
+		writeStart := time.Now()
+		err = p.receiveRepo.WriteReceiveEvent(ctx, eventRow)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMReceiveEventsTableName, err, writeStart)
+		if err != nil {
+			p.metrics.IncError("icm_write_error")
+			return classifyWriteErr(fmt.Errorf("write receive event: %w", err))
+		}
+	} else {
+		req.ICMReceiveEvents = append(req.ICMReceiveEvents, eventRow)
 	}
-	writeStart = time.Now()
+	writeStart := time.Now()
 	err = p.messagesRepo.WritePartialReceive(ctx, partialRow)
 	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessagesTableName, err, writeStart)
 	if err != nil {
@@ -455,6 +503,7 @@ func (p *ICMProcessor) handleExecuted(
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	parsed, err := p.filterer.ParseMessageExecuted(evmLog)
 	if err != nil {
@@ -487,14 +536,18 @@ func (p *ICMProcessor) handleExecuted(
 		ExecutedTxHash:          tx.Hash,
 	}
 
-	writeStart := time.Now()
-	err = p.messageExecutedRepo.WriteMessageExecutedEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessageExecutedEventsTableName, err, writeStart)
-	if err != nil {
-		p.metrics.IncError("icm_write_error")
-		return classifyWriteErr(fmt.Errorf("write message executed event: %w", err))
+	if req == nil {
+		writeStart := time.Now()
+		err = p.messageExecutedRepo.WriteMessageExecutedEvent(ctx, eventRow)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessageExecutedEventsTableName, err, writeStart)
+		if err != nil {
+			p.metrics.IncError("icm_write_error")
+			return classifyWriteErr(fmt.Errorf("write message executed event: %w", err))
+		}
+	} else {
+		req.ICMMessageExecutedEvents = append(req.ICMMessageExecutedEvents, eventRow)
 	}
-	writeStart = time.Now()
+	writeStart := time.Now()
 	err = p.messagesRepo.WritePartialExecuted(ctx, partialRow)
 	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessagesTableName, err, writeStart)
 	if err != nil {
@@ -509,6 +562,7 @@ func (p *ICMProcessor) handleExecutionFailed(
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	parsed, err := p.filterer.ParseMessageExecutionFailed(evmLog)
 	if err != nil {
@@ -551,14 +605,18 @@ func (p *ICMProcessor) handleExecutionFailed(
 		LastExecutionFailedTime: blockTime,
 	}
 
-	writeStart := time.Now()
-	err = p.messageExecutionFailedRepo.WriteMessageExecutionFailedEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessageExecutionFailedEventsTableName, err, writeStart)
-	if err != nil {
-		p.metrics.IncError("icm_write_error")
-		return classifyWriteErr(fmt.Errorf("write message execution failed event: %w", err))
+	if req == nil {
+		writeStart := time.Now()
+		err = p.messageExecutionFailedRepo.WriteMessageExecutionFailedEvent(ctx, eventRow)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessageExecutionFailedEventsTableName, err, writeStart)
+		if err != nil {
+			p.metrics.IncError("icm_write_error")
+			return classifyWriteErr(fmt.Errorf("write message execution failed event: %w", err))
+		}
+	} else {
+		req.ICMMessageExecutionFailed = append(req.ICMMessageExecutionFailed, eventRow)
 	}
-	writeStart = time.Now()
+	writeStart := time.Now()
 	err = p.messagesRepo.WritePartialExecutionFailed(ctx, partialRow)
 	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessagesTableName, err, writeStart)
 	if err != nil {
@@ -573,6 +631,7 @@ func (p *ICMProcessor) handleReceipt(
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	parsed, err := p.filterer.ParseReceiptReceived(evmLog)
 	if err != nil {
@@ -607,14 +666,18 @@ func (p *ICMProcessor) handleReceipt(
 		ReceiptDelivered:        1,
 	}
 
-	writeStart := time.Now()
-	err = p.receiptsRepo.WriteReceiptEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMReceiptEventsTableName, err, writeStart)
-	if err != nil {
-		p.metrics.IncError("icm_write_error")
-		return classifyWriteErr(fmt.Errorf("write receipts event: %w", err))
+	if req == nil {
+		writeStart := time.Now()
+		err = p.receiptsRepo.WriteReceiptEvent(ctx, eventRow)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMReceiptEventsTableName, err, writeStart)
+		if err != nil {
+			p.metrics.IncError("icm_write_error")
+			return classifyWriteErr(fmt.Errorf("write receipts event: %w", err))
+		}
+	} else {
+		req.ICMReceiptEvents = append(req.ICMReceiptEvents, eventRow)
 	}
-	writeStart = time.Now()
+	writeStart := time.Now()
 	err = p.messagesRepo.WritePartialReceipt(ctx, partialRow)
 	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMMessagesTableName, err, writeStart)
 	if err != nil {
@@ -629,6 +692,7 @@ func (p *ICMProcessor) handleFeeInfo(
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	parsed, err := p.filterer.ParseAddFeeAmount(evmLog)
 	if err != nil {
@@ -652,12 +716,16 @@ func (p *ICMProcessor) handleFeeInfo(
 		AdditionalFeeAmount:     parsed.UpdatedFeeInfo.Amount,
 	}
 
-	writeStart := time.Now()
-	err = p.feeInfoRepo.WriteAddFeeEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMAddFeeEventsTableName, err, writeStart)
-	if err != nil {
-		p.metrics.IncError("icm_write_error")
-		return classifyWriteErr(fmt.Errorf("write fee info event: %w", err))
+	if req == nil {
+		writeStart := time.Now()
+		err = p.feeInfoRepo.WriteAddFeeEvent(ctx, eventRow)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMAddFeeEventsTableName, err, writeStart)
+		if err != nil {
+			p.metrics.IncError("icm_write_error")
+			return classifyWriteErr(fmt.Errorf("write fee info event: %w", err))
+		}
+	} else {
+		req.ICMAddFeeEvents = append(req.ICMAddFeeEvents, eventRow)
 	}
 	return nil
 }
@@ -667,6 +735,7 @@ func (p *ICMProcessor) handleFeeRedemption(
 	evmLog types.Log,
 	tx *kafkamsg.EVMTransaction,
 	block *kafkamsg.EVMBlock,
+	req *batchwriter.WriteRequest,
 ) error {
 	parsed, err := p.filterer.ParseRelayerRewardsRedeemed(evmLog)
 	if err != nil {
@@ -687,12 +756,16 @@ func (p *ICMProcessor) handleFeeRedemption(
 		Amount:          parsed.Amount,
 	}
 
-	writeStart := time.Now()
-	err = p.feeRedemptionsRepo.WriteRelayerRewardRedeemedEvent(ctx, eventRow)
-	recordClickHouseWrite(p.metrics, clickhouse.DefaultICMRelayerRewardRedeemedEventsTableName, err, writeStart)
-	if err != nil {
-		p.metrics.IncError("icm_write_error")
-		return classifyWriteErr(fmt.Errorf("write fee redemptions event: %w", err))
+	if req == nil {
+		writeStart := time.Now()
+		err = p.feeRedemptionsRepo.WriteRelayerRewardRedeemedEvent(ctx, eventRow)
+		recordClickHouseWrite(p.metrics, clickhouse.DefaultICMRelayerRewardRedeemedEventsTableName, err, writeStart)
+		if err != nil {
+			p.metrics.IncError("icm_write_error")
+			return classifyWriteErr(fmt.Errorf("write fee redemptions event: %w", err))
+		}
+	} else {
+		req.ICMRelayerRewardRedeemed = append(req.ICMRelayerRewardRedeemed, eventRow)
 	}
 	return nil
 }

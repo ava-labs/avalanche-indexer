@@ -13,6 +13,7 @@ import (
 
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/icmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
 
@@ -47,6 +48,16 @@ type Repositories struct {
 	Transactions         evmrepo.Transactions
 	Logs                 evmrepo.Logs
 	InternalTransactions evmrepo.InternalTransactions
+
+	// ICM event repositories. Populated only in icm mode; nil in evm/traces modes.
+	// icm_messages partial writes are not batched — they use single-row writes via ICMProcessor.
+	ICMSendEvents             icmrepo.SendEvents
+	ICMReceiveEvents          icmrepo.ReceiveEvents
+	ICMMessageExecutedEvents  icmrepo.MessageExecutedEvents
+	ICMMessageExecutionFailed icmrepo.MessageExecutionFailedEvents
+	ICMReceiptEvents          icmrepo.ReceiptEvents
+	ICMAddFeeEvents           icmrepo.AddFeeEvents
+	ICMRelayerRewardRedeemed  icmrepo.RelayerRewardRedeemedEvents
 }
 
 // WriteRequest represents a single block's worth of data submitted by a
@@ -57,6 +68,15 @@ type WriteRequest struct {
 	Transactions []*evmrepo.TransactionRow
 	Logs         []*evmrepo.LogRow
 	InternalTxns []*evmrepo.InternalTransactionRow
+
+	// ICM event rows collected from a single block. Nil slices are skipped in flush.
+	ICMSendEvents             []*icmrepo.SendEventRow
+	ICMReceiveEvents          []*icmrepo.ReceiveEventRow
+	ICMMessageExecutedEvents  []*icmrepo.MessageExecutedEventRow
+	ICMMessageExecutionFailed []*icmrepo.MessageExecutionFailedEventRow
+	ICMReceiptEvents          []*icmrepo.ReceiptEventRow
+	ICMAddFeeEvents           []*icmrepo.AddFeeEventRow
+	ICMRelayerRewardRedeemed  []*icmrepo.RelayerRewardRedeemedEventRow
 
 	done chan error
 }
@@ -244,9 +264,9 @@ func signalAll(requests []*WriteRequest, err error) {
 	}
 }
 
-// flush collects rows from all requests and batch-inserts them into ClickHouse.
-// Blocks, transactions, logs, and internal transactions are inserted
-// concurrently via an errgroup.
+// flush collects rows from all requests and batch-inserts them into ClickHouse
+// concurrently via an errgroup. EVM and ICM rows are handled in the same pass;
+// a nil repo or empty slice is skipped without spawning a goroutine.
 func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 	if len(requests) == 0 {
 		return nil
@@ -257,6 +277,14 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		txs     []*evmrepo.TransactionRow
 		logs    []*evmrepo.LogRow
 		intTxns []*evmrepo.InternalTransactionRow
+
+		icmSend     []*icmrepo.SendEventRow
+		icmReceive  []*icmrepo.ReceiveEventRow
+		icmExecuted []*icmrepo.MessageExecutedEventRow
+		icmFailed   []*icmrepo.MessageExecutionFailedEventRow
+		icmReceipt  []*icmrepo.ReceiptEventRow
+		icmAddFee   []*icmrepo.AddFeeEventRow
+		icmRedeemed []*icmrepo.RelayerRewardRedeemedEventRow
 	)
 
 	for _, req := range requests {
@@ -266,6 +294,14 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		txs = append(txs, req.Transactions...)
 		logs = append(logs, req.Logs...)
 		intTxns = append(intTxns, req.InternalTxns...)
+
+		icmSend = append(icmSend, req.ICMSendEvents...)
+		icmReceive = append(icmReceive, req.ICMReceiveEvents...)
+		icmExecuted = append(icmExecuted, req.ICMMessageExecutedEvents...)
+		icmFailed = append(icmFailed, req.ICMMessageExecutionFailed...)
+		icmReceipt = append(icmReceipt, req.ICMReceiptEvents...)
+		icmAddFee = append(icmAddFee, req.ICMAddFeeEvents...)
+		icmRedeemed = append(icmRedeemed, req.ICMRelayerRewardRedeemed...)
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -318,6 +354,90 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		})
 	}
 
+	if len(icmSend) > 0 && w.repos.ICMSendEvents != nil {
+		g.Go(func() error {
+			start := time.Now()
+			err := w.repos.ICMSendEvents.BatchInsertSendEvents(gctx, icmSend)
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultICMSendEventsTableName, err, time.Since(start).Seconds())
+			if err != nil {
+				return fmt.Errorf("batch insert icm send events (%d rows): %w", len(icmSend), err)
+			}
+			return nil
+		})
+	}
+
+	if len(icmReceive) > 0 && w.repos.ICMReceiveEvents != nil {
+		g.Go(func() error {
+			start := time.Now()
+			err := w.repos.ICMReceiveEvents.BatchInsertReceiveEvents(gctx, icmReceive)
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultICMReceiveEventsTableName, err, time.Since(start).Seconds())
+			if err != nil {
+				return fmt.Errorf("batch insert icm receive events (%d rows): %w", len(icmReceive), err)
+			}
+			return nil
+		})
+	}
+
+	if len(icmExecuted) > 0 && w.repos.ICMMessageExecutedEvents != nil {
+		g.Go(func() error {
+			start := time.Now()
+			err := w.repos.ICMMessageExecutedEvents.BatchInsertMessageExecutedEvents(gctx, icmExecuted)
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultICMMessageExecutedEventsTableName, err, time.Since(start).Seconds())
+			if err != nil {
+				return fmt.Errorf("batch insert icm message executed events (%d rows): %w", len(icmExecuted), err)
+			}
+			return nil
+		})
+	}
+
+	if len(icmFailed) > 0 && w.repos.ICMMessageExecutionFailed != nil {
+		g.Go(func() error {
+			start := time.Now()
+			err := w.repos.ICMMessageExecutionFailed.BatchInsertMessageExecutionFailedEvents(gctx, icmFailed)
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultICMMessageExecutionFailedEventsTableName, err, time.Since(start).Seconds())
+			if err != nil {
+				return fmt.Errorf("batch insert icm message execution failed events (%d rows): %w", len(icmFailed), err)
+			}
+			return nil
+		})
+	}
+
+	if len(icmReceipt) > 0 && w.repos.ICMReceiptEvents != nil {
+		g.Go(func() error {
+			start := time.Now()
+			err := w.repos.ICMReceiptEvents.BatchInsertReceiptEvents(gctx, icmReceipt)
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultICMReceiptEventsTableName, err, time.Since(start).Seconds())
+			if err != nil {
+				return fmt.Errorf("batch insert icm receipt events (%d rows): %w", len(icmReceipt), err)
+			}
+			return nil
+		})
+	}
+
+	if len(icmAddFee) > 0 && w.repos.ICMAddFeeEvents != nil {
+		g.Go(func() error {
+			start := time.Now()
+			err := w.repos.ICMAddFeeEvents.BatchInsertAddFeeEvents(gctx, icmAddFee)
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultICMAddFeeEventsTableName, err, time.Since(start).Seconds())
+			if err != nil {
+				return fmt.Errorf("batch insert icm add fee events (%d rows): %w", len(icmAddFee), err)
+			}
+			return nil
+		})
+	}
+
+	if len(icmRedeemed) > 0 && w.repos.ICMRelayerRewardRedeemed != nil {
+		g.Go(func() error {
+			start := time.Now()
+			err := w.repos.ICMRelayerRewardRedeemed.BatchInsertRelayerRewardRedeemedEvents(gctx, icmRedeemed)
+			w.metrics.RecordClickHouseWrite(clickhouse.DefaultICMRelayerRewardRedeemedEventsTableName, err, time.Since(start).Seconds())
+			if err != nil {
+				return fmt.Errorf("batch insert icm relayer reward redeemed events (%d rows): %w", len(icmRedeemed), err)
+			}
+			return nil
+		})
+	}
+
 	if err := g.Wait(); err != nil {
 		w.log.Errorw("batch flush failed",
 			"error", err,
@@ -325,6 +445,13 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 			"transactions", len(txs),
 			"logs", len(logs),
 			"internalTransactions", len(intTxns),
+			"icmSendEvents", len(icmSend),
+			"icmReceiveEvents", len(icmReceive),
+			"icmMessageExecutedEvents", len(icmExecuted),
+			"icmMessageExecutionFailedEvents", len(icmFailed),
+			"icmReceiptEvents", len(icmReceipt),
+			"icmAddFeeEvents", len(icmAddFee),
+			"icmRelayerRewardRedeemedEvents", len(icmRedeemed),
 		)
 		return err
 	}
@@ -334,6 +461,13 @@ func (w *Writer) flush(ctx context.Context, requests []*WriteRequest) error {
 		"transactions", len(txs),
 		"logs", len(logs),
 		"internalTransactions", len(intTxns),
+		"icmSendEvents", len(icmSend),
+		"icmReceiveEvents", len(icmReceive),
+		"icmMessageExecutedEvents", len(icmExecuted),
+		"icmMessageExecutionFailedEvents", len(icmFailed),
+		"icmReceiptEvents", len(icmReceipt),
+		"icmAddFeeEvents", len(icmAddFee),
+		"icmRelayerRewardRedeemedEvents", len(icmRedeemed),
 	)
 	return nil
 }

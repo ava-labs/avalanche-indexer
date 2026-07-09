@@ -6,12 +6,14 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ava-labs/libevm/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"github.com/ava-labs/avalanche-indexer/pkg/batchwriter"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/icmrepo"
 
 	kafkamsg "github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
@@ -85,11 +87,15 @@ func (m *mockICMMessagesRepo) WritePartialReceipt(ctx context.Context, row *icmr
 }
 
 type mockICMSendEventsRepo struct {
-	writeSendEventFunc func(context.Context, *icmrepo.SendEventRow) error
+	writeSendEventFunc        func(context.Context, *icmrepo.SendEventRow) error
+	batchInsertSendEventsFunc func(context.Context, []*icmrepo.SendEventRow) error
 }
 
 func (*mockICMSendEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
-func (*mockICMSendEventsRepo) BatchInsertSendEvents(context.Context, []*icmrepo.SendEventRow) error {
+func (m *mockICMSendEventsRepo) BatchInsertSendEvents(ctx context.Context, rows []*icmrepo.SendEventRow) error {
+	if m.batchInsertSendEventsFunc != nil {
+		return m.batchInsertSendEventsFunc(ctx, rows)
+	}
 	return nil
 }
 func (*mockICMSendEventsRepo) DeleteSendEvents(context.Context, uint64) error { return nil }
@@ -192,11 +198,15 @@ func (m *mockICMFeeInfoEventsRepo) WriteAddFeeEvent(ctx context.Context, row *ic
 }
 
 type mockICMFeeRedemptionsEventsRepo struct {
-	writeFeeRedemptionsEventFunc func(context.Context, *icmrepo.RelayerRewardRedeemedEventRow) error
+	writeFeeRedemptionsEventFunc               func(context.Context, *icmrepo.RelayerRewardRedeemedEventRow) error
+	batchInsertRelayerRewardRedeemedEventsFunc func(context.Context, []*icmrepo.RelayerRewardRedeemedEventRow) error
 }
 
 func (*mockICMFeeRedemptionsEventsRepo) CreateTableIfNotExists(context.Context) error { return nil }
-func (*mockICMFeeRedemptionsEventsRepo) BatchInsertRelayerRewardRedeemedEvents(context.Context, []*icmrepo.RelayerRewardRedeemedEventRow) error {
+func (m *mockICMFeeRedemptionsEventsRepo) BatchInsertRelayerRewardRedeemedEvents(ctx context.Context, rows []*icmrepo.RelayerRewardRedeemedEventRow) error {
+	if m.batchInsertRelayerRewardRedeemedEventsFunc != nil {
+		return m.batchInsertRelayerRewardRedeemedEventsFunc(ctx, rows)
+	}
 	return nil
 }
 
@@ -250,6 +260,7 @@ func newICMTestFixture(t *testing.T) *icmTestFixture {
 		f.feeInfoRepo,
 		f.feeRedemptionsRepo,
 		[]string{icmTestContractHex},
+		nil,
 		nil,
 	)
 	require.NoError(t, err)
@@ -353,6 +364,7 @@ func TestNewICMProcessor_EmptyAddrs(t *testing.T) {
 		&mockICMFeeRedemptionsEventsRepo{},
 		[]string{},
 		nil,
+		nil,
 	)
 	require.ErrorIs(t, err, ErrNoContractAddresses)
 }
@@ -370,6 +382,7 @@ func TestNewICMProcessor_InvalidHexAddress(t *testing.T) {
 		&mockICMFeeInfoEventsRepo{},
 		&mockICMFeeRedemptionsEventsRepo{},
 		[]string{"not-a-hex-address"},
+		nil,
 		nil,
 	)
 	require.ErrorIs(t, err, ErrInvalidContractAddress)
@@ -1042,4 +1055,176 @@ func TestICMProcessor_HandleFeeRedemption_Success(t *testing.T) {
 
 	require.NoError(t, f.proc.Process(t.Context(), msg))
 	assert.True(t, eventCalled)
+}
+
+// ============================================================================
+// Batch mode tests
+// ============================================================================
+
+// newICMBatchTestFixture creates an ICMProcessor with a real batchwriter.Writer wired and
+// started. MaxBlocks=1 makes the dispatcher flush synchronously: Process blocks until the
+// batch is fully inserted, so no poll loops or sleeps are needed in tests.
+func newICMBatchTestFixture(t *testing.T) *icmTestFixture {
+	t.Helper()
+	f := &icmTestFixture{
+		messages:           &mockICMMessagesRepo{},
+		sendRepo:           &mockICMSendEventsRepo{},
+		receiveRepo:        &mockICMReceiveEventsRepo{},
+		executedRepo:       &mockICMMessageExecutedEventsRepo{},
+		execFailedRepo:     &mockICMMessageExecutionFailedEventsRepo{},
+		receiptsRepo:       &mockICMReceiptsEventsRepo{},
+		feeInfoRepo:        &mockICMFeeInfoEventsRepo{},
+		feeRedemptionsRepo: &mockICMFeeRedemptionsEventsRepo{},
+	}
+
+	bw := batchwriter.New(batchwriter.Config{
+		Workers:      1,
+		MaxBlocks:    1,
+		FlushTimeout: 100 * time.Millisecond,
+	}, batchwriter.Repositories{
+		ICMSendEvents:             f.sendRepo,
+		ICMReceiveEvents:          f.receiveRepo,
+		ICMMessageExecutedEvents:  f.executedRepo,
+		ICMMessageExecutionFailed: f.execFailedRepo,
+		ICMReceiptEvents:          f.receiptsRepo,
+		ICMAddFeeEvents:           f.feeInfoRepo,
+		ICMRelayerRewardRedeemed:  f.feeRedemptionsRepo,
+	}, zap.NewNop().Sugar(), nil)
+
+	proc, err := NewICMProcessor(
+		zap.NewNop().Sugar(),
+		f.messages,
+		f.sendRepo,
+		f.receiveRepo,
+		f.executedRepo,
+		f.execFailedRepo,
+		f.receiptsRepo,
+		f.feeInfoRepo,
+		f.feeRedemptionsRepo,
+		[]string{icmTestContractHex},
+		nil,
+		bw,
+	)
+	require.NoError(t, err)
+	f.proc = proc
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	go func() { _ = bw.Start(ctx) }()
+
+	return f
+}
+
+// TestICMProcessor_BatchMode_EventCollectedNotImmediate verifies that in batch mode the
+// event-table write (WriteSendEvent) is NOT called immediately; only the partial write to
+// icm_messages is immediate. The event row is collected into the WriteRequest instead.
+func TestICMProcessor_BatchMode_EventCollectedNotImmediate(t *testing.T) {
+	t.Parallel()
+	f := newICMBatchTestFixture(t)
+
+	var sendWritten, partialWritten bool
+	f.sendRepo.writeSendEventFunc = func(_ context.Context, _ *icmrepo.SendEventRow) error {
+		sendWritten = true
+		return nil
+	}
+	f.messages.writePartialSendFunc = func(_ context.Context, _ *icmrepo.MessagePartialSendRow) error {
+		partialWritten = true
+		return nil
+	}
+
+	data := icmEventData(t, "SendCrossChainMessage", icmMinMsg(), icmMinFeeInfo())
+	l := icmEVMLog(icmContractAddr, sendTopics(), data)
+	msg := icmKafkaMsg(t, icmBuildBlock(l))
+
+	require.NoError(t, f.proc.Process(t.Context(), msg))
+	assert.False(t, sendWritten, "in batch mode, WriteSendEvent must not be called immediately")
+	assert.True(t, partialWritten, "in batch mode, WritePartialSend must still be called immediately")
+}
+
+// TestICMProcessor_BatchMode_RowReachesWriter verifies that after Process returns the event
+// row has been flushed via BatchInsertSendEvents. With MaxBlocks=1 the dispatcher flushes
+// synchronously — Process blocks until the flush is signalled.
+func TestICMProcessor_BatchMode_RowReachesWriter(t *testing.T) {
+	t.Parallel()
+	f := newICMBatchTestFixture(t)
+
+	var batchRows []*icmrepo.SendEventRow
+	f.sendRepo.batchInsertSendEventsFunc = func(_ context.Context, rows []*icmrepo.SendEventRow) error {
+		batchRows = rows
+		return nil
+	}
+
+	data := icmEventData(t, "SendCrossChainMessage", icmMinMsg(), icmMinFeeInfo())
+	l := icmEVMLog(icmContractAddr, sendTopics(), data)
+	msg := icmKafkaMsg(t, icmBuildBlock(l))
+
+	require.NoError(t, f.proc.Process(t.Context(), msg))
+	require.Len(t, batchRows, 1)
+	assert.Equal(t, testBlockchainID, batchRows[0].BlockchainID)
+	assert.Equal(t, common.Hash(icmMsgID).Hex(), batchRows[0].MessageID)
+}
+
+// TestICMProcessor_BatchMode_BatchError verifies that a BatchInsertSendEvents failure is
+// propagated back to Process as a write error.
+func TestICMProcessor_BatchMode_BatchError(t *testing.T) {
+	t.Parallel()
+	f := newICMBatchTestFixture(t)
+
+	expectedErr := errors.New("batch insert failed")
+	f.sendRepo.batchInsertSendEventsFunc = func(_ context.Context, _ []*icmrepo.SendEventRow) error {
+		return expectedErr
+	}
+
+	data := icmEventData(t, "SendCrossChainMessage", icmMinMsg(), icmMinFeeInfo())
+	l := icmEVMLog(icmContractAddr, sendTopics(), data)
+	msg := icmKafkaMsg(t, icmBuildBlock(l))
+
+	err := f.proc.Process(t.Context(), msg)
+	require.ErrorIs(t, err, expectedErr)
+}
+
+// TestICMProcessor_BatchMode_MultipleEventsInBlock verifies that when a single block
+// contains multiple matched logs they are all accumulated into a single WriteRequest and
+// flushed together in one batch.
+func TestICMProcessor_BatchMode_MultipleEventsInBlock(t *testing.T) {
+	t.Parallel()
+	f := newICMBatchTestFixture(t)
+
+	var sendRows []*icmrepo.SendEventRow
+	var redeemRows []*icmrepo.RelayerRewardRedeemedEventRow
+	f.sendRepo.batchInsertSendEventsFunc = func(_ context.Context, rows []*icmrepo.SendEventRow) error {
+		sendRows = rows
+		return nil
+	}
+	f.feeRedemptionsRepo.batchInsertRelayerRewardRedeemedEventsFunc = func(_ context.Context, rows []*icmrepo.RelayerRewardRedeemedEventRow) error {
+		redeemRows = rows
+		return nil
+	}
+
+	sendLog := icmEVMLog(icmContractAddr, sendTopics(),
+		icmEventData(t, "SendCrossChainMessage", icmMinMsg(), icmMinFeeInfo()))
+	redeemLog := icmEVMLog(icmContractAddr, feeRedemptionTopics(),
+		icmEventData(t, "RelayerRewardsRedeemed", big.NewInt(5_000)))
+
+	blockchainID := testBlockchainID
+	block := &kafkamsg.EVMBlock{
+		BlockchainID: &blockchainID,
+		EVMChainID:   big.NewInt(43114),
+		Number:       big.NewInt(100),
+		Timestamp:    1_700_000_000,
+		Transactions: []*kafkamsg.EVMTransaction{{
+			Hash:     "0x1111111111111111111111111111111111111111111111111111111111111111",
+			GasPrice: big.NewInt(25_000_000_000),
+			Receipt: &kafkamsg.EVMTxReceipt{
+				GasUsed:           200_000,
+				EffectiveGasPrice: big.NewInt(30_000_000_000),
+				Logs:              []*kafkamsg.EVMLog{sendLog, redeemLog},
+			},
+		}},
+	}
+	msg := icmKafkaMsg(t, block)
+
+	require.NoError(t, f.proc.Process(t.Context(), msg))
+	assert.Len(t, sendRows, 1, "one send event row in batch")
+	assert.Len(t, redeemRows, 1, "one relayer reward redeemed row in batch")
 }
