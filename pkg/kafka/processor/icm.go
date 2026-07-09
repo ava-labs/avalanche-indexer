@@ -164,7 +164,21 @@ func (p *ICMProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
 	}
 
 	for _, tx := range block.Transactions {
+		// Receipt presence is the blockfetcher's responsibility — the consumer treats
+		// a nil receipt as an anomaly and skips the transaction rather than erroring,
+		// so a single bad message does not stall the consumer. A warning is logged so
+		// the blockfetcher team can investigate if this surfaces in production.
 		if tx == nil || tx.Receipt == nil {
+			p.log.Warnw("skipping transaction with missing receipt",
+				"blockchainID", *block.BlockchainID,
+				"blockNumber", blockNum(&block),
+				"txHash", func() string {
+					if tx != nil {
+						return tx.Hash
+					}
+					return "<nil tx>"
+				}(),
+			)
 			continue
 		}
 		for _, l := range tx.Receipt.Logs {
