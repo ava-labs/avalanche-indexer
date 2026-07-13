@@ -20,6 +20,6 @@ ON CLUSTER `%s`
 	output String,
 	call_index String
 )
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/%s_local', '{replica}')
 ORDER BY (blockchain_id, block_number, transaction_hash, call_index)
 SETTINGS index_granularity = 8192
