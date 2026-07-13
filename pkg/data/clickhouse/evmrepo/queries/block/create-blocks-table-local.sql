@@ -33,6 +33,6 @@ ON CLUSTER `%s`
 	min_delay_excess UInt64,
 	num_txns UInt32
 )
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/%s_local', '{replica}')
 ORDER BY (blockchain_id, block_number)
 SETTINGS index_granularity = 8192

@@ -19,7 +19,7 @@ ON CLUSTER `%s`
         SELECT * ORDER BY evm_chain_id, block_time, tx_hash, log_index
     )
 )
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/%s_local', '{replica}')
 PARTITION BY toYYYYMM(block_time)
 ORDER BY (blockchain_id, tx_hash, log_index)
 SETTINGS index_granularity = 8192,

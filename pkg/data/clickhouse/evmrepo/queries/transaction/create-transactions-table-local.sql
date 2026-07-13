@@ -24,6 +24,6 @@ ON CLUSTER `%s`
 	success UInt8,
 	num_logs UInt32
 )
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/%s_local', '{replica}')
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/%s_local', '{replica}')
 ORDER BY (blockchain_id, block_number, hash)
 SETTINGS index_granularity = 8192
