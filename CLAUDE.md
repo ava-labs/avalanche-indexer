@@ -36,7 +36,7 @@ pkg/
 test/e2e/             End-to-end tests (docker compose required)
 ```
 
-SQL for every ClickHouse table lives next to its repo under `queries/<entity>/`, one file per statement (create-table, batch-insert, write, delete, migrations).
+SQL for each ClickHouse repo lives next to it under `queries/`, one file per statement (create-table, batch-insert, write, delete, migrations). Multi-entity repos (`evmrepo`, `icmrepo`) group by entity — `queries/<entity>/*.sql` — while single-entity repos (`checkpoint`) keep the files directly under `queries/`.
 
 ## Conventions to follow
 
