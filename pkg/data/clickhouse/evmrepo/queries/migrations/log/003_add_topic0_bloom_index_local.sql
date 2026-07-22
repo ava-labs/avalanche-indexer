@@ -1,1 +1,1 @@
-ALTER TABLE `%s`.`%s_local` ON CLUSTER `%s` ADD INDEX IF NOT EXISTS idx_topic0_bloom topic0 TYPE bloom_filter(0.01) GRANULARITY 1
+ALTER TABLE `%s`.`%s_local` ON CLUSTER `%s` ADD INDEX IF NOT EXISTS idx_topic0_bloom topic0 TYPE bloom_filter(0.01) GRANULARITY 1, ADD INDEX IF NOT EXISTS idx_topic1_bloom topic1 TYPE bloom_filter(0.01) GRANULARITY 1, ADD INDEX IF NOT EXISTS idx_topic2_bloom topic2 TYPE bloom_filter(0.01) GRANULARITY 1, ADD INDEX IF NOT EXISTS idx_topic3_bloom topic3 TYPE bloom_filter(0.01) GRANULARITY 1
