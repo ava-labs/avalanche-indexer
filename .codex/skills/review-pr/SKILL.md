@@ -25,8 +25,11 @@ Ask only if all three fail.
 gh pr view <n> --json number,title,body,baseRefName,headRefName,author,additions,deletions,changedFiles,isDraft,labels
 gh pr diff <n>
 gh pr view <n> --json files --jq '.files[].path'
-git log --no-merges origin/<base>..<head> --pretty=format:'%h %s%n%b%n---'
+git fetch origin "pull/<n>/head"
+git log --no-merges origin/<base>..FETCH_HEAD --pretty=format:'%h %s%n%b%n---'
 ```
+
+`git fetch` pulls the PR head into `FETCH_HEAD` without checking it out or disturbing the current branch — required since a PR reviewed by number is usually not checked out locally.
 
 For large diffs (>1500 lines), also fetch per-area slices: `gh pr diff <n> -- <path>`.
 
