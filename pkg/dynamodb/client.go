@@ -13,17 +13,36 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 )
 
-var errRegionRequired = errors.New("dynamodb region is required")
+var (
+	errRegionRequired           = errors.New("dynamodb region is required")
+	errPartialStaticCredentials = errors.New("dynamodb access key id and secret access key must both be set or both be empty")
+)
 
 func New(cfg Config) (*dynamodb.Client, error) {
 	if strings.TrimSpace(cfg.Region) == "" {
 		return nil, errRegionRequired
 	}
 
-	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(),
+	hasAccessKeyID := cfg.AccessKeyID != ""
+	hasSecretAccessKey := cfg.SecretAccessKey != ""
+
+	if hasAccessKeyID != hasSecretAccessKey {
+		return nil, errPartialStaticCredentials
+	}
+
+	opts := []func(*awscfg.LoadOptions) error{
 		awscfg.WithRegion(cfg.Region),
-		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")),
-	)
+	}
+
+	// Only pin static credentials when the caller explicitly supplied them
+	// (e.g. LocalStack). Otherwise let LoadDefaultConfig do its thing.
+	if cfg.AccessKeyID != "" {
+		opts = append(opts, awscfg.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		))
+	}
+
+	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}

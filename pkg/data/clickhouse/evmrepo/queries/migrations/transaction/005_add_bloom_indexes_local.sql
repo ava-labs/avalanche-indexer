@@ -1,0 +1,1 @@
+ALTER TABLE `%s`.`%s_local` ON CLUSTER `%s` ADD INDEX IF NOT EXISTS idx_hash_bloom hash TYPE bloom_filter(0.01) GRANULARITY 1, ADD INDEX IF NOT EXISTS idx_from_address_bloom from_address TYPE bloom_filter(0.01) GRANULARITY 1, ADD INDEX IF NOT EXISTS idx_to_address_bloom to_address TYPE bloom_filter(0.01) GRANULARITY 1

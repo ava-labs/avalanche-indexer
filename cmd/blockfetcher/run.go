@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v2"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/checkpointer"
@@ -32,7 +33,42 @@ const (
 	flushTimeoutOnClose = 15 * time.Second
 	blocksMode          = "blocks"
 	tracesMode          = "traces"
+
+	// initialDialBackoff is the wait before the first redial attempt.
+	initialDialBackoff = 1 * time.Second
+	// maxDialBackoff caps the exponential backoff between dial attempts.
+	maxDialBackoff = 30 * time.Second
+	// maxDialRetries caps how many times we retry a failed dial before giving
+	// up and letting the process exit (so the orchestrator can restart it).
+	maxDialRetries = 100
 )
+
+// dialWithRetry retries dial with capped backoff until it succeeds
+func dialWithRetry[T any](ctx context.Context, log *zap.SugaredLogger, dial func(context.Context) (T, error)) (T, error) {
+	backoff := utils.NewBackoff(initialDialBackoff, maxDialBackoff)
+	for retries := 0; ; retries++ {
+		client, err := dial(ctx)
+		if err == nil {
+			return client, nil
+		}
+		if ctx.Err() != nil {
+			var zero T
+			return zero, ctx.Err()
+		}
+		if retries >= maxDialRetries {
+			var zero T
+			return zero, fmt.Errorf("dial rpc: gave up after %d retries: %w", maxDialRetries, err)
+		}
+
+		retryIn := backoff.Next()
+		log.Warnw("failed to dial rpc; retrying", "error", err, "retry", retries+1, "retryIn", retryIn.String())
+
+		if err := utils.Sleep(ctx, retryIn); err != nil {
+			var zero T
+			return zero, err
+		}
+	}
+}
 
 func run(c *cli.Context) error {
 	// Build configuration from CLI flags
@@ -165,7 +201,9 @@ func run(c *cli.Context) error {
 	case tracesMode:
 		switch cfg.ClientType {
 		case "coreth":
-			rpc, err := corethRpc.DialContext(ctx, cfg.RPCURL)
+			rpc, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*corethRpc.Client, error) {
+				return corethRpc.DialContext(ctx, cfg.RPCURL)
+			})
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
@@ -187,7 +225,9 @@ func run(c *cli.Context) error {
 				sugar.Infof("latest block height: %d", end)
 			}
 		case "subnet-evm":
-			rpc, err := subnetRpc.DialContext(ctx, cfg.RPCURL)
+			rpc, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*subnetRpc.Client, error) {
+				return subnetRpc.DialContext(ctx, cfg.RPCURL)
+			})
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
@@ -214,7 +254,9 @@ func run(c *cli.Context) error {
 		// blocks mode
 		switch cfg.ClientType {
 		case "coreth":
-			client, err := corethClient.DialContext(ctx, cfg.RPCURL)
+			client, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*corethClient.Client, error) {
+				return corethClient.DialContext(ctx, cfg.RPCURL)
+			})
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
@@ -234,7 +276,9 @@ func run(c *cli.Context) error {
 				sugar.Infof("latest block height: %d", end)
 			}
 		case "subnet-evm":
-			client, err := subnetClient.DialContext(ctx, cfg.RPCURL)
+			client, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (subnetClient.Client, error) {
+				return subnetClient.DialContext(ctx, cfg.RPCURL)
+			})
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}

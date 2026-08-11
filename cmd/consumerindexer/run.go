@@ -17,6 +17,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/batchwriter"
 	"github.com/ava-labs/avalanche-indexer/pkg/clickhouse"
 	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/evmrepo"
+	"github.com/ava-labs/avalanche-indexer/pkg/data/clickhouse/icmrepo"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/processor"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
@@ -28,6 +29,7 @@ import (
 const (
 	blocksMode = "blocks"
 	tracesMode = "traces"
+	icmMode    = "icm"
 )
 
 func run(c *cli.Context) error {
@@ -82,6 +84,15 @@ func run(c *cli.Context) error {
 		"kafkaDLQTopicNumPartitions", cfg.KafkaDLQTopicNumPartitions,
 		"kafkaDLQTopicReplicationFactor", cfg.KafkaDLQTopicReplicationFactor,
 		"enableClickHouseBatchWrites", cfg.EnableClickHouseBatchWrites,
+		"teleporterContractAddresses", cfg.TeleporterContractAddresses,
+		"icmMessagesTableName", cfg.ICMMessagesTableName,
+		"icmSendEventsTableName", cfg.ICMSendEventsTableName,
+		"icmReceiveEventsTableName", cfg.ICMReceiveEventsTableName,
+		"icmMessageExecutedEventsTableName", cfg.ICMMessageExecutedEventsTableName,
+		"icmMessageExecutionFailedEventsTableName", cfg.ICMMessageExecutionFailedEventsTableName,
+		"icmReceiptsEventsTableName", cfg.ICMReceiptsEventsTableName,
+		"icmFeeInfoEventsTableName", cfg.ICMFeeInfoEventsTableName,
+		"icmFeeRedemptionsEventsTableName", cfg.ICMFeeRedemptionsEventsTableName,
 	)
 
 	// Initialize Prometheus metrics with labels for multi-instance filtering.
@@ -374,6 +385,88 @@ func newProcessor(
 		}
 
 		proc := processor.NewCorethTracesProcessor(log, internalTxRepo, bw, cfg.EnableClickHouseBatchWrites, m)
+		return proc, bw, nil
+
+	case icmMode:
+		if len(cfg.TeleporterContractAddresses) == 0 {
+			return nil, nil, errors.New("teleporter-contract-addresses is required when mode=icm")
+		}
+
+		cluster := cfg.ClickHouse.Cluster
+		database := cfg.ClickHouse.Database
+
+		messagesRepo, err := icmrepo.NewMessages(ctx, chClient, cluster, database, cfg.ICMMessagesTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm messages repository: %w", err)
+		}
+		sendRepo, err := icmrepo.NewSendEvents(ctx, chClient, cluster, database, cfg.ICMSendEventsTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm send events repository: %w", err)
+		}
+		receiveRepo, err := icmrepo.NewReceiveEvents(ctx, chClient, cluster, database, cfg.ICMReceiveEventsTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm receive events repository: %w", err)
+		}
+		messageExecutedRepo, err := icmrepo.NewMessageExecutedEvents(ctx, chClient, cluster, database, cfg.ICMMessageExecutedEventsTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm message executed events repository: %w", err)
+		}
+		messageExecutionFailedRepo, err := icmrepo.NewMessageExecutionFailedEvents(ctx, chClient, cluster, database, cfg.ICMMessageExecutionFailedEventsTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm message execution failed events repository: %w", err)
+		}
+		receiptsRepo, err := icmrepo.NewReceiptEvents(ctx, chClient, cluster, database, cfg.ICMReceiptsEventsTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm receipts events repository: %w", err)
+		}
+		feeInfoRepo, err := icmrepo.NewAddFeeEvents(ctx, chClient, cluster, database, cfg.ICMFeeInfoEventsTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm fee info events repository: %w", err)
+		}
+		feeRedemptionsRepo, err := icmrepo.NewRelayerRewardRedeemedEvents(ctx, chClient, cluster, database, cfg.ICMFeeRedemptionsEventsTableName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm fee redemptions events repository: %w", err)
+		}
+
+		if buildBatchWriter && cfg.EnableClickHouseBatchWrites {
+			bw = batchwriter.New(batchwriter.Config{
+				Workers:      cfg.BatchWriterWorkers,
+				MaxBlocks:    cfg.BatchWriterMaxBlocks,
+				FlushTimeout: cfg.BatchWriterFlushTimeout,
+			}, batchwriter.Repositories{
+				ICMSendEvents:             sendRepo,
+				ICMReceiveEvents:          receiveRepo,
+				ICMMessageExecutedEvents:  messageExecutedRepo,
+				ICMMessageExecutionFailed: messageExecutionFailedRepo,
+				ICMReceiptEvents:          receiptsRepo,
+				ICMAddFeeEvents:           feeInfoRepo,
+				ICMRelayerRewardRedeemed:  feeRedemptionsRepo,
+			}, log.Named("batch_writer"), m)
+
+			log.Infow("batch writer enabled",
+				"workers", cfg.BatchWriterWorkers,
+				"maxBlocks", cfg.BatchWriterMaxBlocks,
+				"flushTimeout", cfg.BatchWriterFlushTimeout,
+			)
+		}
+
+		proc, err := processor.NewICMProcessor(
+			log,
+			messagesRepo,
+			sendRepo,
+			receiveRepo,
+			messageExecutedRepo,
+			messageExecutionFailedRepo,
+			receiptsRepo,
+			feeInfoRepo,
+			feeRedemptionsRepo,
+			cfg.TeleporterContractAddresses,
+			m,
+			bw,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("icm processor: %w", err)
+		}
 		return proc, bw, nil
 
 	default:

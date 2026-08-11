@@ -467,6 +467,60 @@ func runFlags() []cli.Flag {
 			EnvVars: []string{"BATCH_WRITER_FLUSH_TIMEOUT"},
 			Value:   120 * time.Second,
 		},
+		// ICM / Teleporter configuration flags
+		&cli.StringSliceFlag{
+			Name:    "teleporter-contract-addresses",
+			Usage:   "Teleporter contract addresses to watch (repeated or comma-separated). Required when mode=icm.",
+			EnvVars: []string{"TELEPORTER_CONTRACT_ADDRESSES"},
+		},
+		&cli.StringFlag{
+			Name:    "icm-messages-table-name",
+			Usage:   "ClickHouse table name for the ICM messages summary",
+			EnvVars: []string{"ICM_MESSAGES_TABLE_NAME"},
+			Value:   "icm_messages",
+		},
+		&cli.StringFlag{
+			Name:    "icm-send-events-table-name",
+			Usage:   "ClickHouse table name for ICM send events",
+			EnvVars: []string{"ICM_SEND_EVENTS_TABLE_NAME"},
+			Value:   "icm_send_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-receive-events-table-name",
+			Usage:   "ClickHouse table name for ICM receive events",
+			EnvVars: []string{"ICM_RECEIVE_EVENTS_TABLE_NAME"},
+			Value:   "icm_receive_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-message-executed-events-table-name",
+			Usage:   "ClickHouse table name for ICM message executed events",
+			EnvVars: []string{"ICM_MESSAGE_EXECUTED_EVENTS_TABLE_NAME"},
+			Value:   "icm_message_executed_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-message-execution-failed-events-table-name",
+			Usage:   "ClickHouse table name for ICM message execution failed events",
+			EnvVars: []string{"ICM_MESSAGE_EXECUTION_FAILED_EVENTS_TABLE_NAME"},
+			Value:   "icm_message_execution_failed_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-receipts-events-table-name",
+			Usage:   "ClickHouse table name for ICM receipt received events",
+			EnvVars: []string{"ICM_RECEIPTS_EVENTS_TABLE_NAME"},
+			Value:   "icm_receipts_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-fee-info-events-table-name",
+			Usage:   "ClickHouse table name for ICM fee info events",
+			EnvVars: []string{"ICM_FEE_INFO_EVENTS_TABLE_NAME"},
+			Value:   "icm_fee_info_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-fee-redemptions-events-table-name",
+			Usage:   "ClickHouse table name for ICM fee redemptions events",
+			EnvVars: []string{"ICM_FEE_REDEMPTIONS_EVENTS_TABLE_NAME"},
+			Value:   "icm_fee_redemptions_events",
+		},
 	}
 }
 
@@ -610,6 +664,48 @@ func removeFlags() []cli.Flag {
 			Usage:   "ClickHouse table name for internal transactions",
 			EnvVars: []string{"CLICKHOUSE_INTERNAL_TRANSACTIONS_TABLE_NAME"},
 			Value:   "internal_transactions",
+		},
+		&cli.StringFlag{
+			Name:    "icm-send-events-table-name",
+			Usage:   "ClickHouse table name for ICM send events",
+			EnvVars: []string{"ICM_SEND_EVENTS_TABLE_NAME"},
+			Value:   "icm_send_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-receive-events-table-name",
+			Usage:   "ClickHouse table name for ICM receive events",
+			EnvVars: []string{"ICM_RECEIVE_EVENTS_TABLE_NAME"},
+			Value:   "icm_receive_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-message-executed-events-table-name",
+			Usage:   "ClickHouse table name for ICM message executed events",
+			EnvVars: []string{"ICM_MESSAGE_EXECUTED_EVENTS_TABLE_NAME"},
+			Value:   "icm_message_executed_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-message-execution-failed-events-table-name",
+			Usage:   "ClickHouse table name for ICM message execution failed events",
+			EnvVars: []string{"ICM_MESSAGE_EXECUTION_FAILED_EVENTS_TABLE_NAME"},
+			Value:   "icm_message_execution_failed_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-receipts-events-table-name",
+			Usage:   "ClickHouse table name for ICM receipt received events",
+			EnvVars: []string{"ICM_RECEIPTS_EVENTS_TABLE_NAME"},
+			Value:   "icm_receipts_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-fee-info-events-table-name",
+			Usage:   "ClickHouse table name for ICM fee info events",
+			EnvVars: []string{"ICM_FEE_INFO_EVENTS_TABLE_NAME"},
+			Value:   "icm_fee_info_events",
+		},
+		&cli.StringFlag{
+			Name:    "icm-fee-redemptions-events-table-name",
+			Usage:   "ClickHouse table name for ICM fee redemptions events",
+			EnvVars: []string{"ICM_FEE_REDEMPTIONS_EVENTS_TABLE_NAME"},
+			Value:   "icm_fee_redemptions_events",
 		},
 	}
 }

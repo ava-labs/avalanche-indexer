@@ -11,3 +11,4 @@ coverage.out
 *.out
 *.html
 /scripts
+.idea

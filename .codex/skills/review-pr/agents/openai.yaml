@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review PR"
+  short_description: "Structured, grounded code review against repo conventions"
+  default_prompt: "Use $review-pr to produce a senior-engineer code review for the requested avalanche-indexer PR (number, branch, or 'this PR'). Resolve the target via gh, scan only the actual diff, apply repo-specific checks (Kafka processor NonRetryable/Fatal retry semantics, ClickHouse local/distributed table pairs and numbered migrations, jsonIter wire-format big-int handling, flag/config wiring, sliding-window concurrency) plus the bug/concurrency/error/security/perf/data-pipeline/tests axes, and emit the structured Blockers / Suggestions / Nits / Questions / Checklist markdown block. Every finding must cite a file path (and line or snippet) and state the concrete fix. Print in chat by default; only post via gh pr review when the user explicitly asks."
