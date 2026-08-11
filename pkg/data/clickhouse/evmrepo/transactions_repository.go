@@ -283,7 +283,7 @@ func (r *transactions) BatchInsertTransactions(ctx context.Context, txs []*Trans
 
 		row, err := convertTransactionRowToChTransactionRow(tx)
 		if err != nil {
-			return fmt.Errorf("failed to convert transaction row of block %s and txHash %s to row: %w", tx.BlockHash, tx.Hash, err)
+			return fmt.Errorf("failed to convert transaction row of block %d and txHash %s to row: %w", tx.BlockNumber, tx.Hash, err)
 		}
 		if err := batch.AppendStruct(row); err != nil {
 			return fmt.Errorf("failed to append transaction of block %d and txHash %s: %w", tx.BlockNumber, tx.Hash, err)
