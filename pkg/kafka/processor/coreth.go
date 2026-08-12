@@ -191,6 +191,25 @@ func (p *CorethProcessor) submitToBatchWriter(
 	}
 }
 
+// executedGasUsed sums the gas used by the block's own transactions.
+//
+// Under ACP-194 (Helicon) the C-Chain header's GasUsed reports gas charged across
+// all blocks newly settled by this block, so it no longer equals this sum. The sum
+// is bounded by the block gas limit and cannot overflow uint64.
+//
+// The blockfetcher rejects a block whose receipt count does not match its
+// transaction count, so a block reaching here either has every receipt or was
+// never produced; transactions without a receipt contribute zero.
+func executedGasUsed(block *kafkamsg.EVMBlock) uint64 {
+	var total uint64
+	for _, tx := range block.Transactions {
+		if tx.Receipt != nil {
+			total += tx.Receipt.GasUsed
+		}
+	}
+	return total
+}
+
 // CorethBlockToBlockRow converts a kafkamsg.EVMBlock to BlockRow.
 // Exported for testing purposes.
 func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) {
@@ -239,6 +258,7 @@ func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) 
 		GasUsed:         block.GasUsed,
 		BaseFeePerGas:   block.BaseFee,
 		NumTxns:         uint32(len(block.Transactions)),
+		ExecutedGasUsed: executedGasUsed(block),
 	}
 
 	// Direct string assignments - no conversions needed

@@ -1214,3 +1214,65 @@ func TestCorethBlockToBlockRow_HeliconFields(t *testing.T) {
 		assert.Equal(t, uint64(0), blockRow.SettledExcess)
 	})
 }
+
+// TestCorethBlockToBlockRow_ExecutedGasUsed verifies that executed_gas_used reports the
+// gas used by the block's own transactions, independently of the header's gas_used. The
+// two diverge on post-Helicon C-Chain blocks, where ACP-194 redefines the header field
+// as gas charged across newly settled blocks.
+func TestCorethBlockToBlockRow_ExecutedGasUsed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sums receipts and is independent of header gas_used", func(t *testing.T) {
+		t.Parallel()
+
+		blockRow, err := CorethBlockToBlockRow(createTestBlockWithLogs())
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(21000), blockRow.ExecutedGasUsed)
+		assert.Equal(t, uint64(183061), blockRow.GasUsed, "header gas_used must be stored verbatim")
+		assert.NotEqual(t, blockRow.GasUsed, blockRow.ExecutedGasUsed)
+	})
+
+	t.Run("sums across multiple transactions", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlockWithLogs()
+		second := *block.Transactions[0]
+		second.Receipt = &kafkamsg.EVMTxReceipt{GasUsed: 34000}
+		third := *block.Transactions[0]
+		third.Receipt = &kafkamsg.EVMTxReceipt{GasUsed: 7500}
+		block.Transactions = append(block.Transactions, &second, &third)
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(21000+34000+7500), blockRow.ExecutedGasUsed)
+		assert.Equal(t, uint32(3), blockRow.NumTxns)
+	})
+
+	t.Run("empty block reports zero", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlockWithLogs()
+		block.Transactions = []*kafkamsg.EVMTransaction{}
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(0), blockRow.ExecutedGasUsed)
+	})
+
+	t.Run("transaction without receipt contributes zero", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlockWithLogs()
+		noReceipt := *block.Transactions[0]
+		noReceipt.Receipt = nil
+		block.Transactions = append(block.Transactions, &noReceipt)
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(21000), blockRow.ExecutedGasUsed)
+	})
+}

@@ -164,4 +164,5 @@ Local endpoints when the compose stack is up: Kafka `localhost:9092`, Kafka UI `
 - ClickHouse client config (env vars): `pkg/clickhouse/README.md`.
 - Sliding window architecture (backfill vs realtime scheduling): `pkg/slidingwindow/README.md`.
 - Metrics catalog and Prometheus queries: `pkg/metrics/README.md`.
+- EVM block/transaction schema, and the ACP-194 `gas_used` vs `executed_gas_used` split: `pkg/data/clickhouse/evmrepo/README.md`.
 - Kafka processor retry semantics: `pkg/kafka/processor/errors.go`.
