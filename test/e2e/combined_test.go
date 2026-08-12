@@ -27,8 +27,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
-	"github.com/ava-labs/coreth/plugin/evm/customethclient"
-	"github.com/ava-labs/coreth/rpc"
+	"github.com/ava-labs/avalanchego/graft/coreth/ethclient"
+	"github.com/ava-labs/avalanchego/graft/evm/rpc"
 )
 
 // TestE2ECombinedBlockfetcherConsumerIndexer spins up the realtime blockfetcher
@@ -77,7 +77,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
 	defer rpcClient.Close()
-	latest, err := customethclient.New(rpcClient).BlockNumber(ctx)
+	latest, err := ethclient.NewClient(rpcClient).BlockNumber(ctx)
 	require.NoError(t, err, "failed to get latest block height")
 	const safetyMargin = 5
 	startHeight := latest
@@ -140,7 +140,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	client, err := customethclient.DialContext(ctx, rpcURL)
+	client, err := ethclient.DialContext(ctx, rpcURL)
 	if err != nil {
 		require.Fail(t, "failed to dial rpc", err)
 	}
@@ -152,7 +152,7 @@ func TestE2ECombinedBlockfetcherConsumerIndexer(t *testing.T) {
 	require.NoError(t, err)
 	mgr, err := slidingwindow.NewManager(log, state, w, concurrency, backfill, blocksCap, maxFailures, nil)
 	require.NoError(t, err)
-	sub := subscriber.NewCoreth(log, customethclient.New(rpcClient))
+	sub := subscriber.NewCoreth(log, ethclient.NewClient(rpcClient))
 
 	// ---- Test observer consumer to capture produced Kafka messages ----
 	testConsumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{

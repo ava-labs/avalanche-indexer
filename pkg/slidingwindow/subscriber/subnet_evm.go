@@ -3,8 +3,8 @@ package subscriber
 import (
 	"context"
 
+	"github.com/ava-labs/avalanchego/graft/subnet-evm/ethclient"
 	"github.com/ava-labs/libevm/core/types"
-	"github.com/ava-labs/subnet-evm/ethclient"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow"

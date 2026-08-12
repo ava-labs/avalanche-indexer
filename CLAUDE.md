@@ -4,7 +4,7 @@ Project-level guidance for Claude Code working in this repo. Treat this as autho
 
 ## What this repo is
 
-`avalanche-indexer` is a Go 1.24 monorepo that indexes and processes Avalanche blockchain data. Module path: `github.com/ava-labs/avalanche-indexer`.
+`avalanche-indexer` is a Go 1.25 monorepo that indexes and processes Avalanche blockchain data. Module path: `github.com/ava-labs/avalanche-indexer`.
 
 - Ingests EVM blocks, transactions, logs, debug traces, and ICM (Teleporter cross-chain) events.
 - Publishes to Kafka; persists to ClickHouse; checkpoints to ClickHouse or DynamoDB.
@@ -41,7 +41,7 @@ SQL for each ClickHouse repo lives next to it under `queries/`, one file per sta
 ## Conventions to follow
 
 ### Go code
-- Go 1.24, formatted with `gofumpt`, linted with `golangci-lint` v2.10.1. Run `make lint` before handing back changes.
+- Go 1.25, formatted with `gofumpt`, linted with `golangci-lint` v2.10.1. Run `make lint` before handing back changes.
 - `gci` import order (see `.golangci.yml`): `standard` → default → blank → `prefix(github.com/ava-labs/avalanche-indexer)` → alias → dot. Local imports grouped last, before aliases.
 - Tag alignment: struct tags must be sorted and aligned (`tagalign` linter is strict).
 - Prefer early returns; no bool literals in conditions; no useless breaks; no unused params/receivers (revive rules on).

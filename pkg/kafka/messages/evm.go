@@ -12,9 +12,9 @@ import (
 	"github.com/ava-labs/libevm/common"
 	"github.com/ava-labs/libevm/common/hexutil"
 
-	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
+	corethCustomtypes "github.com/ava-labs/avalanchego/graft/coreth/plugin/evm/customtypes"
+	subnetevmCustomtypes "github.com/ava-labs/avalanchego/graft/subnet-evm/plugin/evm/customtypes"
 	libevmtypes "github.com/ava-labs/libevm/core/types"
-	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
 	jsonIterator "github.com/json-iterator/go"
 )
 
