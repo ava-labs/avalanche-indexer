@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ava-labs/avalanchego/graft/coreth/plugin/evm/customtypes"
+	"github.com/ava-labs/avalanchego/vms/saevm/cchain/dynamic"
 	"github.com/ava-labs/libevm/common"
 	"github.com/ava-labs/libevm/crypto"
 	"github.com/ava-labs/libevm/trie"
@@ -2311,4 +2312,151 @@ func TestEVMBlockFromLibevmCoreth_BlockchainIDPropagation(t *testing.T) {
 
 	assert.Equal(t, blockchainID, *got.BlockchainID)
 	assert.Equal(t, chainID, got.EVMChainID)
+}
+
+// heliconExtra returns a HeaderExtra populated with the Helicon (C-Chain) fields.
+func heliconExtra() *customtypes.HeaderExtra {
+	target := dynamic.TargetExponent(15_770_705)
+	price := dynamic.PriceExponent(957_480_584_338_323_632)
+	return &customtypes.HeaderExtra{
+		TargetExponent:      &target,
+		MinPriceExponent:    &price,
+		SettledHeight:       ptrUint64(57_725_024),
+		SettledGasUnix:      ptrUint64(1_786_545_819),
+		SettledGasNumerator: ptrUint64(1_137_497),
+		SettledExcess:       ptrUint64(322_750_995),
+	}
+}
+
+// TestEVMBlockFromLibevmCoreth_HeliconFields verifies that the Helicon header fields
+// added by ACP-194 (settlement state) and ACP-283 (minimum gas price) are extracted,
+// and that pre-Helicon headers, which omit them, decode to zero rather than failing.
+func TestEVMBlockFromLibevmCoreth_HeliconFields(t *testing.T) {
+	initCustomTypes()
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		extra *customtypes.HeaderExtra
+		want  EVMBlock
+	}{
+		{
+			name:  "post-helicon header carries all fields",
+			extra: heliconExtra(),
+			want: EVMBlock{
+				TargetExponent:      15_770_705,
+				MinPriceExponent:    957_480_584_338_323_632,
+				SettledHeight:       57_725_024,
+				SettledGasUnix:      1_786_545_819,
+				SettledGasNumerator: 1_137_497,
+				SettledExcess:       322_750_995,
+			},
+		},
+		{
+			name:  "pre-helicon header leaves fields zero",
+			extra: &customtypes.HeaderExtra{},
+			want:  EVMBlock{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			header := newTestHeader()
+			customtypes.SetHeaderExtra(header, tt.extra)
+			block := libevmtypes.NewBlock(header, nil, nil, nil, newTestHasher())
+
+			got, err := EVMBlockFromLibevmCoreth(block, big.NewInt(43114), nil)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want.TargetExponent, got.TargetExponent)
+			assert.Equal(t, tt.want.MinPriceExponent, got.MinPriceExponent)
+			assert.Equal(t, tt.want.SettledHeight, got.SettledHeight)
+			assert.Equal(t, tt.want.SettledGasUnix, got.SettledGasUnix)
+			assert.Equal(t, tt.want.SettledGasNumerator, got.SettledGasNumerator)
+			assert.Equal(t, tt.want.SettledExcess, got.SettledExcess)
+		})
+	}
+}
+
+// TestEVMBlock_MarshalUnmarshal_HeliconFields verifies the Helicon fields survive a
+// Kafka wire round-trip, and that MinPriceExponent keeps full uint64 precision (it is
+// large enough that a float64 intermediate would corrupt it).
+func TestEVMBlock_MarshalUnmarshal_HeliconFields(t *testing.T) {
+	t.Parallel()
+
+	original := &EVMBlock{
+		Number:              big.NewInt(57_725_025),
+		Hash:                "0xhash",
+		EVMChainID:          big.NewInt(43113),
+		TargetExponent:      15_770_705,
+		MinPriceExponent:    957_480_584_338_323_632,
+		SettledHeight:       57_725_024,
+		SettledGasUnix:      1_786_545_819,
+		SettledGasNumerator: 1_137_497,
+		SettledExcess:       322_750_995,
+	}
+
+	data, err := jsonIter.Marshal(original)
+	require.NoError(t, err)
+
+	var m map[string]interface{}
+	require.NoError(t, jsonIter.Unmarshal(data, &m))
+	for _, field := range []string{
+		"targetExponent", "minPriceExponent", "settledHeight",
+		"settledGasUnix", "settledGasNumerator", "settledExcess",
+	} {
+		_, ok := m[field]
+		assert.True(t, ok, "expected JSON field %q to be present", field)
+	}
+
+	var decoded EVMBlock
+	require.NoError(t, jsonIter.Unmarshal(data, &decoded))
+
+	assert.Equal(t, original.TargetExponent, decoded.TargetExponent)
+	assert.Equal(t, original.MinPriceExponent, decoded.MinPriceExponent)
+	assert.Equal(t, original.SettledHeight, decoded.SettledHeight)
+	assert.Equal(t, original.SettledGasUnix, decoded.SettledGasUnix)
+	assert.Equal(t, original.SettledGasNumerator, decoded.SettledGasNumerator)
+	assert.Equal(t, original.SettledExcess, decoded.SettledExcess)
+}
+
+// TestEVMBlock_UnmarshalLegacyPayloadWithoutHeliconFields ensures Kafka messages produced
+// before this change, which have none of the Helicon keys, still decode cleanly.
+func TestEVMBlock_UnmarshalLegacyPayloadWithoutHeliconFields(t *testing.T) {
+	t.Parallel()
+
+	legacy := `{"number":"42","hash":"0xhash","gasUsed":21000,"timestamp":1700000000}`
+
+	var block EVMBlock
+	require.NoError(t, jsonIter.Unmarshal([]byte(legacy), &block))
+
+	assert.Equal(t, uint64(0), block.TargetExponent)
+	assert.Equal(t, uint64(0), block.MinPriceExponent)
+	assert.Equal(t, uint64(0), block.SettledHeight)
+	assert.Equal(t, uint64(0), block.SettledGasUnix)
+	assert.Equal(t, uint64(0), block.SettledGasNumerator)
+	assert.Equal(t, uint64(0), block.SettledExcess)
+	assert.Equal(t, uint64(21000), block.GasUsed)
+}
+
+// TestEVMBlock_HeliconFieldsOmittedWhenZero verifies pre-Helicon blocks do not grow the
+// Kafka payload with six zero-valued keys.
+func TestEVMBlock_HeliconFieldsOmittedWhenZero(t *testing.T) {
+	t.Parallel()
+
+	data, err := jsonIter.Marshal(&EVMBlock{Number: big.NewInt(42), Hash: "0xhash"})
+	require.NoError(t, err)
+
+	var m map[string]interface{}
+	require.NoError(t, jsonIter.Unmarshal(data, &m))
+
+	for _, field := range []string{
+		"targetExponent", "minPriceExponent", "settledHeight",
+		"settledGasUnix", "settledGasNumerator", "settledExcess",
+	} {
+		_, ok := m[field]
+		assert.False(t, ok, "expected JSON field %q to be omitted when zero", field)
+	}
 }

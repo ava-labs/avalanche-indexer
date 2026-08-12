@@ -104,6 +104,17 @@ type EVMBlock struct {
 	MinDelayExcess uint64 `json:"minDelayExcess,omitempty"`
 	Size           uint64 `json:"size"`
 
+	// Helicon (C-Chain only) header fields. Subnet-EVM chains leave these zero.
+	// TargetExponent and MinPriceExponent are the raw ACP-176/ACP-283 exponents;
+	// the gas target and minimum gas price are derived from them.
+	TargetExponent   uint64 `json:"targetExponent,omitempty"`
+	MinPriceExponent uint64 `json:"minPriceExponent,omitempty"`
+	// Settled* describe ACP-194 asynchronous execution state, not this block.
+	SettledHeight       uint64 `json:"settledHeight,omitempty"`
+	SettledGasUnix      uint64 `json:"settledGasUnix,omitempty"`
+	SettledGasNumerator uint64 `json:"settledGasNumerator,omitempty"`
+	SettledExcess       uint64 `json:"settledExcess,omitempty"`
+
 	Difficulty *big.Int `json:"difficulty"`
 	MixHash    string   `json:"mixHash"`
 	Nonce      uint64   `json:"nonce"`
@@ -196,6 +207,13 @@ type evmBlockJSON struct {
 	TimestampMs    uint64 `json:"timestampMs,omitempty"`
 	MinDelayExcess uint64 `json:"minDelayExcess,omitempty"`
 	Size           uint64 `json:"size"`
+
+	TargetExponent      uint64 `json:"targetExponent,omitempty"`
+	MinPriceExponent    uint64 `json:"minPriceExponent,omitempty"`
+	SettledHeight       uint64 `json:"settledHeight,omitempty"`
+	SettledGasUnix      uint64 `json:"settledGasUnix,omitempty"`
+	SettledGasNumerator uint64 `json:"settledGasNumerator,omitempty"`
+	SettledExcess       uint64 `json:"settledExcess,omitempty"`
 
 	Difficulty json.RawMessage `json:"difficulty"`
 	MixHash    string          `json:"mixHash"`
@@ -325,6 +343,28 @@ func EVMBlockFromLibevmCoreth(block *libevmtypes.Block, evmChainID *big.Int, blo
 		minDelayExcess = extra.MinDelayExcess.Delay()
 	}
 
+	// Helicon fields are absent on pre-Helicon headers and stay zero.
+	var targetExponent, minPriceExponent uint64
+	var settledHeight, settledGasUnix, settledGasNumerator, settledExcess uint64
+	if extra.TargetExponent != nil {
+		targetExponent = uint64(*extra.TargetExponent)
+	}
+	if extra.MinPriceExponent != nil {
+		minPriceExponent = uint64(*extra.MinPriceExponent)
+	}
+	if extra.SettledHeight != nil {
+		settledHeight = *extra.SettledHeight
+	}
+	if extra.SettledGasUnix != nil {
+		settledGasUnix = *extra.SettledGasUnix
+	}
+	if extra.SettledGasNumerator != nil {
+		settledGasNumerator = *extra.SettledGasNumerator
+	}
+	if extra.SettledExcess != nil {
+		settledExcess = *extra.SettledExcess
+	}
+
 	return &EVMBlock{
 		Size:                  block.Size(),
 		Hash:                  block.Hash().Hex(),
@@ -338,6 +378,12 @@ func EVMBlockFromLibevmCoreth(block *libevmtypes.Block, evmChainID *big.Int, blo
 		Timestamp:             block.Time(),
 		TimestampMs:           timestampMilliseconds,
 		MinDelayExcess:        minDelayExcess,
+		TargetExponent:        targetExponent,
+		MinPriceExponent:      minPriceExponent,
+		SettledHeight:         settledHeight,
+		SettledGasUnix:        settledGasUnix,
+		SettledGasNumerator:   settledGasNumerator,
+		SettledExcess:         settledExcess,
 		MixHash:               block.MixDigest().Hex(),
 		Nonce:                 block.Nonce(),
 		LogsBloom:             hexutil.Encode(block.Bloom().Bytes()),
@@ -507,6 +553,12 @@ func (b *EVMBlock) MarshalJSON() ([]byte, error) {
 		Timestamp:             b.Timestamp,
 		TimestampMs:           b.TimestampMs,
 		MinDelayExcess:        b.MinDelayExcess,
+		TargetExponent:        b.TargetExponent,
+		MinPriceExponent:      b.MinPriceExponent,
+		SettledHeight:         b.SettledHeight,
+		SettledGasUnix:        b.SettledGasUnix,
+		SettledGasNumerator:   b.SettledGasNumerator,
+		SettledExcess:         b.SettledExcess,
 		Size:                  b.Size,
 		Difficulty:            bigIntToRawJSON(b.Difficulty),
 		MixHash:               b.MixHash,
@@ -545,6 +597,12 @@ func (b *EVMBlock) UnmarshalJSON(data []byte) error {
 	b.Timestamp = alias.Timestamp
 	b.TimestampMs = alias.TimestampMs
 	b.MinDelayExcess = alias.MinDelayExcess
+	b.TargetExponent = alias.TargetExponent
+	b.MinPriceExponent = alias.MinPriceExponent
+	b.SettledHeight = alias.SettledHeight
+	b.SettledGasUnix = alias.SettledGasUnix
+	b.SettledGasNumerator = alias.SettledGasNumerator
+	b.SettledExcess = alias.SettledExcess
 	b.Size = alias.Size
 	b.MixHash = alias.MixHash
 	b.Nonce = alias.Nonce
