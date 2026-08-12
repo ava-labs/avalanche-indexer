@@ -1170,3 +1170,47 @@ func createTestLog() *kafkamsg.EVMLog {
 		Removed:     false,
 	}
 }
+
+// TestCorethBlockToBlockRow_HeliconFields verifies the Helicon header fields survive the
+// Kafka message -> ClickHouse row mapping, and that pre-Helicon blocks map them to zero.
+func TestCorethBlockToBlockRow_HeliconFields(t *testing.T) {
+	t.Parallel()
+
+	t.Run("post-helicon block carries all fields", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlock()
+		block.TargetExponent = 15770705
+		block.MinPriceExponent = 957480584338323632
+		block.SettledHeight = 1646
+		block.SettledGasUnix = 1786547475
+		block.SettledGasNumerator = 701837
+		block.SettledExcess = 320547565
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+		require.NotNil(t, blockRow)
+
+		assert.Equal(t, uint64(15770705), blockRow.TargetExponent)
+		assert.Equal(t, uint64(957480584338323632), blockRow.MinPriceExponent)
+		assert.Equal(t, uint64(1646), blockRow.SettledHeight)
+		assert.Equal(t, uint64(1786547475), blockRow.SettledGasUnix)
+		assert.Equal(t, uint64(701837), blockRow.SettledGasNumerator)
+		assert.Equal(t, uint64(320547565), blockRow.SettledExcess)
+	})
+
+	t.Run("pre-helicon block maps fields to zero", func(t *testing.T) {
+		t.Parallel()
+
+		blockRow, err := CorethBlockToBlockRow(createTestBlock())
+		require.NoError(t, err)
+		require.NotNil(t, blockRow)
+
+		assert.Equal(t, uint64(0), blockRow.TargetExponent)
+		assert.Equal(t, uint64(0), blockRow.MinPriceExponent)
+		assert.Equal(t, uint64(0), blockRow.SettledHeight)
+		assert.Equal(t, uint64(0), blockRow.SettledGasUnix)
+		assert.Equal(t, uint64(0), blockRow.SettledGasNumerator)
+		assert.Equal(t, uint64(0), blockRow.SettledExcess)
+	})
+}

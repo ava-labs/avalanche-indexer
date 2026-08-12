@@ -275,6 +275,14 @@ func CorethBlockToBlockRow(block *kafkamsg.EVMBlock) (*evmrepo.BlockRow, error) 
 		blockRow.MinDelayExcess = block.MinDelayExcess
 	}
 
+	// Helicon header fields; zero on Subnet-EVM and pre-Helicon blocks.
+	blockRow.TargetExponent = block.TargetExponent
+	blockRow.MinPriceExponent = block.MinPriceExponent
+	blockRow.SettledHeight = block.SettledHeight
+	blockRow.SettledGasUnix = block.SettledGasUnix
+	blockRow.SettledGasNumerator = block.SettledGasNumerator
+	blockRow.SettledExcess = block.SettledExcess
+
 	return blockRow, nil
 }
 
