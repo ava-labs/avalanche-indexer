@@ -64,6 +64,8 @@ func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 		return fmt.Errorf("fetch block failed %d: %w", height, err)
 	}
 
+	cw.metrics.ObserveSettlementLag(height, evmBlock.SettledHeight)
+
 	cw.log.Debugw("block fetched, serializing", "height", height, "txs", len(evmBlock.Transactions))
 	bytes, err := json.Marshal(evmBlock)
 	if err != nil {
