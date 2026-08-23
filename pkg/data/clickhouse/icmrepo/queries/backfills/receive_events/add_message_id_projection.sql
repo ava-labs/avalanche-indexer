@@ -1,8 +1,8 @@
 -- Manual runbook: add the by_message_id projection to icm_receive_events_local.
 --
 -- Gives detail lookups keyed on (evm_chain_id, message_id) a granule-level index
--- seek instead of a full scan, so getReceivedMessageDetail does not need a
--- derived materialized view. Mirrors the existing by_evm_chain_id projection.
+-- seek instead of a full scan, so those lookups do not need a derived
+-- materialized view. Mirrors the existing by_evm_chain_id projection.
 --
 -- Run once per environment, off-peak. Substitute <database> and <cluster>.
 -- Step 1 adds the projection definition (covers new and merged parts).
