@@ -9,16 +9,16 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ava-labs/subnet-evm/eth/tracers"
-	"github.com/ava-labs/subnet-evm/rpc"
+	"github.com/ava-labs/avalanchego/graft/evm/rpc"
+	"github.com/ava-labs/avalanchego/graft/subnet-evm/eth/tracers"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
-	subnetevmCustomtypes "github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
+	subnetClient "github.com/ava-labs/avalanchego/graft/subnet-evm/ethclient"
+	subnetevmCustomtypes "github.com/ava-labs/avalanchego/graft/subnet-evm/plugin/evm/customtypes"
 )
 
 type SubnetEVMTracesWorker struct {
@@ -47,9 +47,6 @@ func NewSubnetEVMTracesWorker(
 	if m == nil {
 		m = metrics.NewNoOp()
 	}
-	RegisterCustomTypesOnce.Do(func() {
-		subnetevmCustomtypes.Register()
-	})
 
 	return &SubnetEVMTracesWorker{
 		client:       client,

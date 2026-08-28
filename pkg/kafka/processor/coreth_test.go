@@ -1170,3 +1170,109 @@ func createTestLog() *kafkamsg.EVMLog {
 		Removed:     false,
 	}
 }
+
+// TestCorethBlockToBlockRow_HeliconFields verifies the Helicon header fields survive the
+// Kafka message -> ClickHouse row mapping, and that pre-Helicon blocks map them to zero.
+func TestCorethBlockToBlockRow_HeliconFields(t *testing.T) {
+	t.Parallel()
+
+	t.Run("post-helicon block carries all fields", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlock()
+		block.TargetExponent = 15770705
+		block.MinPriceExponent = 957480584338323632
+		block.SettledHeight = 1646
+		block.SettledGasUnix = 1786547475
+		block.SettledGasNumerator = 701837
+		block.SettledExcess = 320547565
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+		require.NotNil(t, blockRow)
+
+		assert.Equal(t, uint64(15770705), blockRow.TargetExponent)
+		assert.Equal(t, uint64(957480584338323632), blockRow.MinPriceExponent)
+		assert.Equal(t, uint64(1646), blockRow.SettledHeight)
+		assert.Equal(t, uint64(1786547475), blockRow.SettledGasUnix)
+		assert.Equal(t, uint64(701837), blockRow.SettledGasNumerator)
+		assert.Equal(t, uint64(320547565), blockRow.SettledExcess)
+	})
+
+	t.Run("pre-helicon block maps fields to zero", func(t *testing.T) {
+		t.Parallel()
+
+		blockRow, err := CorethBlockToBlockRow(createTestBlock())
+		require.NoError(t, err)
+		require.NotNil(t, blockRow)
+
+		assert.Equal(t, uint64(0), blockRow.TargetExponent)
+		assert.Equal(t, uint64(0), blockRow.MinPriceExponent)
+		assert.Equal(t, uint64(0), blockRow.SettledHeight)
+		assert.Equal(t, uint64(0), blockRow.SettledGasUnix)
+		assert.Equal(t, uint64(0), blockRow.SettledGasNumerator)
+		assert.Equal(t, uint64(0), blockRow.SettledExcess)
+	})
+}
+
+// TestCorethBlockToBlockRow_ExecutedGasUsed verifies that executed_gas_used reports the
+// gas used by the block's own transactions, independently of the header's gas_used. The
+// two diverge on post-Helicon C-Chain blocks, where ACP-194 redefines the header field
+// as gas charged across newly settled blocks.
+func TestCorethBlockToBlockRow_ExecutedGasUsed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sums receipts and is independent of header gas_used", func(t *testing.T) {
+		t.Parallel()
+
+		blockRow, err := CorethBlockToBlockRow(createTestBlockWithLogs())
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(21000), blockRow.ExecutedGasUsed)
+		assert.Equal(t, uint64(183061), blockRow.GasUsed, "header gas_used must be stored verbatim")
+		assert.NotEqual(t, blockRow.GasUsed, blockRow.ExecutedGasUsed)
+	})
+
+	t.Run("sums across multiple transactions", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlockWithLogs()
+		second := *block.Transactions[0]
+		second.Receipt = &kafkamsg.EVMTxReceipt{GasUsed: 34000}
+		third := *block.Transactions[0]
+		third.Receipt = &kafkamsg.EVMTxReceipt{GasUsed: 7500}
+		block.Transactions = append(block.Transactions, &second, &third)
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(21000+34000+7500), blockRow.ExecutedGasUsed)
+		assert.Equal(t, uint32(3), blockRow.NumTxns)
+	})
+
+	t.Run("empty block reports zero", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlockWithLogs()
+		block.Transactions = []*kafkamsg.EVMTransaction{}
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(0), blockRow.ExecutedGasUsed)
+	})
+
+	t.Run("transaction without receipt contributes zero", func(t *testing.T) {
+		t.Parallel()
+
+		block := createTestBlockWithLogs()
+		noReceipt := *block.Transactions[0]
+		noReceipt.Receipt = nil
+		block.Transactions = append(block.Transactions, &noReceipt)
+
+		blockRow, err := CorethBlockToBlockRow(block)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(21000), blockRow.ExecutedGasUsed)
+	})
+}
