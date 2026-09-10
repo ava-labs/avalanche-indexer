@@ -14,6 +14,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 )
 
+const testInvalidHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 func TestTransactionsRepository_WriteTransaction_Success(t *testing.T) {
 	t.Parallel()
 	mockConn := &testutils.MockConn{}
@@ -283,4 +285,262 @@ func createTestTransaction() *TransactionRow {
 		TransactionIndex:  0,
 		Success:           1, // Default to success for tests
 	}
+}
+
+func TestTransactionsRepository_BatchInsertTransactions_Success(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	tx1 := createTestTransaction()
+	tx2 := createTestTransaction()
+	tx2.BlockNumber = 1648
+	tx2.Hash = testInvalidHash
+
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 &&
+				containsSubstring(q, "INSERT INTO") &&
+				containsSubstring(q, "`default`.`raw_transactions`")
+		})).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chTransactionRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == tx1.BlockNumber
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chTransactionRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == tx2.BlockNumber
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(nil).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, []*TransactionRow{tx1, tx2})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_BatchInsertTransactions_Empty(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, nil)
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, []*TransactionRow{})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_BatchInsertTransactions_SkipsNilTransactions(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	tx := createTestTransaction()
+
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.MatchedBy(func(q string) bool {
+			return len(q) > 0 &&
+				containsSubstring(q, "INSERT INTO") &&
+				containsSubstring(q, "`default`.`raw_transactions`")
+		})).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			chRow, ok := row.(*chTransactionRow)
+			if !ok {
+				return false
+			}
+			return chRow.BlockNumber == tx.BlockNumber
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(nil).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, []*TransactionRow{nil, tx, nil})
+	require.NoError(t, err)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_BatchInsertTransactions_PrepareBatchError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	ctx := t.Context()
+
+	prepareErr := errors.New("prepare batch failed")
+	tx := createTestTransaction()
+
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(nil, prepareErr).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, []*TransactionRow{tx})
+	require.ErrorIs(t, err, prepareErr)
+	assert.Contains(t, err.Error(), "failed to prepare batch")
+
+	mockConn.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_BatchInsertTransactions_ConvertError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	tx := createTestTransaction()
+	tx.Hash = "invalid-hash"
+
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, []*TransactionRow{tx})
+	assert.Contains(t, err.Error(), "failed to convert transaction row")
+	assert.Contains(t, err.Error(), tx.Hash)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_BatchInsertTransactions_AppendStructError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	appendErr := errors.New("append failed")
+	tx := createTestTransaction()
+
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			_, ok := row.(*chTransactionRow)
+			return ok
+		})).
+		Return(appendErr).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, []*TransactionRow{tx})
+	require.ErrorIs(t, err, appendErr)
+	assert.Contains(t, err.Error(), "failed to append transaction")
+	assert.Contains(t, err.Error(), tx.Hash)
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
+}
+
+func TestTransactionsRepository_BatchInsertTransactions_SendError(t *testing.T) {
+	t.Parallel()
+
+	mockConn := &testutils.MockConn{}
+	mockBatch := &testutils.MockBatch{}
+	ctx := t.Context()
+
+	sendErr := errors.New("send failed")
+	tx := createTestTransaction()
+
+	expectTableInit(mockConn, "raw_transactions_local", "raw_transactions")
+
+	mockConn.
+		On("PrepareBatch", mock.Anything, mock.Anything).
+		Return(mockBatch, nil).
+		Once()
+
+	mockBatch.
+		On("AppendStruct", mock.MatchedBy(func(row interface{}) bool {
+			_, ok := row.(*chTransactionRow)
+			return ok
+		})).
+		Return(nil).
+		Once()
+
+	mockBatch.
+		On("Send").
+		Return(sendErr).
+		Once()
+
+	repo, err := NewTransactions(ctx, testutils.NewTestClient(mockConn), "default", "default", "raw_transactions")
+	require.NoError(t, err)
+
+	err = repo.BatchInsertTransactions(ctx, []*TransactionRow{tx})
+	require.ErrorIs(t, err, sendErr)
+	assert.Contains(t, err.Error(), "failed to send batch")
+
+	mockConn.AssertExpectations(t)
+	mockBatch.AssertExpectations(t)
 }

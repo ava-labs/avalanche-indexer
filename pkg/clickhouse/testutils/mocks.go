@@ -3,6 +3,7 @@ package testutils
 import (
 	"context"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/stretchr/testify/mock"
 )
@@ -95,4 +96,61 @@ func (m *MockConn) Stats() driver.Stats {
 func (m *MockConn) Close() error {
 	args := m.Called()
 	return args.Error(0)
+}
+
+type MockBatch struct {
+	mock.Mock
+}
+
+func (m *MockBatch) AppendStruct(v interface{}) error {
+	args := m.Called(v)
+	return args.Error(0)
+}
+
+func (m *MockBatch) Send() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockBatch) Abort() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockBatch) Append(v ...interface{}) error {
+	args := m.Called(v...)
+	return args.Error(0)
+}
+
+func (m *MockBatch) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockBatch) Columns() []column.Interface {
+	args := m.Called()
+	return args.Get(0).([]column.Interface)
+}
+
+func (m *MockBatch) Column(i int) driver.BatchColumn {
+	args := m.Called(i)
+	if col := args.Get(0); col != nil {
+		return col.(driver.BatchColumn)
+	}
+	return nil
+}
+
+func (m *MockBatch) Flush() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockBatch) IsSent() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockBatch) Rows() int {
+	args := m.Called()
+	return args.Int(0)
 }
