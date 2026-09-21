@@ -492,3 +492,41 @@ func createTestInternalTransaction() *InternalTransactionRow {
 		CallIndex:       "call_0",
 	}
 }
+
+func TestParseUint256(t *testing.T) {
+	huge, ok := new(big.Int).SetString("115792089237316195423570985008687907853269984665640564039457584007913129639935", 10)
+	require.True(t, ok)
+
+	tests := []struct {
+		name string
+		in   string
+		want *big.Int
+	}{
+		{"hex quantity from tracer", "0x5208", big.NewInt(21000)},
+		{"hex with letters", "0xff", big.NewInt(255)},
+		{"uppercase prefix", "0X10", big.NewInt(16)},
+		{"hex zero", "0x0", big.NewInt(0)},
+		{"decimal accepted", "12345", big.NewInt(12345)},
+		{"absent field", "", big.NewInt(0)},
+		{"bare prefix", "0x", big.NewInt(0)},
+		{"surrounding space", "  0x5208  ", big.NewInt(21000)},
+		{"malformed hex", "0xzz", big.NewInt(0)},
+		{"malformed decimal", "not-a-number", big.NewInt(0)},
+		{"negative rejected", "-5", big.NewInt(0)},
+		{"full uint256 range", "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", huge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseUint256(tt.in)
+			require.NotNil(t, got)
+			assert.Zero(t, got.Cmp(tt.want), "parseUint256(%q) = %s, want %s", tt.in, got, tt.want)
+		})
+	}
+}
+
+func TestUint256String(t *testing.T) {
+	assert.Equal(t, "0", uint256String(nil))
+	assert.Equal(t, "0", uint256String(big.NewInt(0)))
+	assert.Equal(t, "21000", uint256String(big.NewInt(21000)))
+}
