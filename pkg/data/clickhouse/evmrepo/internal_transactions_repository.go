@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	_ "embed"
@@ -54,15 +55,50 @@ type chInternalTransactionRow struct {
 	TransactionType string      `ch:"type"`
 	FromAddress     string      `ch:"from_address"`
 	ToAddress       string      `ch:"to_address"`
-	Value           string      `ch:"value"`
-	Gas             string      `ch:"gas"`
-	GasUsed         string      `ch:"gas_used"`
+	Value           *big.Int    `ch:"value"`
+	Gas             *big.Int    `ch:"gas"`
+	GasUsed         *big.Int    `ch:"gas_used"`
 	Revert          bool        `ch:"revert"`
 	ErrorText       string      `ch:"error"`
 	RevertReason    string      `ch:"revert_reason"`
 	Input           string      `ch:"input"`
 	Output          string      `ch:"output"`
 	CallIndex       string      `ch:"call_index"`
+}
+
+// parseUint256 converts a quantity from a trace into a value suitable for a
+// ClickHouse UInt256 column. Tracer output is hex ("0x5208") but plain decimal
+// is also accepted. An empty, malformed or negative quantity becomes zero,
+// matching the behaviour of an absent field.
+func parseUint256(s string) *big.Int {
+	v := new(big.Int)
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return v
+	}
+	if h := strings.TrimPrefix(strings.TrimPrefix(t, "0x"), "0X"); h != t {
+		if h == "" {
+			return v
+		}
+		if _, ok := v.SetString(h, 16); !ok {
+			return new(big.Int)
+		}
+	} else if _, ok := v.SetString(t, 10); !ok {
+		return new(big.Int)
+	}
+	if v.Sign() < 0 {
+		return new(big.Int)
+	}
+	return v
+}
+
+// uint256String renders a UInt256 quantity for the single-row Exec path, which
+// binds these columns as their decimal string representation.
+func uint256String(v *big.Int) string {
+	if v == nil {
+		return "0"
+	}
+	return v.String()
 }
 
 func convertInternalTxnRowToChInternalTxnRow(tx *InternalTransactionRow) (*chInternalTransactionRow, error) {
@@ -100,9 +136,9 @@ func convertInternalTxnRowToChInternalTxnRow(tx *InternalTransactionRow) (*chInt
 		TransactionType: tx.Type,
 		FromAddress:     string(tx.From[:]),
 		ToAddress:       string(tx.To[:]),
-		Value:           tx.Value,
-		Gas:             tx.Gas,
-		GasUsed:         tx.GasUsed,
+		Value:           parseUint256(tx.Value),
+		Gas:             parseUint256(tx.Gas),
+		GasUsed:         parseUint256(tx.GasUsed),
 		Revert:          tx.Revert,
 		ErrorText:       tx.Error,
 		RevertReason:    tx.RevertReason,
@@ -175,9 +211,9 @@ func (r *internalTransactions) WriteInternalTransaction(ctx context.Context, tx 
 		row.TransactionType,
 		row.FromAddress,
 		row.ToAddress,
-		row.Value,
-		row.Gas,
-		row.GasUsed,
+		uint256String(row.Value),
+		uint256String(row.Gas),
+		uint256String(row.GasUsed),
 		row.Revert,
 		row.ErrorText,
 		row.RevertReason,
