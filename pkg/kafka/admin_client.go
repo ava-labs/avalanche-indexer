@@ -14,12 +14,18 @@ import (
 const (
 	// metadataTimeout is the timeout for Kafka metadata operations.
 	metadataTimeout = 10 * time.Second
+	// topicSettleTimeout bounds how long EnsureTopic waits for a topic's
+	// partition metadata to become populated before giving up.
+	topicSettleTimeout = 15 * time.Second
+	// topicSettlePollInterval is how often metadata is re-read while waiting.
+	topicSettlePollInterval = 250 * time.Millisecond
 )
 
 var (
 	ErrTopicAlreadyExists        = errors.New("topic already exists")
 	ErrCannotDecreasePartitions  = errors.New("cannot decrease partitions count")
 	ErrReplicationFactorMismatch = errors.New("replication factor mismatch")
+	ErrTopicMetadataNotSettled   = errors.New("topic metadata did not settle")
 )
 
 // TopicConfig holds Kafka topic configuration options for creation or validation.
@@ -169,7 +175,51 @@ func EnsureTopic(
 		return CreateTopic(ctx, admin, config, log)
 	}
 
+	topicMetadata, err = awaitSettledMetadata(ctx, admin, config.Name, topicMetadata)
+	if err != nil {
+		return err
+	}
+
 	return ensureTopicStructure(ctx, admin, topicMetadata, log, config)
+}
+
+// awaitSettledMetadata re-reads topic metadata until its partition replicas are
+// populated.
+//
+// A broker accepts a topic creation before the new partitions' replica
+// assignments have propagated, so a concurrent caller can observe a topic whose
+// partitions report no replicas. Reading a replication factor from that state
+// yields zero and would be misreported as ErrReplicationFactorMismatch, so the
+// structure check waits for the metadata to settle first.
+func awaitSettledMetadata(
+	ctx context.Context,
+	admin *ckafka.AdminClient,
+	name string,
+	metadata *ckafka.TopicMetadata,
+) (*ckafka.TopicMetadata, error) {
+	deadline := time.Now().Add(topicSettleTimeout)
+	for getReplicationFactor(metadata) == 0 {
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("%w: topic %q", ErrTopicMetadataNotSettled, name)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(topicSettlePollInterval):
+		}
+
+		settled, err := TopicMetadata(admin, name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to re-read topic metadata: %w", err)
+		}
+		if settled == nil {
+			return nil, fmt.Errorf("%w: topic %q no longer exists", ErrTopicMetadataNotSettled, name)
+		}
+		metadata = settled
+	}
+
+	return metadata, nil
 }
 
 // ensureTopicStructure validates and adjusts topic configuration.
