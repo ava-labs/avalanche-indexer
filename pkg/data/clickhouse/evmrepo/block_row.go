@@ -45,4 +45,17 @@ type BlockRow struct {
 	ParentBeaconBlockRoot string
 	MinDelayExcess        uint64
 	NumTxns               uint32
+
+	// Helicon (C-Chain only) header fields; zero on Subnet-EVM and pre-Helicon blocks.
+	TargetExponent      uint64
+	MinPriceExponent    uint64
+	SettledHeight       uint64
+	SettledGasUnix      uint64
+	SettledGasNumerator uint64
+	SettledExcess       uint64
+
+	// ExecutedGasUsed is the gas used by this block's own transactions. Under
+	// ACP-194 the header's GasUsed instead reports gas charged across newly
+	// settled blocks, so the two diverge on post-Helicon C-Chain blocks.
+	ExecutedGasUsed uint64
 }

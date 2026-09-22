@@ -1149,3 +1149,59 @@ func TestMetrics_ConsumerMethods_NilReceiver(t *testing.T) {
 		m.RecordMessageRetriesExhausted()
 	})
 }
+
+func TestMetrics_ObserveSettlementLag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		blockNumber   uint64
+		settledHeight uint64
+		want          float64
+	}{
+		{
+			name:          "helicon block trailing settlement",
+			blockNumber:   57725025,
+			settledHeight: 57725024,
+			want:          1,
+		},
+		{
+			name:          "block settles itself",
+			blockNumber:   100,
+			settledHeight: 100,
+			want:          0,
+		},
+		{
+			name:          "pre-helicon block reports zero rather than block height",
+			blockNumber:   57725025,
+			settledHeight: 0,
+			want:          0,
+		},
+		{
+			name:          "settled height ahead of block is clamped",
+			blockNumber:   100,
+			settledHeight: 200,
+			want:          0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m, err := New(prometheus.NewRegistry())
+			require.NoError(t, err)
+
+			m.ObserveSettlementLag(tt.blockNumber, tt.settledHeight)
+
+			require.Equal(t, tt.want, testutil.ToFloat64(m.settlementLag))
+		})
+	}
+}
+
+func TestMetrics_ObserveSettlementLag_NilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var m *Metrics
+	require.NotPanics(t, func() { m.ObserveSettlementLag(10, 5) })
+}

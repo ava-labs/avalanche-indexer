@@ -46,6 +46,21 @@ All metrics use the `indexer` namespace.
 |--------|------|-------------|
 | `indexer_block_processing_duration_seconds` | Histogram | End-to-end block processing time |
 
+### Settlement (ACP-194)
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `indexer_settlement_lag_blocks` | Gauge | Blocks between the fetched block and the highest block it settles |
+
+Helicon decouples execution from consensus on the C-Chain: a block is accepted, executed
+later, then settled τ=5s after that. This gauge is `block_number - settled_height`, read
+straight from the header, so it costs no extra RPC call. It is `0` on pre-Helicon blocks
+and on Subnet-EVM chains, which carry no settlement state.
+
+Steady state on Fuji is ~1 block. A sustained rise means the chain's executor is falling
+behind consensus, which is distinct from the indexer falling behind the chain — compare
+against `indexer_highest - indexer_lowest` to tell the two apart.
+
 ### Receipt Metrics
 
 | Metric | Type | Labels | Description |
@@ -66,6 +81,9 @@ All metrics use the `indexer` namespace.
 ```promql
 # Current backlog (blocks behind)
 indexer_highest - indexer_lowest
+
+# Chain settlement lag (ACP-194); alert if sustained well above ~1
+indexer_settlement_lag_blocks
 
 # Processing rate (blocks/sec over 5m)
 rate(indexer_blocks_processed_total[5m])

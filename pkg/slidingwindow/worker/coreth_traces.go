@@ -9,16 +9,16 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ava-labs/coreth/eth/tracers"
-	"github.com/ava-labs/coreth/rpc"
+	"github.com/ava-labs/avalanchego/graft/coreth/eth/tracers"
+	"github.com/ava-labs/avalanchego/graft/evm/rpc"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
-	corethCustomtypes "github.com/ava-labs/coreth/plugin/evm/customtypes"
+	evmclient "github.com/ava-labs/avalanchego/graft/coreth/ethclient"
+	corethCustomtypes "github.com/ava-labs/avalanchego/graft/coreth/plugin/evm/customtypes"
 )
 
 type CorethTracesWorker struct {
@@ -47,9 +47,6 @@ func NewCorethTracesWorker(
 	if m == nil {
 		m = metrics.NewNoOp()
 	}
-	RegisterCustomTypesOnce.Do(func() {
-		corethCustomtypes.Register()
-	})
 
 	return &CorethTracesWorker{
 		client:       client,

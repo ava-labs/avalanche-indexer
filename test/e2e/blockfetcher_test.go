@@ -21,8 +21,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/subscriber"
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 
-	"github.com/ava-labs/coreth/plugin/evm/customethclient"
-	"github.com/ava-labs/coreth/rpc"
+	"github.com/ava-labs/avalanchego/graft/coreth/ethclient"
+	"github.com/ava-labs/avalanchego/graft/evm/rpc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,7 +65,7 @@ func verifyBlockfetcherRealTime(t *testing.T, chkpt checkpointer.Checkpointer, l
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
 	defer rpcClient.Close()
-	latest, err := customethclient.New(rpcClient).BlockNumber(ctx)
+	latest, err := ethclient.NewClient(rpcClient).BlockNumber(ctx)
 	require.NoError(t, err, "failed to get latest block height")
 
 	// Start from a slightly older block to avoid "cannot query unfinalized data" errors.
@@ -104,7 +104,7 @@ func verifyBlockfetcherRealTime(t *testing.T, chkpt checkpointer.Checkpointer, l
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	client, err := customethclient.DialContext(ctx, rpcURL)
+	client, err := ethclient.DialContext(ctx, rpcURL)
 	if err != nil {
 		require.Fail(t, "failed to dial rpc", err)
 	}
@@ -118,7 +118,7 @@ func verifyBlockfetcherRealTime(t *testing.T, chkpt checkpointer.Checkpointer, l
 	mgr, err := slidingwindow.NewManager(log, state, w, concurrency, backfill, blocksCap, maxFailures, nil)
 	require.NoError(t, err)
 
-	sub := subscriber.NewCoreth(log, customethclient.New(rpcClient))
+	sub := subscriber.NewCoreth(log, ethclient.NewClient(rpcClient))
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return sub.Subscribe(gctx, blocksCap, mgr) })
@@ -234,7 +234,7 @@ func verifyBlockfetcherBackfill(t *testing.T, chkpt checkpointer.Checkpointer, l
 	rpcClient, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "rpc dial failed (check RPC_URL)")
 	defer rpcClient.Close()
-	latest, err := customethclient.New(rpcClient).BlockNumber(ctx)
+	latest, err := ethclient.NewClient(rpcClient).BlockNumber(ctx)
 	require.NoError(t, err, "failed to get latest block height")
 	const span uint64 = 6
 	var start uint64
@@ -270,7 +270,7 @@ func verifyBlockfetcherBackfill(t *testing.T, chkpt checkpointer.Checkpointer, l
 	require.NoError(t, err)
 	defer producer.Close(15 * time.Second)
 
-	client, err := customethclient.DialContext(ctx, rpcURL)
+	client, err := ethclient.DialContext(ctx, rpcURL)
 	if err != nil {
 		require.Fail(t, "failed to dial rpc", err)
 	}
@@ -365,7 +365,7 @@ func verifyBlocksFromRPC(t *testing.T, ctx context.Context, rpcURL string, kafka
 	client, err := rpc.DialContext(ctx, rpcURL)
 	require.NoError(t, err, "dial rpc for verification")
 	defer client.Close()
-	ec := customethclient.New(client)
+	ec := ethclient.NewClient(client)
 
 	// Compare only for numbers we have payloads for.
 	for _, n := range numbers {

@@ -1,4 +1,4 @@
-FROM golang:1.24.9-bookworm AS indexer
+FROM golang:1.25.10-bookworm AS indexer
 
 RUN set -ex; \
     apt-get update; \

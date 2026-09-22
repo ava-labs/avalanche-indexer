@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ava-labs/coreth/rpc"
+	"github.com/ava-labs/avalanchego/graft/evm/rpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -18,7 +18,7 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	evmclient "github.com/ava-labs/avalanchego/graft/coreth/ethclient"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -104,7 +104,7 @@ func newTestWorker(t *testing.T, serverURL string) *CorethWorker {
 		require.Fail(t, "failed to dial test rpc server", err)
 	}
 	return &CorethWorker{
-		client:         evmclient.New(c),
+		client:         evmclient.NewClient(c),
 		log:            zap.NewNop().Sugar(),
 		producer:       nil,
 		topic:          "",
@@ -157,7 +157,7 @@ func TestGetBlock_BlockFetchError(t *testing.T) {
 
 	log := zap.NewNop().Sugar()
 	ctx := t.Context()
-	w, err := NewCorethWorker(evmclient.New(c), nil, "", 43114, "C", log, nil, 10*time.Second)
+	w, err := NewCorethWorker(evmclient.NewClient(c), nil, "", 43114, "C", log, nil, 10*time.Second)
 	if err != nil {
 		require.Fail(t, "failed to create worker", err)
 	}
