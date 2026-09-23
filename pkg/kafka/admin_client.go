@@ -14,12 +14,18 @@ import (
 const (
 	// metadataTimeout is the timeout for Kafka metadata operations.
 	metadataTimeout = 10 * time.Second
+	// topicSettleTimeout bounds how long EnsureTopic waits for a topic's
+	// partition metadata to become populated before giving up.
+	topicSettleTimeout = 15 * time.Second
+	// topicSettlePollInterval is how often metadata is re-read while waiting.
+	topicSettlePollInterval = 250 * time.Millisecond
 )
 
 var (
 	ErrTopicAlreadyExists        = errors.New("topic already exists")
 	ErrCannotDecreasePartitions  = errors.New("cannot decrease partitions count")
 	ErrReplicationFactorMismatch = errors.New("replication factor mismatch")
+	ErrTopicMetadataNotSettled   = errors.New("topic metadata did not settle")
 )
 
 // TopicConfig holds Kafka topic configuration options for creation or validation.
@@ -169,7 +175,58 @@ func EnsureTopic(
 		return CreateTopic(ctx, admin, config, log)
 	}
 
+	topicMetadata, err = awaitSettledMetadata(ctx, admin, config.Name, topicMetadata, config.ReplicationFactor)
+	if err != nil {
+		return err
+	}
+
 	return ensureTopicStructure(ctx, admin, topicMetadata, log, config)
+}
+
+// awaitSettledMetadata re-reads topic metadata until its partitions report at
+// least wantReplicas replicas.
+//
+// A broker accepts a topic creation before the new partitions' replica
+// assignments have propagated, so a concurrent caller can observe a topic whose
+// partitions report fewer replicas than were requested — including none at all.
+// Reading a replication factor from that state would be misreported as
+// ErrReplicationFactorMismatch, so the structure check waits for the assignment
+// to finish first. Waiting only for a non-zero count is not enough: with
+// wantReplicas above one, a partially propagated assignment is also short.
+//
+// Once the deadline passes the metadata is returned as-is. A topic that really
+// does have fewer replicas than configured is a mismatch rather than a delay,
+// and ensureTopicStructure reports that with the error that describes it.
+func awaitSettledMetadata(
+	ctx context.Context,
+	admin *ckafka.AdminClient,
+	name string,
+	metadata *ckafka.TopicMetadata,
+	wantReplicas int,
+) (*ckafka.TopicMetadata, error) {
+	deadline := time.Now().Add(topicSettleTimeout)
+	for getReplicationFactor(metadata) < wantReplicas {
+		if time.Now().After(deadline) {
+			return metadata, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(topicSettlePollInterval):
+		}
+
+		settled, err := TopicMetadata(admin, name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to re-read topic metadata: %w", err)
+		}
+		if settled == nil {
+			return nil, fmt.Errorf("%w: topic %q no longer exists", ErrTopicMetadataNotSettled, name)
+		}
+		metadata = settled
+	}
+
+	return metadata, nil
 }
 
 // ensureTopicStructure validates and adjusts topic configuration.
