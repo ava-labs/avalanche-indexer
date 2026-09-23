@@ -10,83 +10,23 @@ import (
 	"time"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap/zaptest"
 )
 
-const (
-	adminTestTimeout = 30 * time.Second
-)
-
 type adminKafkaContainer struct {
-	container testcontainers.Container
-	brokers   string
+	brokers string
 }
 
 func setupAdminKafka(t *testing.T) *adminKafkaContainer {
-	ctx := context.Background()
-
-	req := testcontainers.ContainerRequest{
-		Image:        "confluentinc/cp-kafka:7.5.0",
-		ExposedPorts: []string{"9093/tcp"},
-		HostConfigModifier: func(hc *container.HostConfig) {
-			// Bind container port 9093 to host port 9093 to match advertised listeners
-			hc.PortBindings = map[nat.Port][]nat.PortBinding{
-				"9093/tcp": {{HostIP: "127.0.0.1", HostPort: "9093"}},
-			}
-		},
-		Env: map[string]string{
-			"KAFKA_LISTENERS":                                "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094",
-			"KAFKA_ADVERTISED_LISTENERS":                     "PLAINTEXT://localhost:9093,BROKER://localhost:9092",
-			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":           "CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT",
-			"KAFKA_INTER_BROKER_LISTENER_NAME":               "BROKER",
-			"KAFKA_CONTROLLER_LISTENER_NAMES":                "CONTROLLER",
-			"KAFKA_CONTROLLER_QUORUM_VOTERS":                 "1@localhost:9094",
-			"KAFKA_PROCESS_ROLES":                            "broker,controller",
-			"KAFKA_NODE_ID":                                  "1",
-			"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
-			"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
-			"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
-			"KAFKA_LOG_FLUSH_INTERVAL_MESSAGES":              "1",
-			"KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS":         "0",
-			"KAFKA_AUTO_CREATE_TOPICS_ENABLE":                "false", // Disable auto topic creation
-			"CLUSTER_ID":                                     "MkU3OEVBNTcwNTJENDM2Qk",
-		},
-		WaitingFor: wait.ForLog("Kafka Server started").WithStartupTimeout(adminTestTimeout),
-	}
-
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	require.NoError(t, err)
-
-	// Since we bound port 9093 to host, we can connect directly
-	brokers := "localhost:9093"
-
-	// Give Kafka extra time to fully start and stabilize
-	time.Sleep(3 * time.Second)
-
-	return &adminKafkaContainer{
-		container: container,
-		brokers:   brokers,
-	}
+	t.Helper()
+	return &adminKafkaContainer{brokers: sharedKafka(t)}
 }
 
-func (kc *adminKafkaContainer) teardown(t *testing.T) {
-	ctx := context.Background()
-	if kc.container != nil {
-		err := kc.container.Terminate(ctx)
-		if err != nil {
-			t.Logf("failed to terminate Kafka container: %v", err)
-		}
-	}
-}
+// teardown is a no-op: the Kafka broker is shared across the package and
+// is terminated by TestMain.
+func (*adminKafkaContainer) teardown(_ *testing.T) {}
 
 func createAdminClient(t *testing.T, brokers string) *ckafka.AdminClient {
 	admin, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
