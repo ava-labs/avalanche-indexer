@@ -38,6 +38,7 @@ const (
 type testProcessor struct {
 	processFunc     func(ctx context.Context, msg *ckafka.Message) error
 	mu              sync.Mutex
+	enteredCount    int32
 	processedCount  int32
 	processedMsgs   []*ckafka.Message
 	shouldFail      bool
@@ -52,6 +53,8 @@ func newTestProcessor() *testProcessor {
 }
 
 func (p *testProcessor) Process(ctx context.Context, msg *ckafka.Message) error {
+	atomic.AddInt32(&p.enteredCount, 1)
+
 	if p.processingDelay > 0 {
 		select {
 		case <-time.After(p.processingDelay):
@@ -82,6 +85,14 @@ func (p *testProcessor) Process(ctx context.Context, msg *ckafka.Message) error 
 
 func (p *testProcessor) GetProcessedCount() int {
 	return int(atomic.LoadInt32(&p.processedCount))
+}
+
+// GetEnteredCount reports how many messages have entered Process, including
+// those still blocked on processingDelay. Tests that need to act while
+// processing is in flight wait on this rather than sleeping for a guessed
+// interval.
+func (p *testProcessor) GetEnteredCount() int {
+	return int(atomic.LoadInt32(&p.enteredCount))
 }
 
 func (p *testProcessor) GetProcessedMessages() []*ckafka.Message {
@@ -536,7 +547,15 @@ func TestConsumer_ContextCancellation(t *testing.T) {
 			consumerErrCh <- consumer.Start(ctx)
 		}()
 
-		time.Sleep(2 * time.Second)
+		require.Eventually(
+			t,
+			func() bool {
+				return processor.GetEnteredCount() > 0
+			},
+			15*time.Second,
+			25*time.Millisecond,
+			"consumer never began processing",
+		)
 
 		cancel()
 
@@ -568,7 +587,15 @@ func TestConsumer_ContextCancellation(t *testing.T) {
 			consumerErrCh <- consumer.Start(ctx)
 		}()
 
-		time.Sleep(3 * time.Second)
+		require.Eventually(
+			t,
+			func() bool {
+				return processor.GetProcessedCount() > 0
+			},
+			15*time.Second,
+			25*time.Millisecond,
+			"consumer never processed a message",
+		)
 
 		cancel()
 
@@ -664,8 +691,6 @@ func TestConsumer_Rebalancing(t *testing.T) {
 			t.Fatal("Consumer 3 did not stop within timeout")
 		}
 		t.Log("Consumer 3 stopped (rebalance should occur)")
-
-		time.Sleep(5 * time.Second)
 
 		require.Eventually(t, func() bool {
 			total := processor1.GetProcessedCount() + processor2.GetProcessedCount() + processor3.GetProcessedCount()
@@ -793,8 +818,6 @@ func TestConsumer_LogPrinting(t *testing.T) {
 		}
 
 		cancel()
-
-		time.Sleep(15 * time.Second)
 
 		select {
 		case err := <-consumerErrCh:
