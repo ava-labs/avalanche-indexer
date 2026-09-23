@@ -22,17 +22,38 @@ func TestAwaitSettledMetadata(t *testing.T) {
 
 		// A nil admin client is safe here only because settled metadata must not
 		// trigger a re-read; if it ever does, this test panics rather than passes.
-		got, err := awaitSettledMetadata(t.Context(), nil, "settled", md)
+		got, err := awaitSettledMetadata(t.Context(), nil, "settled", md, 1)
 
 		require.NoError(t, err)
 		assert.Same(t, md, got)
+	})
+
+	t.Run("returns immediately when the full replica set is assigned", func(t *testing.T) {
+		md := topicMetadataWithReplicas(1, 2, 3)
+
+		got, err := awaitSettledMetadata(t.Context(), nil, "settled", md, 3)
+
+		require.NoError(t, err)
+		assert.Same(t, md, got)
+	})
+
+	t.Run("keeps waiting when a multi-replica assignment is only partial", func(t *testing.T) {
+		// One replica of a requested three is propagation in progress, not a
+		// settled topic; treating it as settled is what misreports a mismatch.
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		got, err := awaitSettledMetadata(ctx, nil, "partial", topicMetadataWithReplicas(1), 3)
+
+		require.ErrorIs(t, err, context.Canceled)
+		assert.Nil(t, got)
 	})
 
 	t.Run("honours a cancelled context while waiting", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		got, err := awaitSettledMetadata(ctx, nil, "unsettled", topicMetadataWithReplicas())
+		got, err := awaitSettledMetadata(ctx, nil, "unsettled", topicMetadataWithReplicas(), 1)
 
 		require.ErrorIs(t, err, context.Canceled)
 		assert.Nil(t, got)
