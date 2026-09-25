@@ -19,12 +19,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const (
@@ -114,62 +110,19 @@ func (p *testProcessor) SetFailureError(err error) {
 }
 
 type consumerKafkaContainer struct {
-	container testcontainers.Container
-	brokers   string
+	brokers string
 }
 
 func setupConsumerKafka(t *testing.T) *consumerKafkaContainer {
-	ctx := context.Background()
-
-	req := testcontainers.ContainerRequest{
-		Image:        "confluentinc/cp-kafka:7.5.0",
-		ExposedPorts: []string{"9093/tcp"},
-		Env: map[string]string{
-			"KAFKA_NODE_ID":                          "1",
-			"KAFKA_PROCESS_ROLES":                    "broker,controller",
-			"KAFKA_LISTENERS":                        "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094,EXTERNAL://0.0.0.0:9093",
-			"KAFKA_ADVERTISED_LISTENERS":             "PLAINTEXT://localhost:9092,EXTERNAL://127.0.0.1:9093",
-			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":   "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT",
-			"KAFKA_CONTROLLER_QUORUM_VOTERS":         "1@localhost:9094",
-			"KAFKA_CONTROLLER_LISTENER_NAMES":        "CONTROLLER",
-			"KAFKA_INTER_BROKER_LISTENER_NAME":       "PLAINTEXT",
-			"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
-			"KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS": "0",
-			"KAFKA_AUTO_CREATE_TOPICS_ENABLE":        "true",
-			"CLUSTER_ID":                             "MkU3OEVBNTcwNTJENDM2Qk",
-		},
-		HostConfigModifier: func(hostConfig *container.HostConfig) {
-			hostConfig.PortBindings = nat.PortMap{
-				"9093/tcp": []nat.PortBinding{{HostIP: "127.0.0.1", HostPort: "9093"}},
-			}
-		},
-		WaitingFor: wait.ForLog("Kafka Server started").WithStartupTimeout(consumerTestTimeout),
-	}
-
-	kafkaContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	require.NoError(t, err, "Failed to start Kafka container")
-
-	brokers := "127.0.0.1:9093"
-	waitForKafkaBroker(t, brokers)
-
+	t.Helper()
+	brokers := sharedKafka(t)
 	createTestTopics(t, brokers, []string{consumerTestTopic, consumerDLQTopic})
-
-	return &consumerKafkaContainer{
-		container: kafkaContainer,
-		brokers:   brokers,
-	}
+	return &consumerKafkaContainer{brokers: brokers}
 }
 
-func (kc *consumerKafkaContainer) teardown(t *testing.T) {
-	if kc.container != nil {
-		ctx := context.Background()
-		err := kc.container.Terminate(ctx)
-		require.NoError(t, err, "Failed to terminate Kafka container")
-	}
-}
+// teardown is a no-op: the Kafka broker is shared across the package and
+// is terminated by TestMain.
+func (*consumerKafkaContainer) teardown(_ *testing.T) {}
 
 func newTestConsumerConfig(brokers, groupID string) ConsumerConfig {
 	return ConsumerConfig{
@@ -205,10 +158,11 @@ func createTestTopics(t *testing.T, brokers string, topics []string) {
 	require.NoError(t, err)
 
 	for _, result := range results {
-		if result.Error.Code() != ckafka.ErrNoError {
+		// The broker is shared across the package, so a topic created for an
+		// earlier test is already present. That is the same end state.
+		if result.Error.Code() != ckafka.ErrNoError && result.Error.Code() != ckafka.ErrTopicAlreadyExists {
 			require.Fail(t, "Failed to create topic", "topic: %s, error: %v", result.Topic, result.Error)
 		}
-		t.Logf("Created topic: %s", result.Topic)
 	}
 }
 
