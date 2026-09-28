@@ -8,15 +8,14 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ava-labs/coreth/plugin/evm/customtypes"
-	"github.com/ava-labs/coreth/rpc"
+	"github.com/ava-labs/avalanchego/graft/evm/rpc"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	evmclient "github.com/ava-labs/coreth/plugin/evm/customethclient"
+	evmclient "github.com/ava-labs/avalanchego/graft/coreth/ethclient"
 )
 
 type CorethWorker struct {
@@ -43,9 +42,6 @@ func NewCorethWorker(
 	if m == nil {
 		m = metrics.NewNoOp()
 	}
-	RegisterCustomTypesOnce.Do(func() {
-		customtypes.Register()
-	})
 
 	return &CorethWorker{
 		client:         client,
@@ -67,6 +63,8 @@ func (cw *CorethWorker) Process(ctx context.Context, height uint64) error {
 	if err != nil {
 		return fmt.Errorf("fetch block failed %d: %w", height, err)
 	}
+
+	cw.metrics.ObserveSettlementLag(height, evmBlock.SettledHeight)
 
 	cw.log.Debugw("block fetched, serializing", "height", height, "txs", len(evmBlock.Transactions))
 	bytes, err := json.Marshal(evmBlock)

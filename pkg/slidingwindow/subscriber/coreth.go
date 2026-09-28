@@ -3,7 +3,7 @@ package subscriber
 import (
 	"context"
 
-	"github.com/ava-labs/coreth/plugin/evm/customethclient"
+	"github.com/ava-labs/avalanchego/graft/coreth/ethclient"
 	"github.com/ava-labs/libevm/core/types"
 	"go.uber.org/zap"
 
@@ -12,10 +12,10 @@ import (
 
 type Coreth struct {
 	log    *zap.SugaredLogger
-	client *customethclient.Client
+	client *ethclient.Client
 }
 
-func NewCoreth(log *zap.SugaredLogger, client *customethclient.Client) *Coreth {
+func NewCoreth(log *zap.SugaredLogger, client *ethclient.Client) *Coreth {
 	return &Coreth{
 		log:    log,
 		client: client,

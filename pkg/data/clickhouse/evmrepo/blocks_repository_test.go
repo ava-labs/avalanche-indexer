@@ -120,6 +120,13 @@ func TestRepository_WriteBlock_Success(t *testing.T) {
 			parentBeaconBlockRootStr,         // string or nil
 			block.MinDelayExcess,             // uint64
 			block.NumTxns,                    // uint32
+			block.TargetExponent,             // uint64
+			block.MinPriceExponent,           // uint64
+			block.SettledHeight,              // uint64
+			block.SettledGasUnix,             // uint64
+			block.SettledGasNumerator,        // uint64
+			block.SettledExcess,              // uint64
+			block.ExecutedGasUsed,            // uint64
 		).
 		Return(nil).
 		Once()
@@ -224,6 +231,13 @@ func TestRepository_WriteBlock_Error(t *testing.T) {
 			parentBeaconBlockRootStr,
 			block.MinDelayExcess,
 			block.NumTxns,
+			block.TargetExponent,
+			block.MinPriceExponent,
+			block.SettledHeight,
+			block.SettledGasUnix,
+			block.SettledGasNumerator,
+			block.SettledExcess,
+			block.ExecutedGasUsed,
 		).
 		Return(execErr).
 		Once()
@@ -276,6 +290,15 @@ func createTestBlock() *BlockRow {
 		ExcessBlobGas:         0,
 		ParentBeaconBlockRoot: "",
 		MinDelayExcess:        0,
+
+		// Distinct non-zero values so a positional mix-up in the INSERT is caught.
+		TargetExponent:      15770705,
+		MinPriceExponent:    957480584338323632,
+		SettledHeight:       1646,
+		SettledGasUnix:      1786547475,
+		SettledGasNumerator: 701837,
+		SettledExcess:       320547565,
+		ExecutedGasUsed:     175000,
 	}
 }
 

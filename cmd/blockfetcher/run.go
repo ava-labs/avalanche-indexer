@@ -22,10 +22,11 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/slidingwindow/worker"
 	"github.com/ava-labs/avalanche-indexer/pkg/utils"
 
-	corethClient "github.com/ava-labs/coreth/plugin/evm/customethclient"
-	corethRpc "github.com/ava-labs/coreth/rpc"
-	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
-	subnetRpc "github.com/ava-labs/subnet-evm/rpc"
+	corethClient "github.com/ava-labs/avalanchego/graft/coreth/ethclient"
+	corethCustomtypes "github.com/ava-labs/avalanchego/graft/coreth/plugin/evm/customtypes"
+	evmRpc "github.com/ava-labs/avalanchego/graft/evm/rpc"
+	subnetClient "github.com/ava-labs/avalanchego/graft/subnet-evm/ethclient"
+	subnetevmCustomtypes "github.com/ava-labs/avalanchego/graft/subnet-evm/plugin/evm/customtypes"
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -33,6 +34,9 @@ const (
 	flushTimeoutOnClose = 15 * time.Second
 	blocksMode          = "blocks"
 	tracesMode          = "traces"
+
+	clientTypeCoreth    = "coreth"
+	clientTypeSubnetEVM = "subnet-evm"
 
 	// initialDialBackoff is the wait before the first redial attempt.
 	initialDialBackoff = 1 * time.Second
@@ -194,21 +198,34 @@ func run(c *cli.Context) error {
 	}
 	defer producer.Close(flushTimeoutOnClose)
 
+	// Register the libevm header/block extras for the configured client. This
+	// mutates process-global state in libevm and must happen exactly once, before
+	// any block is decoded. Coreth and Subnet-EVM register incompatible payload
+	// types, so only the configured client's extras may be registered.
+	switch cfg.ClientType {
+	case clientTypeCoreth:
+		corethCustomtypes.Register()
+	case clientTypeSubnetEVM:
+		subnetevmCustomtypes.Register()
+	default:
+		return fmt.Errorf("invalid client type: %s", cfg.ClientType)
+	}
+
 	var w worker.Worker
 	var sub subscriber.Subscriber
 
 	switch cfg.Mode {
 	case tracesMode:
 		switch cfg.ClientType {
-		case "coreth":
-			rpc, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*corethRpc.Client, error) {
-				return corethRpc.DialContext(ctx, cfg.RPCURL)
+		case clientTypeCoreth:
+			rpc, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*evmRpc.Client, error) {
+				return evmRpc.DialContext(ctx, cfg.RPCURL)
 			})
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
 			}
 			defer rpc.Close()
-			cclient := corethClient.New(rpc)
+			cclient := corethClient.NewClient(rpc)
 
 			w, err = worker.NewCorethTracesWorker(cclient, rpc, producer, cfg.KafkaTopic, cfg.EVMChainID, cfg.BCID, sugar, m, cfg.TraceTimeout)
 			if err != nil {
@@ -224,9 +241,9 @@ func run(c *cli.Context) error {
 				}
 				sugar.Infof("latest block height: %d", end)
 			}
-		case "subnet-evm":
-			rpc, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*subnetRpc.Client, error) {
-				return subnetRpc.DialContext(ctx, cfg.RPCURL)
+		case clientTypeSubnetEVM:
+			rpc, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*evmRpc.Client, error) {
+				return evmRpc.DialContext(ctx, cfg.RPCURL)
 			})
 			if err != nil {
 				return fmt.Errorf("failed to dial rpc: %w", err)
@@ -253,7 +270,7 @@ func run(c *cli.Context) error {
 	case blocksMode:
 		// blocks mode
 		switch cfg.ClientType {
-		case "coreth":
+		case clientTypeCoreth:
 			client, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (*corethClient.Client, error) {
 				return corethClient.DialContext(ctx, cfg.RPCURL)
 			})
@@ -275,7 +292,7 @@ func run(c *cli.Context) error {
 				}
 				sugar.Infof("latest block height: %d", end)
 			}
-		case "subnet-evm":
+		case clientTypeSubnetEVM:
 			client, err := dialWithRetry(ctx, sugar, func(ctx context.Context) (subnetClient.Client, error) {
 				return subnetClient.DialContext(ctx, cfg.RPCURL)
 			})

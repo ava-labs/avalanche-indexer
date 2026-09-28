@@ -17,8 +17,8 @@ import (
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
-	subnetevmrpc "github.com/ava-labs/subnet-evm/rpc"
+	subnetevmrpc "github.com/ava-labs/avalanchego/graft/evm/rpc"
+	subnetClient "github.com/ava-labs/avalanchego/graft/subnet-evm/ethclient"
 )
 
 func newSubnetEVMTestWorker(t *testing.T, serverURL string) *SubnetEVMWorker {
