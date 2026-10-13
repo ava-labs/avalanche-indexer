@@ -35,7 +35,7 @@ jobs:
     env:
       GOPRIVATE: "github.com/ava-labs"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: ./.github/actions/setup-go-for-project
 
       - name: Fuzz ${{ matrix.target }}
@@ -44,7 +44,7 @@ jobs:
 
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-crashers-${{ matrix.target }}
           path: |
