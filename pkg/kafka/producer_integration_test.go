@@ -12,12 +12,8 @@ import (
 	"time"
 
 	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -29,105 +25,17 @@ const (
 )
 
 type kafkaContainer struct {
-	container testcontainers.Container
-	brokers   string
+	brokers string
 }
 
 func setupKafka(t *testing.T) *kafkaContainer {
-	ctx := context.Background()
-
-	req := testcontainers.ContainerRequest{
-		Image:        kafkaImage,
-		ExposedPorts: []string{"9093/tcp"},
-		HostConfigModifier: func(hc *container.HostConfig) {
-			// Bind container port 9093 to host port 9093 to match advertised listeners
-			hc.PortBindings = map[nat.Port][]nat.PortBinding{
-				"9093/tcp": {{HostIP: "127.0.0.1", HostPort: "9093"}},
-			}
-		},
-		Env: map[string]string{
-			"KAFKA_LISTENERS":                                "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094",
-			"KAFKA_ADVERTISED_LISTENERS":                     "PLAINTEXT://127.0.0.1:9093,BROKER://127.0.0.1:9092", // Use IPv4 explicitly to avoid IPv6 connection attempts
-			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":           "CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT",
-			"KAFKA_INTER_BROKER_LISTENER_NAME":               "BROKER",
-			"KAFKA_CONTROLLER_LISTENER_NAMES":                "CONTROLLER",
-			"KAFKA_CONTROLLER_QUORUM_VOTERS":                 "1@127.0.0.1:9094",
-			"KAFKA_PROCESS_ROLES":                            "broker,controller",
-			"KAFKA_NODE_ID":                                  "1",
-			"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
-			"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
-			"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
-			"KAFKA_LOG_FLUSH_INTERVAL_MESSAGES":              "1",
-			"KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS":         "0",
-			"CLUSTER_ID":                                     "MkU3OEVBNTcwNTJENDM2Qk",
-		},
-		WaitingFor: wait.ForLog("Kafka Server started").WithStartupTimeout(testTimeout),
-	}
-
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	require.NoError(t, err)
-
-	// Since we bound port 9093 to host, we can connect directly
-	// Use IPv4 explicitly to avoid IPv6 connection attempts
-	brokers := "127.0.0.1:9093"
-
-	// Wait for Kafka broker to be fully ready to accept connections
-	waitForKafkaBroker(t, brokers)
-
-	// Additional stabilization time for broker to be fully ready
-	time.Sleep(2 * time.Second)
-
+	t.Helper()
+	brokers := sharedKafka(t)
 	createTestTopic(t, brokers)
-
-	return &kafkaContainer{
-		container: container,
-		brokers:   brokers,
-	}
+	return &kafkaContainer{brokers: brokers}
 }
 
 // waitForKafkaBroker polls Kafka until the broker is ready to accept connections.
-// This ensures the broker is fully initialized before running tests.
-func waitForKafkaBroker(t *testing.T, brokers string) {
-	maxRetries := 30
-	retryDelay := time.Second
-
-	for i := 0; i < maxRetries; i++ {
-		adminClient, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
-			"bootstrap.servers":                  brokers,
-			"socket.connection.setup.timeout.ms": 10000, // 10s timeout for initial connection
-			"socket.timeout.ms":                  10000, // 10s socket timeout
-		})
-		if err != nil {
-			t.Logf("Attempt %d/%d: Failed to create admin client: %v", i+1, maxRetries, err)
-			time.Sleep(retryDelay)
-			continue
-		}
-
-		// Try to get metadata - this verifies the broker is responsive
-		metadata, err := adminClient.GetMetadata(nil, false, 5000)
-		adminClient.Close()
-
-		if err != nil {
-			t.Logf("Attempt %d/%d: Failed to get metadata: %v", i+1, maxRetries, err)
-			time.Sleep(retryDelay)
-			continue
-		}
-
-		// Check if we have at least one broker
-		if len(metadata.Brokers) > 0 {
-			t.Logf("Kafka broker is ready! Found %d broker(s)", len(metadata.Brokers))
-			return
-		}
-
-		t.Logf("Attempt %d/%d: No brokers found in metadata", i+1, maxRetries)
-		time.Sleep(retryDelay)
-	}
-
-	require.FailNow(t, "Kafka broker did not become ready within timeout")
-}
 
 func createTestTopic(t *testing.T, brokers string) {
 	adminClient, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
@@ -159,15 +67,9 @@ func createTestTopic(t *testing.T, brokers string) {
 	time.Sleep(1 * time.Second)
 }
 
-func (kc *kafkaContainer) teardown(t *testing.T) {
-	ctx := context.Background()
-	if kc.container != nil {
-		err := kc.container.Terminate(ctx)
-		if err != nil {
-			t.Logf("failed to terminate Kafka container: %v", err)
-		}
-	}
-}
+// teardown is a no-op: the Kafka broker is shared across the package and
+// is terminated by TestMain.
+func (*kafkaContainer) teardown(_ *testing.T) {}
 
 // TestHandleDeliveryEvent_Success tests successful delivery event handling
 func TestHandleDeliveryEvent_Success(t *testing.T) {
