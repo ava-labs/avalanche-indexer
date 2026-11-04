@@ -6,11 +6,12 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch: # Allow manual trigger
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   fuzz-long:
+    permissions:
+      contents: read
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -36,6 +37,8 @@ jobs:
       GOPRIVATE: "github.com/ava-labs"
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-go-for-project
 
       - name: Fuzz ${{ matrix.target }}
