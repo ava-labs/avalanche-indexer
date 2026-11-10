@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true  # kept: job runs git commands that use the checkout token
       - uses: ./.github/actions/setup-go-for-project
       - name: Run unit tests with coverage data
         shell: bash
@@ -59,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true  # kept: job runs git commands that use the checkout token
       - uses: ./.github/actions/setup-go-for-project
       - name: Run integration tests with coverage data
         shell: bash
@@ -90,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true  # kept: job runs git commands that use the checkout token
       - uses: ./.github/actions/setup-go-for-project
       - name: Start dependencies
         shell: bash
@@ -210,7 +210,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true  # kept: job runs git commands that use the checkout token
       - uses: ./.github/actions/setup-go-for-project
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -246,7 +246,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true  # kept: job runs git commands that use the checkout token
       - uses: ./.github/actions/setup-go-for-project
       - name: Fuzz ${{ matrix.target }}
         shell: bash
@@ -423,7 +423,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true  # kept: job runs git commands that use the checkout token
       - uses: ./.github/actions/setup-go-for-project
       - name: Check go.mod tidiness
         shell: bash

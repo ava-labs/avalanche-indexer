@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true  # kept: job runs git commands that use the checkout token
       - uses: ./.github/actions/setup-go-for-project
 
       - name: Fuzz ${{ matrix.target }}
