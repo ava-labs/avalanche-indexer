@@ -9,7 +9,7 @@ A Go monorepo for indexing and processing Avalanche blockchain data. It includes
 - `Makefile` — build, test, lint targets
 
 ### Requirements
-- Go 1.24+
+- Go 1.25+
 - Make
 - Docker (optional, for container builds)
 

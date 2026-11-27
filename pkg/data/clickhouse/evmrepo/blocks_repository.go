@@ -75,6 +75,13 @@ type chBlockRow struct {
 	ParentBeaconBlockRoot interface{} `ch:"parent_beacon_block_root"`
 	MinDelayExcess        uint64      `ch:"min_delay_excess"`
 	NumTxns               uint32      `ch:"num_txns"`
+	TargetExponent        uint64      `ch:"target_exponent"`
+	MinPriceExponent      uint64      `ch:"min_price_exponent"`
+	SettledHeight         uint64      `ch:"settled_height"`
+	SettledGasUnix        uint64      `ch:"settled_gas_unix"`
+	SettledGasNumerator   uint64      `ch:"settled_gas_numerator"`
+	SettledExcess         uint64      `ch:"settled_excess"`
+	ExecutedGasUsed       uint64      `ch:"executed_gas_used"`
 }
 
 // NewBlocks creates a new raw blocks repository and initializes the table
@@ -264,6 +271,13 @@ func convertBlockRowToChBlockRow(block *BlockRow) (*chBlockRow, error) {
 		ExcessBlobGas:         block.ExcessBlobGas,
 		MinDelayExcess:        block.MinDelayExcess,
 		NumTxns:               block.NumTxns,
+		TargetExponent:        block.TargetExponent,
+		MinPriceExponent:      block.MinPriceExponent,
+		SettledHeight:         block.SettledHeight,
+		SettledGasUnix:        block.SettledGasUnix,
+		SettledGasNumerator:   block.SettledGasNumerator,
+		SettledExcess:         block.SettledExcess,
+		ExecutedGasUsed:       block.ExecutedGasUsed,
 		BlockExtraData:        block.BlockExtraData,
 		ExtDataGasUsed:        block.ExtDataGasUsed,
 		ExtraData:             block.ExtraData,
@@ -344,6 +358,13 @@ func (r *blocks) WriteBlock(ctx context.Context, block *BlockRow) error {
 		row.ParentBeaconBlockRoot,
 		row.MinDelayExcess,
 		row.NumTxns,
+		row.TargetExponent,
+		row.MinPriceExponent,
+		row.SettledHeight,
+		row.SettledGasUnix,
+		row.SettledGasNumerator,
+		row.SettledExcess,
+		row.ExecutedGasUsed,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write block of block %d: %w", block.BlockNumber, err)

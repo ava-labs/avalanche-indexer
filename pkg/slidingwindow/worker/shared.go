@@ -2,13 +2,11 @@ package worker
 
 import (
 	"errors"
-	"sync"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 )
 
 var (
-	RegisterCustomTypesOnce sync.Once
 	ErrReceiptCountMismatch = errors.New("receipt count mismatch")
 	ErrReceiptFetchFailed   = errors.New("fetch block receipts failed")
 	ErrBlockFetchFailed     = errors.New("fetch block failed")

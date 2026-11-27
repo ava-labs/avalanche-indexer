@@ -31,7 +31,14 @@ ON CLUSTER `%s`
 	excess_blob_gas UInt64,
 	parent_beacon_block_root Nullable(FixedString(32)),
 	min_delay_excess UInt64,
-	num_txns UInt32
+	num_txns UInt32,
+	target_exponent UInt64,
+	min_price_exponent UInt64,
+	settled_height UInt64,
+	settled_gas_unix UInt64,
+	settled_gas_numerator UInt64,
+	settled_excess UInt64,
+	executed_gas_used UInt64
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/%s_local', '{replica}')
 ORDER BY (blockchain_id, block_number)

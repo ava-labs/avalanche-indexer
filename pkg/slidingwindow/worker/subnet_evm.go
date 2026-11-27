@@ -7,15 +7,14 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ava-labs/subnet-evm/plugin/evm/customtypes"
-	"github.com/ava-labs/subnet-evm/rpc"
+	"github.com/ava-labs/avalanchego/graft/evm/rpc"
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka"
 	"github.com/ava-labs/avalanche-indexer/pkg/kafka/messages"
 	"github.com/ava-labs/avalanche-indexer/pkg/metrics"
 
-	subnetClient "github.com/ava-labs/subnet-evm/ethclient"
+	subnetClient "github.com/ava-labs/avalanchego/graft/subnet-evm/ethclient"
 )
 
 type SubnetEVMWorker struct {
@@ -42,9 +41,6 @@ func NewSubnetEVMWorker(
 	if m == nil {
 		m = metrics.NewNoOp()
 	}
-	RegisterCustomTypesOnce.Do(func() {
-		customtypes.Register()
-	})
 
 	return &SubnetEVMWorker{
 		client:         client,

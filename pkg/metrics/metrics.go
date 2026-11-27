@@ -103,6 +103,8 @@ type Metrics struct {
 	blockToPublishDuration  prometheus.Histogram
 
 	// Retry/failure metrics
+	settlementLag prometheus.Gauge
+
 	blockRetries  prometheus.Counter
 	blockFailures *prometheus.CounterVec
 
@@ -293,6 +295,11 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Name:      "block_to_publish_duration_seconds",
 			Help:      "Time from block fetch start to Kafka publish confirmation",
 			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}),
+		settlementLag: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      "settlement_lag_blocks",
+			Help:      "Blocks between the fetched block and the highest block it settles (ACP-194); 0 pre-Helicon and on Subnet-EVM chains",
 		}),
 		blockRetries: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: Namespace,
@@ -504,6 +511,7 @@ func newMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		reg.Register(m.producerProduceDuration),
 		reg.Register(m.producerErrors),
 		reg.Register(m.blockToPublishDuration),
+		reg.Register(m.settlementLag),
 		reg.Register(m.blockRetries),
 		reg.Register(m.blockFailures),
 		reg.Register(m.kafkaConsumerGroupLag),
@@ -573,6 +581,22 @@ func (m *Metrics) UpdateWindowMetrics(lowest, highest uint64, processedSetSize i
 	m.lowest.Set(float64(lowest))
 	m.highest.Set(float64(highest))
 	m.processedSetSize.Set(float64(processedSetSize))
+}
+
+// ObserveSettlementLag records how far a block's execution settlement trails the block
+// itself, as blockNumber - settledHeight (ACP-194).
+//
+// settledHeight is zero on pre-Helicon blocks and on Subnet-EVM chains, which do not
+// carry settlement state; those are reported as zero lag rather than as the block height.
+func (m *Metrics) ObserveSettlementLag(blockNumber, settledHeight uint64) {
+	if m == nil {
+		return
+	}
+	if settledHeight == 0 || settledHeight > blockNumber {
+		m.settlementLag.Set(0)
+		return
+	}
+	m.settlementLag.Set(float64(blockNumber - settledHeight))
 }
 
 // IncRPCInFlight increments the in-flight RPC gauge.
